@@ -73,7 +73,7 @@ def transfer(task_id, src_pfn, dest_pfn, params_config):
             TransferPoolManager.queued_ids.remove(task_id)
         except ValueError:
             # task was cancelled
-            return -1, 0, 0, '', ''
+            return -1, None, None, '', ''
 
         PoolManager.db.query('UPDATE `standalone_transfer_tasks` SET `status` = \'active\' WHERE `id` = %s', task_id)
 
@@ -130,7 +130,7 @@ def delete(task_id, pfn):
             DeletionPoolManager.queued_ids.remove(task_id)
         except ValueError:
             # task was cancelled
-            return -1, 0, 0, '', ''
+            return -1, None, None, '', ''
 
         PoolManager.db.query('UPDATE `standalone_deletion_tasks` SET `status` = \'active\' WHERE `id` = %s', task_id)
 
@@ -147,8 +147,8 @@ def gfal_exec(method, args, nonerrors = {}, return_value = False):
     @return  (exit code, start time, finish time, error message, log string)
     """
 
-    start_time = 0
-    finish_time = 0
+    start_time = None
+    finish_time = None
     log = ''
 
     for attempt in xrange(5):
@@ -663,7 +663,7 @@ if __name__ == '__main__':
         
             ## Recycle threads
             for managers in [transfer_managers, staging_managers, deletion_managers]:
-                for key, manager in transfer_managers.items():
+                for key, manager in managers.items():
                     if manager.ready_for_recycle():
                         LOG.info('Recycling pool manager %s', manager.name)
                         managers.pop(key)

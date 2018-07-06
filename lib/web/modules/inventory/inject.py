@@ -345,6 +345,7 @@ class InjectDataBase(WebModule):
                         block = block,
                         size = size
                     )
+
                 except TypeError as exc:
                     raise IllFormedRequest('file', str(obj), hint = str(exc))
 
@@ -370,6 +371,15 @@ class InjectDataBase(WebModule):
 
                         block_replicas[site_name] = block_replica
 
+                    block_current_files = []
+                    for lfile in block.files:
+                        if lfile.id == 0:
+                            block_current_files.append(lfile.lfn)
+                        else:
+                            block_current_files.append(lfile.id)
+
+                    block_current_files = tuple(block_current_files)
+
                 block.size += new_lfile.size
                 block.num_files += 1
 
@@ -385,6 +395,13 @@ class InjectDataBase(WebModule):
                         pass
                     else:
                         block_replica.file_ids += (lfile.lfn,)
+
+                    for replica in block.replicas:
+                        if replica is block_replica:
+                            continue
+
+                        if replica.file_ids is None:
+                            replica.file_ids = block_current_files
     
                 num_files += 1
 

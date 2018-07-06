@@ -567,7 +567,8 @@ class RLFSM(object):
             batch_complete = True
 
             for task_id, status, exitcode, start_time, finish_time in results:
-                LOG.debug('%s results: %d %s %d %d %d', optype, task_id, status, exitcode, start_time, finish_time)
+                # start_time and finish_time can be None
+                LOG.debug('%s results: %d %s %d %s %s', optype, task_id, status, exitcode, start_time, finish_time)
 
                 if status == FileQuery.STAT_DONE:
                     num_success += 1
