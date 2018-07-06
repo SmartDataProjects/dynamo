@@ -461,7 +461,7 @@ if __name__ == '__main__':
     transfer_timeout = fileop_config.daemon.transfer_timeout
     overwrite = fileop_config.daemon.get('overwrite', False)
     x509_proxy = fileop_config.daemon.get('x509_proxy', '')
-    staging_x509_proxy = fileop_config.daemon.get('staging_x509_proxy', '')
+    staging_x509_proxy = fileop_config.daemon.get('staging_x509_proxy', x509_proxy)
 
     if 'gfal2_verbosity' in fileop_config.daemon:
         gfal2.set_verbose(getattr(gfal2.verbose_level, fileop_config.daemon.gfal2_verbosity.lower()))
