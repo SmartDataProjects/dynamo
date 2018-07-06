@@ -99,15 +99,19 @@ def transfer(task_id, src_pfn, dest_pfn, params_config):
 
     return gfal_exec('filecopy', (params, src_pfn, dest_pfn), transfer_nonerrors)
 
-def stage(task_id, pfn, token):
+def stage(task_id, pfn, token, cred = None):
     """
     Staging task worker process
     @param task_id        Task id in the queue.
     @param pfn            PFN
     @param token          Gfal2 staging token
+    @param cred           Special X509 proxy cert for staging
 
     @return  boolean (True if staged)
     """
+
+    if cred is not None:
+        os.environ['X509_USER_PROXY'] = cred
 
     status = gfal_exec('bring_online_poll', (pfn, token), return_value = True)
     return status == 1
@@ -456,6 +460,7 @@ if __name__ == '__main__':
     checksum_algo = fileop_config.daemon.get('checksum', '')
     transfer_timeout = fileop_config.daemon.transfer_timeout
     overwrite = fileop_config.daemon.get('overwrite', False)
+    staging_cred = fileop_config.daemon.get('staging_cred', '')
 
     if 'gfal2_verbosity' in fileop_config.daemon:
         gfal2.set_verbose(getattr(gfal2.verbose_level, fileop_config.daemon.gfal2_verbosity.lower()))
@@ -588,6 +593,11 @@ if __name__ == '__main__':
             task_sql += ' WHERE q.`batch_id` = %s'
             task_update_sql = 'UPDATE `standalone_transfer_tasks` SET `status` = %s WHERE `id` = %s'
 
+            if staging_cred:
+                # Current installed version of gfal2 (1.9.3) does not have the ability to switch credentials based on URL
+                uporig = os.getenv('X509_USER_PROXY', None)
+                os.environ['X509_USER_PROXY'] = staging_cred
+
             for batch_id in db.query(batch_sql):
                 tasks = db.query(task_sql, batch_id)
                 pfns = [t[1] for t in tasks]
@@ -603,6 +613,12 @@ if __name__ == '__main__':
                     else:
                         db.query(task_update_sql, 'failed', tid)
 
+            if staging_cred:
+                if uporig is None:
+                    os.environ.pop('X509_USER_PROXY')
+                else:
+                    os.environ['X509_USER_PROXY'] = uporig
+
             # Next poll staging tasks
             sql = 'SELECT q.`id`, a.`source`, b.`source_site`, b.`stage_token` FROM `standalone_transfer_tasks` AS a'
             sql += ' INNER JOIN `transfer_tasks` AS q ON q.`id` = a.`id`'
@@ -616,7 +632,7 @@ if __name__ == '__main__':
                     _site = ssite
                     pool_manager = get_staging_manager(ssite, max_concurrent)
 
-                pool_manager.add_task(tid, src_pfn, token)
+                pool_manager.add_task(tid, src_pfn, token, staging_cred)
 
             # Finally start transfers for tasks in new and staged states
             sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_tasks` AS a'
