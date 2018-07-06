@@ -45,8 +45,8 @@ processed_injection_ids = []
 # Since we allow asynchronous injections, if two processes write new files belonging to a same block sequentially, we can end up with two
 # lines for a block with inconsistent attributes. We need to pool the blocks and files here and resolve conflicts.
 block_changes = collections.defaultdict(list)
-block_replica_changes = collections.defaultdict(lambda: collections.defaultdict(list))
-file_changes = collections.defaultdict(lambda: collections.defaultdict(list))
+replica_changes_by_block = collections.defaultdict(lambda: collections.defaultdict(list))
+file_changes_by_block = collections.defaultdict(lambda: collections.defaultdict(list))
 
 n_injected = 0
 n_deleted = 0
@@ -61,11 +61,11 @@ for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data
     
     elif type(obj) is BlockReplica:
         # obj.block and obj.site are the block full name and site name
-        block_replica_changes[obj.block][obj.site].append((cmd, obj))
+        replica_changes_by_block[obj.block][obj.site].append((cmd, obj))
 
     elif type(obj) is File:
         # obj.block is the block full name
-        file_changes[obj.block][obj.lfn].append((cmd, obj))
+        file_changes_by_block[obj.block][obj.lfn].append((cmd, obj))
 
     elif cmd == 'update':
         inventory.update(obj)
@@ -75,14 +75,15 @@ for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data
         inventory.delete(obj)
         n_deleted += 1
 
+# Update block and file data
 for block_full_name, changes in block_changes.iteritems():
     dataset_name, block_name = Block.from_full_name(block_full_name)
     # dataset must exist
     dataset = inventory.datasets[dataset_name]
     block = dataset.find_block(block_name)
 
-    if block_full_name in file_changes:
-        files = file_changes[block_full_name]
+    if block_full_name in file_changes_by_block:
+        files = file_changes_by_block[block_full_name]
     else:
         files = None
 
@@ -115,7 +116,7 @@ for block_full_name, changes in block_changes.iteritems():
 
         else:
             if obj.num_files != 0 or obj.size != 0:
-                raise RuntimeError('New block created with finite size without new files')
+                raise RuntimeError('New block %s created with finite size without new files' % block_full_name)
 
             block = inventory.update(obj)
             n_injected += 1
@@ -156,8 +157,8 @@ for block_full_name, changes in block_changes.iteritems():
         inventory.register_update(block)
         n_injected += 1
 
-    if block_full_name in block_replica_changes:
-        for site_name, replica_changes in block_replica_changes[block_full_name]:
+    if block_full_name in replica_changes_by_block:
+        for site_name, replica_changes in replica_changes_by_block[block_full_name].iteritems():
             # site must exist
             site = inventory.sites[site_name]
 
