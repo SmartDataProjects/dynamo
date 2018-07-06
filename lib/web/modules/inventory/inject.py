@@ -331,80 +331,82 @@ class InjectDataBase(WebModule):
 
             lfile = block.find_file(lfn)
 
-            if lfile is None:
-                # new file
+            if lfile is not None:
+                continue
 
+            # new file
+
+            try:
+                size = obj['size']
+            except KeyError:
+                raise MissingParameter('size', context = 'file ' + str(obj))
+
+            try:
+                new_lfile = df.File(
+                    lfn,
+                    block = block,
+                    size = size
+                )
+
+            except TypeError as exc:
+                raise IllFormedRequest('file', str(obj), hint = str(exc))
+
+            if len(block.replicas) != 0:
+                # when adding a file to a block with replicas, we need to specify where the file can be found
+                # otherwise subscriptions made for other replicas will never complete
                 try:
-                    size = obj['size']
+                    site_name = obj['site']
                 except KeyError:
-                    raise MissingParameter('size', context = 'file ' + str(obj))
+                    raise MissingParameter('site', context = 'file ' + str(obj))
 
                 try:
-                    new_lfile = df.File(
-                        lfn,
-                        block = block,
-                        size = size
-                    )
-
-                except TypeError as exc:
-                    raise IllFormedRequest('file', str(obj), hint = str(exc))
-
-                if len(block.replicas) != 0:
-                    # when adding a file to a block with replicas, we need to specify where the file can be found
-                    # otherwise subscriptions made for other replicas will never complete
+                    block_replica = block_replicas[site_name]
+                except KeyError:
                     try:
-                        site_name = obj['site']
+                        site = inventory.sites[site_name]
                     except KeyError:
-                        raise MissingParameter('site', context = 'file ' + str(obj))
+                        raise InvalidRequest('Unknown site %s' % site_name)
+                    
+                    block_replica = block.find_replica(site)
+                    if block_replica is None:
+                        raise InvalidRequest('Block %s does not have a replica at %s' % (block.full_name(), site_name))
 
-                    try:
-                        block_replica = block_replicas[site_name]
-                    except KeyError:
-                        try:
-                            site = inventory.sites[site_name]
-                        except KeyError:
-                            raise InvalidRequest('Unknown site %s' % site_name)
-                        
-                        block_replica = block.find_replica(site)
-                        if block_replica is None:
-                            raise InvalidRequest('Block %s does not have a replica at %s' % (block.full_name(), site_name))
+                    block_replicas[site_name] = block_replica
 
-                        block_replicas[site_name] = block_replica
-
-                    block_current_files = []
-                    for lfile in block.files:
-                        if lfile.id == 0:
-                            block_current_files.append(lfile.lfn)
-                        else:
-                            block_current_files.append(lfile.id)
-
-                    block_current_files = tuple(block_current_files)
-
-                block.size += new_lfile.size
-                block.num_files += 1
-
-                try:
-                    lfile = self._update(inventory, new_lfile)
-                except:
-                    raise RuntimeError('Inventory update failed')
-
-                if len(block.replicas) != 0:
-                    block_replica.size += lfile.size
-
-                    if block_replica.file_ids is None:
-                        pass
+                block_current_files = []
+                for lfile in block.files:
+                    if lfile.id == 0:
+                        block_current_files.append(lfile.lfn)
                     else:
-                        block_replica.file_ids += (lfile.lfn,)
+                        block_current_files.append(lfile.id)
 
-                    for replica in block.replicas:
-                        if replica is block_replica:
-                            continue
+                block_current_files = tuple(block_current_files)
 
-                        if replica.file_ids is None:
-                            replica.file_ids = block_current_files
-                            self._register_update(inventory, replica)
-    
-                num_files += 1
+            block.size += new_lfile.size
+            block.num_files += 1
+
+            try:
+                lfile = self._update(inventory, new_lfile)
+            except:
+                raise RuntimeError('Inventory update failed')
+
+            if len(block.replicas) != 0:
+                block_replica.size += lfile.size
+
+                if block_replica.file_ids is None:
+                    pass
+                else:
+                    block_replica.file_ids += (lfile.lfn,)
+
+                for replica in block.replicas:
+                    if replica is block_replica:
+                        continue
+
+                    if replica.file_ids is None:
+                        replica.file_ids = block_current_files
+                        self._register_update(inventory, replica)
+
+            num_files += 1
 
         if num_files != 0:
             self._register_update(inventory, block)
