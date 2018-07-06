@@ -7,7 +7,7 @@ import json
 import logging
 from argparse import ArgumentParser
 
-import dynamo.client.request as request
+import dynamo.client.request as requestlib
 from dynamo.client.client import DynamoWebClient
 from dynamo.utils.interface.webservice import GET, POST
 from dynamo.dataformat import Configuration
@@ -45,26 +45,26 @@ try:
     if args.delete:
         if args.poll is not None:
             resource = 'polldelete'
-            data = request.polldelete(args.poll, items, args.sites, args.statuses, args.users)
+            data = requestlib.polldelete(args.poll, items, args.sites, args.statuses, args.users)
             need_auth = False
     
         else:
             resource = 'delete'
-            data = request.delete(items, args.sites)
+            data = requestlib.delete(items, args.sites)
 
     else:
         if args.cancel is not None:
             resource = 'cancelcopy'
-            data = request.cancelcopy(args.cancel)
+            data = requestlib.cancelcopy(args.cancel)
 
         elif args.poll is not None:
             resource = 'pollcopy'
-            data = request.pollcopy(args.poll, items, args.sites, args.statuses, args.users)
+            data = requestlib.pollcopy(args.poll, items, args.sites, args.statuses, args.users)
             need_auth = False
     
         else:
             resource = 'copy'
-            data = request.copy(items, args.sites, args.n)
+            data = requestlib.copy(items, args.sites, args.n)
 
 except Exception as ex:
     sys.stderr.write(str(ex) + '\n')
