@@ -105,10 +105,25 @@ class File(object):
         return lfile
 
     def unlink(self):
-        if type(self._block.files) is not set:
-            self._block.files = set(self._block.files)
+        self._block.remove_file(self)
 
-        self._block.files.remove(self)
+        if BlockReplica._use_file_ids:
+            if self.id == 0:
+                fid = self.lfn
+            else:
+                fid = self.id
+    
+            for replica in self._block.replicas:
+                if replica.file_ids is None:
+                    # replica was full; block shrunk; replica remains full.
+                    continue
+
+                if fid in replica.file_ids:
+                    tmplist = list(replica.file_ids)
+                    tmplist.remove(fid)
+                    replica.file_ids = tuple(tmplist)
+
+            # if not using file ids for BlockReplicas, we have no way to tell if the replica contains this file.
 
     def write_into(self, store):
         store.save_file(self)
