@@ -40,6 +40,7 @@ from dynamo.dataformat import File
 LOG.info('Updating the inventory from injections.')
 
 processed_injection_ids = []
+new_files = []
 n_injected = 0
 n_deleted = 0
 
@@ -52,14 +53,18 @@ for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data
         embedded_obj = inventory.update(obj)
         n_injected += 1
 
-        if type(obj) is File:
-            block = embedded_obj.block
-            for replica in block.replicas:
-                rlfsm.subscribe_file(replica.site, embedded_obj)
+        if type(embedded_obj) is File:
+            new_files.append(embedded_obj)
 
     elif cmd == 'delete':
         inventory.delete(obj)
         n_deleted += 1
+
+for lfile in new_files:
+    block = lfile.block
+    for replica in block.replicas:
+        if not replica.has_file(lfile):
+            rlfsm.subscribe_file(replica.site, lfile)
 
 LOG.info('Injected %d objects and deleted %d objects.', n_injected, n_deleted)
 

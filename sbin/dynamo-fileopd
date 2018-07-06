@@ -690,16 +690,21 @@ if __name__ == '__main__':
 
     while True:
         # PoolManagers will terminate automatically once stop_flag is set
-        for managers in [transfer_managers, staging_managers, deletion_managers]:
+        all_managers = [('Transfer', transfer_managers), ('Staging', staging_managers), ('Deletion', deletion_managers)]
+        all_clear = True
+
+        for name, managers in all_managers:
             for key, manager in managers.items():
                 if manager.ready_for_recycle():
                     managers.pop(key)
 
-        # TODO
             if len(managers) != 0:
-                LOG.info('Number of pools: %d', len(managers))
-                time.sleep(1)
-            else:
-                break
+                LOG.info('%s managers still alive: %s', name, ' '.join(m.name for m in managers.itervalues()))
+                all_clear = False
+
+        if all_clear:
+            break
+        else:
+            time.sleep(1)
 
     LOG.info('dynamo-fileopd terminated.')

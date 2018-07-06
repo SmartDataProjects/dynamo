@@ -254,6 +254,13 @@ class BlockReplica(object):
         else:
             return set(f for f in block_files if f.id in self.file_ids)
 
+    def has_file(self, lfile):
+        if lfile.id == 0:
+            files = self.files()
+            return lfile in files or lfile.lfn in set(f.lfn for f in files)
+        else:
+            return lfile.id in self.file_ids
+
     def add_file(self, lfile):
         # Note: cannot be used with a file that is just created - it doesn't have an ID until it's registered with the inventory store!
 

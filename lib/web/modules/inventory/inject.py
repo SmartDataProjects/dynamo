@@ -402,6 +402,7 @@ class InjectDataBase(WebModule):
 
                         if replica.file_ids is None:
                             replica.file_ids = block_current_files
+                            self._register_update(inventory, replica)
     
                 num_files += 1
 
