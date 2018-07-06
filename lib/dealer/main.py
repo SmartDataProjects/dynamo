@@ -184,6 +184,12 @@ class Dealer(object):
         # Flattened list of (DealerRequest, plugin)
         requests = []
 
+        # Collect the requests based on plugin priority
+        reject_stats = {
+            'No source replica available': 0,
+            'Dataset is not valid': 0
+        }
+
         while len(reqlists) != 0:
             # Classic weighted random-picking algorithm
             plugins = reqlists.keys()
@@ -206,28 +212,33 @@ class Dealer(object):
                 reqlists.pop(plugin)
 
             # check that there is at least one source (allow it to be incomplete - could be in production)
+            no_source = False
             if request.block is not None:
                 if len(request.block.replicas) == 0:
-                    continue
+                    no_source = True
+
             elif request.blocks is not None:
                 if len(request.blocks) == 0:
-                    continue
+                    no_source = True
+                else:
+                    # all blocks must have at least one copy
+                    for block in request.blocks:
+                        if len(block.replicas) == 0:
+                            no_source = True
+                            break
 
-                no_source = False
-
-                for block in request.blocks:
-                    if len(block.replicas) == 0:
-                        no_source = True
-                        break
-
-                # all blocks must have at least one copy
-                if no_source:
-                    continue
             elif request.dataset is not None:
                 if len(request.dataset.replicas) == 0:
-                    continue
+                    no_source = True
+
+            if no_source:
+                LOG.debug('%s has no source', request.item_name())
+                reject_stats['No source replica available'] += 1
+                continue
 
             if request.dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
+                LOG.debug('Dataset of %s is not valid', request.item_name())
+                reject_stats['Dataset is not valid'] += 1
                 continue
 
             # set the group here

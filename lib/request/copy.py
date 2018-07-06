@@ -152,12 +152,14 @@ class CopyRequestManager(RequestManager):
             sql = 'UPDATE `copy_requests` SET `status` = %s, `group` = %s, `num_copies` = %s, `last_request_time` = FROM_UNIXTIME(%s), `request_count` = %s WHERE `id` = %s'
             self.registry.db.query(sql, request.status, request.group, request.n, request.last_request, request.request_count, request.request_id)
 
-            # insert or update active copies
-            fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
-            for a in request.actions:
-                values = (request.request_id, a.item, a.site, a.status, MySQL.bare('NOW()'), MySQL.bare('NOW()'))
+            if request.actions is not None:
+                # insert or update active copies
+                fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
                 update_columns = ('status', 'updated')
-                self.registry.db.insert_update('active_copies', fields, *values, update_columns = update_columns)
+                for a in request.actions:
+                    now = time.strftime('%Y-%m-%d %H:%M:%S') # current local time
+                    values = (request.request_id, a.item, a.site, a.status, now, now)
+                    self.registry.db.insert_update('active_copies', fields, *values, update_columns = update_columns)
 
         else:
             # terminal state
