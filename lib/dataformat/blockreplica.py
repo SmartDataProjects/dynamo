@@ -255,6 +255,9 @@ class BlockReplica(object):
             return set(f for f in block_files if f.id in self.file_ids)
 
     def has_file(self, lfile):
+        if self.file_ids is None:
+            return True
+
         if lfile.id == 0:
             files = self.files()
             if lfile in files:
@@ -270,10 +273,10 @@ class BlockReplica(object):
             return lfile.id in self.file_ids
 
     def add_file(self, lfile):
-        # Note: cannot be used with a file that is just created - it doesn't have an ID until it's registered with the inventory store!
-
         if lfile.block != self.block:
             raise ObjectError('Cannot add file %s (block %s) to %s', lfile.lfn, lfile.block.full_name(), str(self))
+
+        self.size += lfile.size
 
         if BlockReplica._use_file_ids:
             if self.file_ids is None:
@@ -282,7 +285,10 @@ class BlockReplica(object):
             else:
                 file_ids = set(self.file_ids)
 
-            file_ids.add(lfile.id)
+            if lfile.id == 0:
+                file_ids.add(lfile.lfn)
+            else:
+                file_ids.add(lfile.id)
     
             if len(file_ids) == self.block.num_files:
                 self.file_ids = None
@@ -292,28 +298,47 @@ class BlockReplica(object):
         else:
             self.file_ids += 1
 
-        self.size += lfile.size
+    def delete_file(self, lfile, full_deletion = False):
+        """
+        Delete a file from the replica.
+        @param  lfile          A File object
+        @param  full_deletion  Set to True if the file is being deleted from the block as well.
 
-    def delete_file(self, lfile):
-        # Note: cannot be used with a file that is just created - it doesn't have an ID until it's registered with the inventory store!
+        @return  True if the file is in the replica.
+        """
 
         if lfile.block != self.block:
             raise ObjectError('Cannot delete file %s (block %s) from %s', lfile.lfn, lfile.block.full_name(), str(self))
 
         if BlockReplica._use_file_ids:
+            if lfile.id == 0:
+                identifier = lfile.lfn
+            else:
+                identifier = lfile.id
+
             if self.file_ids is None:
-                file_ids = [f.id for f in self.block.files]
+                if full_deletion:
+                    # file is being deleted from the block as well. Full replica remains full.
+                    self.size -= lfile.size
+                    return True
+                else:                    
+                    file_ids = [(f.id if f.id != 0 else f.lfn) for f in self.block.files]
+
+            elif identifier not in self.file_ids:
+                return False
+
             else:
                 file_ids = list(self.file_ids)
 
-            # Let remove() raise ValueError if the file id is not found
-            file_ids.remove(lfile.id)
+            file_ids.remove(identifier)
             self.file_ids = tuple(file_ids)
 
         else:
             self.file_ids -= 1
 
         self.size -= lfile.size
+
+        return True
 
     def _block_full_name(self):
         if type(self._block) is str:

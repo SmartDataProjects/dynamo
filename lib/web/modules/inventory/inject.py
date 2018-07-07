@@ -391,12 +391,8 @@ class InjectDataBase(WebModule):
                 raise RuntimeError('Inventory update failed')
 
             if len(block.replicas) != 0:
-                block_replica.size += lfile.size
-
-                if block_replica.file_ids is None:
-                    pass
-                else:
-                    block_replica.file_ids += (lfile.lfn,)
+                block_replica.add_file(lfile)
+                self._register_update(inventory, block_replica)
 
                 for replica in block.replicas:
                     if replica is block_replica:
@@ -541,7 +537,10 @@ class InjectData(InjectDataBase):
         fields = ('cmd', 'obj')
         mapping = lambda obj: ('update', repr(obj))
 
+        # make injection entries consecutive
+        self.registry.db.lock_tables(write = ['data_injections'])
         self.registry.db.insert_many('data_injections', fields, mapping, self.inject_queue)
+        self.registry.db.unlock_tables()
 
         self.message = 'Data will be injected in the regular update cycle later.'
 

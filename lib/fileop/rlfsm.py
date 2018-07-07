@@ -276,9 +276,11 @@ class RLFSM(object):
         self._subscribe(site, lfile, 1)
 
     def convert_pre_subscriptions(self, inventory):
-        sql = 'SELECT `file_name`, `site_name`, UNIX_TIMESTAMP(`created`), `delete` FROM `file_pre_subscriptions`'
+        sql = 'SELECT `id`, `file_name`, `site_name`, UNIX_TIMESTAMP(`created`), `delete` FROM `file_pre_subscriptions`'
 
-        for lfn, site_name, created, delete in self.db.query(sql):
+        sids = []
+
+        for sid, lfn, site_name, created, delete in self.db.query(sql):
             lfile = inventory.find_file(lfn)
             if lfile is None or lfile.id == 0:
                 continue
@@ -291,7 +293,15 @@ class RLFSM(object):
             if site.id == 0:
                 continue
 
+            sids.append(sid)
+
             self._subscribe(site, lfile, delete, created = created)
+
+        self.db.lock_tables(write = ['file_pre_subscriptions'])
+        self.db.delete_many('file_pre_subscriptions', 'id', sids)
+        if self.db.query('SELECT COUNT(*) FROM `file_pre_subscriptions`')[0] == 0:
+            self.db.query('ALTER TABLE `file_pre_subscriptions` AUTO_INCREMENT = 1')
+        self.db.unlock_tables()
 
     def get_subscriptions(self, inventory, op = None, status = None):
         """
@@ -335,6 +345,7 @@ class RLFSM(object):
         destination = None
 
         to_hold = []
+        to_done = []
 
         COPY = 0
         DELETE = 1
@@ -360,9 +371,15 @@ class RLFSM(object):
                 destination = inventory.sites[site_name]
 
             lfile = block.find_file(file_name, must_find = True)
+            dest_replica = block.find_replica(destination, must_find = True)
 
             if optype == COPY:
                 if status not in ('done', 'held', 'cancelled'):
+                    if dest_replica.has_file(lfile):
+                        LOG.debug('%s already exists at %s', file_name, site_name)
+                        to_done.append(sub_id)
+                        continue
+
                     disk_sources = []
                     tape_sources = []
                     for replica in block.replicas:
@@ -410,10 +427,16 @@ class RLFSM(object):
                 subscriptions.append(subscription)
 
             elif optype == DELETE:
+                if status not in ('done', 'held', 'cancelled') and not dest_replica.has_file(lfile):
+                    LOG.debug('%s is already gone from %s', file_name, site_name)
+                    to_done.append(sub_id)
+                    continue
+
                 desubscription = RLFSM.Desubscription(sub_id, status, lfile, destination)
                 subscriptions.append(desubscription)
 
         if not self._read_only:
+            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'done\', `last_update` = NOW()', 'id', to_done)
             self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', to_hold)
 
         return subscriptions

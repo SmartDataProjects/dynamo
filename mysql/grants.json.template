@@ -61,7 +61,7 @@
       ["INSERT, UPDATE, DELETE", "dynamo", "deletion_batches"],
       ["INSERT, UPDATE, DELETE", "dynamo", "deletion_tasks"],
       ["INSERT, UPDATE, DELETE", "dynamo", "file_subscriptions"],
-      ["INSERT, UPDATE, DELETE", "dynamo", "file_pre_subscriptions"],
+      ["INSERT, UPDATE, DELETE, ALTER", "dynamo", "file_pre_subscriptions"],
       ["INSERT, UPDATE, DELETE", "dynamo", "directory_cleaning_tasks"],
       ["INSERT, UPDATE, DELETE", "dynamo", "fts_servers"],
       ["INSERT, UPDATE, DELETE", "dynamo", "fts_error_messages"],

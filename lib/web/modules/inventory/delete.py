@@ -4,6 +4,7 @@ import logging
 from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError
 from dynamo.web.modules._base import WebModule
 import dynamo.dataformat as df
+from dynamo.registry.registry import RegistryDatabase
 
 LOG = logging.getLogger(__name__)
 
@@ -220,13 +221,8 @@ class DeleteDataBase(WebModule):
                 raise InvalidRequest('Unknown file %s' % lfn)
 
             for replica in block.replicas:
-                try:
-                    # delete_file adjusts the replica size too
-                    replica.delete_file(lfile)
-                except ValueError:
-                    # file is not in replica
-                    pass
-                else:
+                # delete_file adjusts the replica size too
+                if replica.delete_file(lfile, full_deletion = True):
                     updated_replicas.add(replica)
 
             block.size -= lfile.size
@@ -240,10 +236,10 @@ class DeleteDataBase(WebModule):
             num_files += 1
 
         if num_files != 0:
-            inventory.register_update(block)
+            self._register_update(inventory, block)
 
         for replica in updated_replicas:
-            inventory.update(replica)
+            self._update(inventory, replica)
 
         try:
             counts['files'] += num_files
@@ -298,18 +294,30 @@ class DeleteData(DeleteDataBase):
 
         self.registry = RegistryDatabase()
 
-        self.delete_queue = []
+        self.queue = []
 
     def _delete(self, inventory, obj):
-        self.delete_queue.append(obj)
+        self.queue.append(('delete', repr(obj)))
+
+    def _update(self, inventory, obj):
+        embedded_clone, updated = obj.embed_into(inventory, check = True)
+        if updated:
+            self.queue.append(('update', repr(embedded_clone)))
+
+        return embedded_clone
+
+    def _register_update(self, inventory, obj):
+        self.queue.append(('update', repr(obj)))
 
     def _finalize(self):
         fields = ('cmd', 'obj')
-        mapping = lambda obj: ('delete', repr(obj))
 
-        self.registry.db.insert_many('data_injections', fields, mapping, self.delete_queue)
+        # make entries consecutive
+        self.registry.db.lock_tables(write = ['data_injections'])
+        self.registry.db.insert_many('data_injections', fields, None, self.queue)
+        self.registry.db.unlock_tables()
 
-        self.message = 'Data will be injected in the regular update cycle later.'
+        self.message = 'Data will be deleted in the regular update cycle later.'
 
 
 class DeleteDataSync(DeleteDataBase):
@@ -325,6 +333,12 @@ class DeleteDataSync(DeleteDataBase):
 
     def _delete(self, inventory, obj):
         inventory.delete(obj)
+
+    def _update(self, inventory, obj):
+        return inventory.update(obj)
+
+    def _register_update(self, inventory, obj):
+        inventory.register_update(obj)
 
     def _finalize(self):
         self.message = 'Data is deleted.'

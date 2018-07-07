@@ -42,147 +42,108 @@ LOG.info('Updating the inventory from injections.')
 
 processed_injection_ids = []
 
-# Since we allow asynchronous injections, if two processes write new files belonging to a same block sequentially, we can end up with two
-# lines for a block with inconsistent attributes. We need to pool the blocks and files here and resolve conflicts.
-block_changes = collections.defaultdict(list)
-replica_changes_by_block = collections.defaultdict(lambda: collections.defaultdict(list))
-file_changes_by_block = collections.defaultdict(lambda: collections.defaultdict(list))
-
 n_injected = 0
 n_deleted = 0
+new_files = []
 
 for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
     processed_injection_ids.append(iid)
 
     obj = inventory.make_object(objstr)
 
-    if type(obj) is Block:
-        block_changes[obj.full_name()].append((cmd, obj))
+    if cmd == 'update':
+        if type(obj) is Block:
+            # Special case - due to the asynchronous nature of the injections, two injection commands can leave inconsistent
+            # block attributes. Here we let num_files and size to be only set by changes in the files.
     
-    elif type(obj) is BlockReplica:
-        # obj.block and obj.site are the block full name and site name
-        replica_changes_by_block[obj.block][obj.site].append((cmd, obj))
+            dataset_name, block_name = Block.from_full_name(obj.full_name())
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                # Another request deleted the dataset
+                continue
 
-    elif type(obj) is File:
-        # obj.block is the block full name
-        file_changes_by_block[obj.block][obj.lfn].append((cmd, obj))
+            block = dataset.find_block(block_name)
+    
+            if block is None:
+                # new block
+                obj._num_files = 0
+                obj._size = 0
+                inventory.update(obj)
+                n_injected += 1
+            else:
+                obj._num_files = block.num_files
+                obj._size = block.size
+                inventory.update(obj)
 
-    elif cmd == 'update':
-        inventory.update(obj)
-        n_injected += 1
+        elif type(obj) is File:
+            # Update the block properties when injecting files
 
-    elif cmd == 'delete':
-        inventory.delete(obj)
-        n_deleted += 1
+            dataset_name, block_name = Block.from_full_name(obj.block)
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                continue
 
-# Update block and file data
-for block_full_name, changes in block_changes.iteritems():
-    dataset_name, block_name = Block.from_full_name(block_full_name)
-    # dataset must exist
-    dataset = inventory.datasets[dataset_name]
-    block = dataset.find_block(block_name)
+            block = dataset.find_block(block_name)
+            if block is None:
+                continue
 
-    if block_full_name in file_changes_by_block:
-        files = file_changes_by_block[block_full_name]
-    else:
-        files = None
+            if block.find_file(obj.lfn) is not None:
+                # File already injected
+                continue
 
-    new_files = []
+            block_current_files = tuple((lfile.lfn if lfile.id == 0 else lfile.id) for lfile in block.files)
 
-    if block is None:
-        # new block
-        if changes[-1][0] == 'delete':
-            # going to be deleted in the end
-            continue
-
-        obj = changes[-1][1]
-
-        if files is not None:
-            # use the files list to construct the size and nfiles attribute. Use the last update for the rest.
-            obj.num_files = 0
-            obj.size = 0
-            for lfn, file_changes in files.iteritems():
-                if file_changes[-1][0] == 'update':
-                    obj.num_files += 1
-                    obj.size += file_changes[-1][1].size
-
-            block = inventory.update(obj)
+            block.num_files += 1
+            block.size += obj.size
+            inventory.register_update(block)
+            new_file = inventory.update(obj)
             n_injected += 1
 
-            for lfn, file_changes in files.iteritems():
-                if file_changes[-1][0] == 'update':
-                    new_files.append(inventory.update(file_changes[-1][1]))
-                    n_injected += 1
+            new_files.append(new_file)
+
+            # Need to make all block replicas missing this file first
+            for replica in block.replicas:
+                if replica.file_ids is None:
+                    replica.file_ids = block_current_files
+                    inventory.register_update(replica)
 
         else:
-            if obj.num_files != 0 or obj.size != 0:
-                raise RuntimeError('New block %s created with finite size without new files' % block_full_name)
-
-            block = inventory.update(obj)
+            inventory.update(obj)
             n_injected += 1
 
-    else:
-        # existing block
-        if changes[-1][0] == 'delete':
-            inventory.delete(block)
+    elif cmd == 'delete':
+        if type(obj) is File:
+            dataset_name, block_name = Block.from_full_name(obj.block)
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                continue
+
+            block = dataset.find_block(block_name)
+            if block is None:
+                continue
+
+            lfile = block.find_file(obj.lfn)
+            if lfile is None:
+                # File already deleted
+                continue
+
+            block.num_files -= 1
+            block.size -= lfile.size
+            inventory.register_update(block)
+            inventory.delete(lfile)
             n_deleted += 1
-            continue
 
-        obj = changes[-1][1]
+        else:
+            inventory.delete(obj)
+            n_deleted += 1
 
-        block.is_open = obj.is_open
-        block.last_update = obj.last_update
-
-        if files is not None:
-            # use the files list to construct the size and nfiles attribute.
-            for lfn, file_changes in files.iteritems():
-                injected_file = file_changes[-1][1]
-                lfile = block.find_file(lfn)
-
-                if file_changes[-1][0] == 'update':
-                    if lfile is None:
-                        # file size cannot change; if lfile is not None, we do nothing.
-                        block.num_files += 1
-                        block.size += injected_file.size
-                        new_files.append(inventory.update(injected_file)) # adds the file to the block
-                        n_injected += 1
-
-                else:
-                    if lfile is not None:
-                        block.num_files -= 1
-                        block.size -= file_changes[-1][1].size
-                        inventory.delete(injected_file) # deletes the file from the block
-                        n_deleted += 1
-
-        inventory.register_update(block)
-        n_injected += 1
-
-    if block_full_name in replica_changes_by_block:
-        for site_name, replica_changes in replica_changes_by_block[block_full_name].iteritems():
-            # site must exist
-            site = inventory.sites[site_name]
-
-            replica = block.find_replica(site)
-
-            if replica is None:
-                if replica_changes[-1][0] == 'delete':
-                    pass
-                else:
-                    inventory.update(replica_changes[-1][1])
-                    n_injected += 1
-
-            else:
-                if replica_changes[-1][0] == 'delete':
-                    inventory.delete(replica)
-                    n_deleted += 1
-                else:
-                    inventory.update(replica_changes[-1][1])
-                    n_injected += 1
-
-    for lfile in new_files:
-        for replica in block.replicas:
-            if not replica.has_file(lfile):
-                rlfsm.subscribe_file(replica.site, lfile)
+for lfile in new_files:
+    for replica in lfile.block.replicas:
+        if not replica.has_file(lfile):
+            rlfsm.subscribe_file(replica.site, lfile)
 
 LOG.info('Injected %d objects and deleted %d objects.', n_injected, n_deleted)
 

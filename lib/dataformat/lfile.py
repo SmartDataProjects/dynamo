@@ -1,5 +1,6 @@
 from exceptions import ObjectError
 from block import Block
+from blockreplica import BlockReplica
 
 class File(object):
     """Represents a file. Atomic unit of data."""
@@ -114,16 +115,8 @@ class File(object):
                 fid = self.id
     
             for replica in self._block.replicas:
-                if replica.file_ids is None:
-                    # replica was full; block shrunk; replica remains full.
-                    continue
-
-                if fid in replica.file_ids:
-                    tmplist = list(replica.file_ids)
-                    tmplist.remove(fid)
-                    replica.file_ids = tuple(tmplist)
-
-            # if not using file ids for BlockReplicas, we have no way to tell if the replica contains this file.
+                # this function does not raise even if file is not in the replica
+                replica.delete_file(self, full_deletion = True)
 
     def write_into(self, store):
         store.save_file(self)
