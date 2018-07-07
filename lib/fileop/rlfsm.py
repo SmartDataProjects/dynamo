@@ -297,11 +297,12 @@ class RLFSM(object):
 
             self._subscribe(site, lfile, delete, created = created)
 
-        self.db.lock_tables(write = ['file_pre_subscriptions'])
-        self.db.delete_many('file_pre_subscriptions', 'id', sids)
-        if self.db.query('SELECT COUNT(*) FROM `file_pre_subscriptions`')[0] == 0:
-            self.db.query('ALTER TABLE `file_pre_subscriptions` AUTO_INCREMENT = 1')
-        self.db.unlock_tables()
+        if not self._read_only:
+            self.db.lock_tables(write = ['file_pre_subscriptions'])
+            self.db.delete_many('file_pre_subscriptions', 'id', sids)
+            if self.db.query('SELECT COUNT(*) FROM `file_pre_subscriptions`')[0] == 0:
+                self.db.query('ALTER TABLE `file_pre_subscriptions` AUTO_INCREMENT = 1')
+            self.db.unlock_tables()
 
     def get_subscriptions(self, inventory, op = None, status = None):
         """
@@ -478,8 +479,9 @@ class RLFSM(object):
 
         if lfile.id == 0 or site.id == 0:
             # file is not registered in inventory store yet; update the presubscription
-            fields = ('file_name', 'site_name', 'created', 'delete')
-            self.db.insert_update('file_pre_subscriptions', fields, lfile.lfn, site.name, now, delete, update_columns = ('delete',))
+            if not self._read_only:
+                fields = ('file_name', 'site_name', 'created', 'delete')
+                self.db.insert_update('file_pre_subscriptions', fields, lfile.lfn, site.name, now, delete, update_columns = ('delete',))
             return
 
         if not self._read_only:
