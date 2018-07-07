@@ -60,7 +60,7 @@ class CopyRequestManager(RequestManager):
                 # we were looking for a unique request and we found it
                 return all_requests
 
-        if statuses is not None and (set(statuses) < set(['new', 'activated']) or set(statuses) < set([Request.ST_NEW, Request.ST_ACTIVATED])):
+        if statuses is not None and (set(statuses) <= set(['new', 'activated']) or set(statuses) <= set([Request.ST_NEW, Request.ST_ACTIVATED])):
             # there's nothing in the archive
             return all_requests
 
