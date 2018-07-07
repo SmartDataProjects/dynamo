@@ -1,5 +1,5 @@
 CREATE TABLE `fts_transfer_batches` (
-  `id` bigint(20) unsigned NOT NULL,
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `batch_id` bigint(20) unsigned NOT NULL,
   `task_type` enum('transfer','staging') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `fts_server_id` smallint(5) unsigned NOT NULL,

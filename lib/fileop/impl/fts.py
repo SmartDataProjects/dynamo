@@ -143,6 +143,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             if success and not self._read_only:
                 self.db.delete_many('fts_staging_queue', 'id', pfn_to_task.values())
 
+        return results
+
     def get_deletion_status(self, batch_id): #override
         if self.server_id == 0:
             self._set_server_id()
