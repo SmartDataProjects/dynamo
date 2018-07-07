@@ -54,6 +54,7 @@ class MakeCopyRequest(CopyRequestBase):
 
             else:
                 constraints = self.make_constraints(by_id = False)
+                constraints['statuses'] = [Request.ST_NEW, Request.ST_ACTIVATED]
                 existing_requests = self.manager.get_requests(**constraints)
 
                 for request_id in sorted(existing_requests.iterkeys()):

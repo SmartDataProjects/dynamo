@@ -64,6 +64,7 @@ class CopyRequestsHandler(BaseHandler):
 
         for request in active_requests.itervalues():
             updated = False
+            to_be_activated = False
 
             for action in request.actions:
                 if action.status != RequestAction.ST_NEW:
@@ -97,12 +98,14 @@ class CopyRequestsHandler(BaseHandler):
                         if existing_replica.is_complete():
                             action.status = RequestAction.ST_COMPLETED
                         else:
+                            # it was queued by someone
                             action.status = RequestAction.ST_QUEUED
                         action.last_update = now
                         updated = True
 
                     else:
                         activation_list.append((dataset, site))
+                        to_be_activated = True
     
                 else:
                     # action.item is a block name
@@ -135,9 +138,13 @@ class CopyRequestsHandler(BaseHandler):
 
                     else:
                         activation_list.append((block, site))
+                        to_be_activated = True
 
             if updated:
                 self.request_manager.update_request(request)
+
+            if to_be_activated:
+                self.activated_requests.append(request)
 
         self.request_manager.unlock()
 

@@ -11,6 +11,7 @@ from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery
 from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import Site
 
 LOG = logging.getLogger(__name__)
 
@@ -24,8 +25,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         self.server_url = config.fts_server
         self.server_id = 0 # server id in the DB
 
-        # Parameter "retry" for fts3.new_job
-        self.fts_retry = config.fts_retry
+        # Parameter "retry" for fts3.new_job. 0 = server default
+        self.fts_retry = config.get('fts_retry', 0)
 
         # Bookkeeping device
         self.db = MySQL(config.db_params)
@@ -51,6 +52,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return batches
 
     def start_transfers(self, batch_id, batch_tasks): #override
+        stage_files = []
         transfers = []
 
         pfn_to_task = {}
@@ -59,16 +61,36 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             sub = task.subscription
             lfn = sub.file.lfn
             source_pfn = task.source.to_pfn(lfn, 'gfal2')
-            dest_pfn = sub.destination.to_pfn(lfn, 'gfal2')
 
-            transfers.append(fts3.new_transfer(source_pfn, dest_pfn))
+            if task.source.storage_type == Site.TYPE_MSS:
+                # need to stage first
+                stage_files.append((source_pfn, dest_pfn))
+            else:
+                dest_pfn = sub.destination.to_pfn(lfn, 'gfal2')
+                transfers.append(fts3.new_transfer(source_pfn, dest_pfn))
 
             # there should be only one task per destination pfn
             pfn_to_task[dest_pfn] = task
 
-        job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, verify_checksum = False)
+        if len(stage_files) != 0:
+            job = fts3.new_staging_job([ff[0] for ff in stage_files])
+            success = self._submit_job(job, 'staging', batch_id, pfn_to_task)
+            if not success:
+                return False
 
-        return self._submit_job(job, 'transfer', batch_id, pfn_to_task)
+            if not self._read_only:
+                fields = ('id', 'source', 'destination')
+                mapping = lambda ff: (pfn_to_task[ff[1]], ff[0], ff[1])
+                if not self._read_only:
+                    self.db.insert_many('fts_staging_queue', fields, mapping, stage_files)
+
+        if len(transfers) != 0:
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = False)
+            success = self._submit_job(job, 'transfer', batch_id, pfn_to_task)
+            if not success:
+                return False
+
+        return True
 
     def start_deletions(self, batch_id, batch_tasks): #override
         pfn_to_task = {}
@@ -79,7 +101,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             pfn = desub.site.to_pfn(lfn, 'gfal2')
 
             # there should be only one task per destination pfn
-            pfn_to_task[dest_pfn] = task
+            pfn_to_task[pfn] = task
 
         job = fts3.new_delete_job(pfn_to_task.keys())
 
@@ -95,7 +117,33 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self.server_id == 0:
             self._set_server_id()
 
-        return self._get_status(batch_id, 'transfer')
+        results = []
+
+        staged_tasks = []
+
+        for task in self._get_status(batch_id, 'staging'):
+            if task[1] == FileQuery.STAT_DONE:
+                staged_tasks.append(task[0])
+                results.append((task[0], FileQuery.STAT_QUEUED, None, None, None))
+            elif task[1] == FileQuery.STAT_FAILED or task[1] == FileQuery.STAT_CANCELLED:
+                # This is final
+                results.append(task)
+
+        results.extend(self._get_status(batch_id, 'transfer'))
+
+        if len(staged_tasks) != 0:
+            transfers = []
+            pfn_to_task = {}
+            for task_id, source_pfn, dest_pfn in self.db.select_many('fts_staging_queue', ('id', 'source', 'destination', 'id', staged_tasks)):
+                transfers.append(fts3.new_transfer(source_pfn, dest_pfn))
+                pfn_to_task[dest_pfn] = task_id
+
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = False)
+            success = self._submit_job(job, 'transfer', batch_id, pfn_to_task)
+            if success and not self._read_only:
+                self.db.delete_many('fts_staging_queue', 'id', pfn_to_task.values())
+
+        return results
 
     def get_deletion_status(self, batch_id): #override
         if self.server_id == 0:
@@ -141,7 +189,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         # list of file-level operations (one-to-one with pfn)
         try:
-            if optype == 'transfer':
+            if optype == 'transfer' or optype == 'staging':
                 key = 'files'
             else:
                 key = 'dm'
@@ -155,23 +203,37 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self.server_id == 0:
             self._set_server_id()
 
-        sql = 'INSERT INTO `fts_{op}_batches` (`batch_id`, `fts_server_id`, `job_id`)'.format(op = optype)
-        sql += ' VALUES (%s, %s, %s)'
-        if not self._read_only:
-            self.db.query(sql, batch_id, self.server_id, job_id)
+        if optype == 'transfer' or optype == 'staging':
+            table_name = 'fts_transfer_batches'
+            columns = ('batch_id', 'task_type', 'fts_server_id', 'job_id')
+            values = (batch_id, optype, self.server_id, job_id)
+        else:
+            table_name = 'fts_deletion_batches'
+            columns = ('batch_id', 'fts_server_id', 'job_id')
+            values = (batch_id, self.server_id, job_id)
 
-        fields = (optype + '_id', 'batch_id', 'fts_file_id')
-        mapping = lambda f: (pfn_to_task[f['dest_surl']].id, batch_id, f['file_id'])
+        if not self._read_only:
+            fts_batch_id = self.db.insert_get_id(table_name, columns = columns, values = values)
+
+        if optype == 'transfer' or optype == 'staging':
+            table_name = 'fts_transfer_tasks'
+            pfn_key = 'dest_surl'
+        else:
+            table_name = 'fts_deletion_tasks'
+            pfn_key = 'source_surl'
+
+        fields = ('id', 'fts_batch_id', 'fts_file_id')
+        mapping = lambda f: (pfn_to_task[f[pfn_key]].id, fts_batch_id, f['file_id'])
 
         if not self._read_only:
-            self.db.insert_many('fts_' + optype + '_files', fields, mapping, fts_files)
+            self.db.insert_many(table_name, fields, mapping, fts_files, do_update = True, update_columns = ('fts_batch_id', 'fts_file_id'))
 
         return True
 
     def _cancel(self, task_ids, optype):
-        sql = 'SELECT b.`job_id`, f.`fts_file_id` FROM `fts_{op}_files` AS f'
-        sql += ' INNER JOIN `fts_{op}_batches` AS b ON b.`batch_id` = f.`batch_id`'
-        result = self.db.execute_many(sql.format(op = optype), MySQL.bare('f.`{op}_id`'.format(op = optype)), task_ids)
+        sql = 'SELECT b.`job_id`, f.`fts_file_id` FROM `fts_{op}_tasks` AS f'
+        sql += ' INNER JOIN `fts_{op}_batches` AS b ON b.`id` = f.`fts_batch_id`'
+        result = self.db.execute_many(sql.format(op = optype), MySQL.bare('f.`id`'), task_ids)
 
         by_job = collections.defaultdict(list)
 
@@ -182,62 +244,69 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             self._ftscall('cancel', job_id, file_ids = ids)
     
     def _get_status(self, batch_id, optype):
-        sql = 'SELECT `job_id` FROM `fts_{optype}_batches`'
-        sql += ' WHERE `fts_server_id` = %s AND `batch_id` = %s'
-
-        job_id = self.db.query(sql.format(optype = optype), self.server_id, batch_id)[0]
-
-        sql = 'SELECT `fts_file_id`, `{optype}_id` FROM `fts_{optype}_files` WHERE `batch_id` = %s'
-        fts_to_task = dict(self.db.xquery(sql.format(optype = optype), batch_id))
-
-        result = self._ftscall('get_job_status', job_id = job_id, list_files = True)
-
-        if optype == 'transfer':
-            fts_files = result['files']
+        if optype == 'transfer' or optype == 'staging':
+            sql = 'SELECT `id`, `job_id` FROM `fts_transfer_batches`'
+            sql += ' WHERE `task_type` = %s AND `fts_server_id` = %s AND `batch_id` = %s'
+            batch_data = self.db.query(sql, optype, self.server_id, batch_id)
+            task_table_name = 'fts_transfer_tasks'
         else:
-            fts_files = result['dm']
+            sql = 'SELECT `id`, `job_id` FROM `fts_deletion_batches`'
+            sql += ' WHERE `fts_server_id` = %s AND `batch_id` = %s'
+            batch_data = self.db.query(sql, self.server_id, batch_id)
+            task_table_name = 'fts_deletion_tasks'
 
         results = []
 
-        for fts_file in fts_files:
-            try:
-                task_id = fts_to_task[fts_file['file_id']]
-            except KeyError:
-                continue
+        for fts_batch_id, job_id in batch_data:
+            sql = 'SELECT `fts_file_id`, `id` FROM `{table}` WHERE `fts_batch_id` = %s'.format(table = task_table_name)
+            fts_to_task = dict(self.db.xquery(sql, fts_batch_id))
 
-            state = fts_file['file_state']
-
-            if state == 'FINISHED':
-                status = FileQuery.STAT_DONE
-                exitcode = 0
-                start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
-                finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
-            elif state == 'FAILED':
-                status = FileQuery.STAT_FAILED
-                exitcode = -1
-                for code, msg in self.error_messages:
-                    if msg in reason:
-                        exitcode = code
-                        break
-                start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
-                finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
-            elif state == 'CANCELED':
-                status = FileQuery.STAT_CANCELLED
-                exitcode = -1
-                start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
-                finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
-            elif state == 'SUBMITTED':
-                status = FileQuery.STAT_NEW
-                exitcode = None
-                start_time = None
-                finish_time = None
+            result = self._ftscall('get_job_status', job_id = job_id, list_files = True)
+    
+            if optype == 'transfer' or optype == 'staging':
+                fts_files = result['files']
             else:
-                status = FileQuery.STAT_QUEUED
-                exitcode = None
-                start_time = None
-                finish_time = None
+                fts_files = result['dm']
 
-            results.append((task_id, status, exitcode, start_time, finish_time))
+            for fts_file in fts_files:
+                try:
+                    task_id = fts_to_task[fts_file['file_id']]
+                except KeyError:
+                    continue
+    
+                state = fts_file['file_state']
+    
+                if state == 'FINISHED':
+                    status = FileQuery.STAT_DONE
+                    exitcode = 0
+                    start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
+                    finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+                elif state == 'FAILED':
+                    status = FileQuery.STAT_FAILED
+                    exitcode = -1
+                    for code, msg in self.error_messages:
+                        if msg in reason:
+                            exitcode = code
+                            break
+                    start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
+                    finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+                elif state == 'CANCELED':
+                    status = FileQuery.STAT_CANCELLED
+                    exitcode = -1
+                    start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
+                    finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+                elif state == 'SUBMITTED':
+                    status = FileQuery.STAT_NEW
+                    exitcode = None
+                    start_time = None
+                    finish_time = None
+                else:
+                    status = FileQuery.STAT_QUEUED
+                    exitcode = None
+                    start_time = None
+                    finish_time = None
+    
+                results.append((task_id, status, exitcode, start_time, finish_time))
 
         return results
 
@@ -245,7 +314,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self._read_only:
             return
 
-        sql = 'DELETE FROM `fts_{optype}_files` WHERE `{optype}_id` = %s'.format(optype = optype)
+        sql = 'DELETE FROM `fts_{optype}_tasks` WHERE `id` = %s'.format(optype = optype)
         self.db.query(sql, task_id)
 
     def _forget_batch(self, batch_id, optype):
