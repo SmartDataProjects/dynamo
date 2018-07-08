@@ -20,13 +20,13 @@ class ApplockBase(WebModule):
 
     def _get_lock(self, app):
         # this function can be called within a table lock, so we need to lock what we use
-        self.registry.db.lock_tables(read = ['activity_lock', 'user_services'])
+        self.registry.db.lock_tables(read = [('activity_lock', 'l'), ('user_services', 's')])
 
         sql = 'SELECT l.`user_id`, s.`name`, UNIX_TIMESTAMP(l.`timestamp`), l.`note` FROM `activity_lock` AS l'
         sql += ' LEFT JOIN `user_services` AS s ON s.`id` = l.`service_id`'
         sql += ' WHERE l.`application` = %s ORDER BY l.`timestamp` ASC';
 
-        lock_data = self.registry.db.query(sql)
+        lock_data = self.registry.db.query(sql, app)
 
         self.registry.db.unlock_tables()
 
@@ -48,7 +48,7 @@ class ApplockBase(WebModule):
         if user_info is None:
             return None, None, None, None, 0
 
-        depth = 0
+        depth = 1
         
         for uid, service, _, _ in lock_data[il:]:
             if uid == first_uid and service == first_service:
@@ -140,7 +140,7 @@ class ApplockUnlock(ApplockBase):
             except IndexError:
                 pass
 
-        self.registry.db.lock_tables(write = ['activity_lock'], read = [('activity_lock', 'l')])
+        self.registry.db.lock_tables(write = ['activity_lock', ('activity_lock', 'l')])
 
         sql = 'DELETE FROM `activity_lock` WHERE `id` = ('
         sql += ' SELECT m FROM ('
