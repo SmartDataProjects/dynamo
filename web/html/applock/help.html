@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dynamo application locks API</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link href="css/dynamo.css" rel="stylesheet">
+    <link href="css/detox.css" rel="stylesheet">
+  </head>
+  <body>
+    <h1>Dynamo application locks API</h1>
+    <h3>Usage</h3>
+    <p>
+      This API is used to block / unblock execution of dynamo applications. Each Dynamo application creates and
+      holds a lock while it executes. External entities that need to block dynamo execution for a period of time can request
+      to lock its applications. Locks are identified by the application name, requesting user, and optionally the
+      "service name". Service name is used if a user is managing locks in behalf of some system.
+      Only users and services with permissions can make changes to the lock database (read-only functions are available to
+      everyone).
+    </p>
+    <p>
+      There is NO browser-friendly interface for application locks at the moment, aside from this manual page. Use
+      cURL to access the API:
+      <pre>
+        curl --cert <i>proxy</i> --key <i>proxy</i> 'https://dynamo.example.com/data/applock/<i>command</i>[?<i>options</i>]'
+      </pre>
+      where <i>proxy</i> is a valid grid proxy and <i>command</i> is one of the commands listed below. <br>
+      <span style="color:red;">Note that authentication with grid proxies work only with cURL built with OpenSSL. Check your cURL version with <code>curl -V</code>.</span>
+    </p>
+
+    <h3>Examples</h3>
+    <ul>
+      <li>Lock detox:
+        <pre>
+          applock/lock?app=detox
+        </pre>
+        For each request, a JSON string is sent back. The structure of the JSON is
+        <pre>
+          {"result": <i>status</i>, "message": <i>message</i>, "data": {"user": <i>user</i>, "service": <i>service</i>, "lock_time": <i>timestamp</i>, "depth": <i>depth</i>[, "note": <i>note</i>]}}
+        </pre>
+        <i>status</i> indicates the state of the HTTP request itself. If <i>message</i> is "Success", you have placed a lock on detox. If the <i>message</i> is instead "Wait", someone else has the lock, as shown in the content of the "data" block. A user can lock an application multiple times. Each lock is accounted for by incrementing the <i>depth</i> counter. To fully unlock, therefore, the user must make as many unlock calls as lock calls.
+      </li>
+      <li>Lock detox as a service user "prodsystem":
+        <pre>
+          applock/lock?service=prodsystem&amp;app=detox
+        </pre>
+      </li>
+      <li>Unlock detox:
+        <pre>
+          applock/unlock?app=detox
+        </pre>
+        Return JSON <i>message</i> is either "Unlocked" or "Locked", where the latter can mean that your depth counter is not 0 or someone else has the lock on the same application now.
+      </li>
+      <li>Check the lock status:
+        <pre>
+          applock/check
+        </pre>
+        Return JSON <i>message</i> is either "Unlocked" or "Locked". The data block appears only when there is a lock.
+      </li>
+    </ul>
+
+    <h3>Commands</h3>
+    <ul>
+      <li><strong>lock</strong>
+        <p>
+          Attempt to lock an application. If the application is already locked by someone else, place a lock reservation. If it is already locked by yourself, increment the depth counter. Takes options <strong>service</strong>, <strong>app</strong>, and <strong>note</strong>. <strong>note</strong> is a free-format string (URL encoded if given as a GET argument).
+        </p>
+      </li>
+      <li><strong>unlock</strong>
+        <p>
+          Decrements your depth counter for the given application. If the counter reaches 0, unlocks an application or cancels the lock reservation. Takes options <strong>service</strong> and <strong>app</strong>.
+        </p>
+      </li>
+      <li><strong>check</strong>
+        <p>
+          Returns the current application lock status. Takes option <strong>app</strong>.
+        </p>
+      </li>
+    </ul>
+
+    <h3>Options</h3>
+    <ul>
+      <li><strong>service</strong>
+        <p>
+          Name of the service the user is managing the locks for. Service name must be known to the Dynamo server beforehand.
+        </p>
+        <p><i>Values</i><br>
+          A service name string.
+        </p>
+      </li>
+      <li><strong>app</strong>
+        <p>
+          Name of the Dynamo application to block / unblock.
+        </p>
+        <p><i>Values</i><br>
+          An application name (e.g. detox, dealer).
+        </p>
+      </li>
+      <li><strong>note</strong>
+        <p>
+          Lock comment.
+        </p>
+        <p><i>Value</i><br>
+          A free-format string. Note that white spaces must be replaced by %20 (and all other non-alphanumeric characters with their URL-encoded values) when passed as a GET string from the command line.
+        </p>
+      </li>
+    </ul>
+  </body>
+</html>

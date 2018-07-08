@@ -18,7 +18,7 @@
       ["INSERT, UPDATE", "dynamo", "system"],
       ["INSERT, UPDATE, DELETE", "dynamo", "dataset_requests"],
       ["INSERT, UPDATE, DELETE", "dynamo", "dataset_accesses"],
-      ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
+      ["INSERT, UPDATE, DELETE, ALTER", "dynamoregister", "activity_lock"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_requests"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_request_items"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_request_sites"],

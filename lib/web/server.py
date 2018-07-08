@@ -248,15 +248,16 @@ class WebServer(object):
                 if content is not None:
                     json_data['data'] = content
 
-                content = json.dumps(json_data)
                 if self.callback is not None:
-                    content = self.callback + '(' + content + ')'
+                    json_str = '%s(%s)' % (self.callback, json.dumps(json_data))
+                else:
+                    json_str = json.dumps(json_data)
 
             headers = [('Content-Type', self.content_type)] + self.headers
 
             start_response('%d %s' % (self.code, status), headers)
 
-            return content + '\n'
+            return json_str + '\n'
 
         finally:
             sys.stdout = stdout
