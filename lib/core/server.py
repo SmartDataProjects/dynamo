@@ -33,9 +33,6 @@ class DynamoServer(object):
     def __init__(self, config):
         LOG.info('Initializing Dynamo server %s.', __file__)
 
-        ## User name
-        self.user = config.user
-
         ## Create the inventory
         self.inventory_config = config.inventory.clone()
         self.inventory = None

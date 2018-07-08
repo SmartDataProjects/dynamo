@@ -25,7 +25,7 @@ class DeleteDataBase(WebModule):
         within a dataset dict, Files within Blocks, and BlockReplicas within DatasetReplicas.
         """
 
-        if ('admin', 'inventory') not in caller.authlist:
+        if ('admin', 'inventory') not in caller.authlist and ('admin', None) not in caller.authlist:
             raise AuthorizationError()
 
         if type(request) is not dict:

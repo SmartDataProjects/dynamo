@@ -31,7 +31,6 @@ SYSBIN_PATH=$($READCONF paths.sysbin_path)
 WEBSERVER=$($READCONF web.enabled)
 APPSERVER=$($READCONF applications.enabled)
 FILEOP=$($READCONF file_operations.enabled)
-SERVER_DB=$($READCONF server.store)
 
 ### Stop the daemons first ###
 
@@ -253,13 +252,43 @@ echo
 
 ### Set up the databases ###
 
-if [ $SERVER_DB ]
+STORE_DB=$($READCONF server.store)
+MASTER_DB=$($READCONF server.master)
+BOARD_DB=$($READCONF server.local_board)
+
+DBS=""
+
+if [ $STORE_DB ]
 then
-  $SOURCE/$SERVER_DB/install.sh
+  $SOURCE/$STORE_DB/install.sh
   if [ $? -ne 0 ]
   then
     echo
-    echo "DB installation failed."
+    echo "$STORE_DB installation failed."
+    exit 1
+  fi
+  DBS=$STORE_DB
+fi
+
+if ! [[ $DBS =~ $MASTER_DB ]]
+then
+  $SOURCE/$MASTER_DB/install.sh
+  if [ $? -ne 0 ]
+  then
+    echo
+    echo "$MASTER_DB installation failed."
+    exit 1
+  fi
+  DBS="$DBS $MASTER_DB"
+fi
+
+if ! [[ $DBS =~ $BOARD_DB ]]
+then
+  $SOURCE/$BOARD_DB/install.sh
+  if [ $? -ne 0 ]
+  then
+    echo
+    echo "$BOARD_DB installation failed."
     exit 1
   fi
 fi
@@ -336,6 +365,10 @@ then
     chmod +x /etc/init.d/dynamo-fileopd
   fi
 fi
+
+### Set up the admin user ###
+
+dynamo-user-auth --dn $($READCONF server.admin_dn) --user $($READCONF server.admin_user) --role admin --yes
 
 echo " Done."
 echo

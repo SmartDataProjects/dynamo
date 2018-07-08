@@ -31,6 +31,12 @@ user=dynamo
 # Email address to send server notifications to
 email=
 
+# Administrator DN
+admin_dn=
+
+# Administrator internal user name
+admin_user=dynamo
+
 # Server persistency store technology (leave blank if not running store)
 store=mysql
 
@@ -43,16 +49,13 @@ master=mysql
 # Configuration to be passed to $master/generate_conf.py
 master_conf={"host": "localhost", "user": "dynamosrv", "readuser": "dynamoread"}
 
-# Master server shadow technology
-shadow=mysql
-
-# Configuration to be passed to $shadow/generate_conf.py
+# Configuration to be passed to $master/generate_conf.py
 shadow_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Server update board technology
 local_board=mysql
 
-# Configuration to be passed to $local_board/generate_local_board_conf.py
+# Configuration to be passed to $local_board/generate_conf.py
 local_board_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Location of the partition definition
@@ -71,12 +74,14 @@ enabled=true
 server=socketappserver:SocketAppServer
 
 # SocketAppServer server uses an OpenSSL socket to receive requests
+#  scheduler_user: An internal user name. admin_user in the server section works.
 #  certfile: Server certificate (can be self-signed)
 #  keyfile: Server private key (can be self-signed)
 #  capath: CA path for client authentication (can be a directory in python 2.7; otherwise a single file with all CA certs concatenated)
 # Cert and key files here can be generated with /etc/pki/tls/certs/make-dummy-cert if you have openssl installed in Red Hat
 server_conf={"workarea_base": "/var/spool/dynamo/work",
              "scheduler_base": "/var/spool/dynamo/scheduler",
+             "scheduler_user": "dynamo",
              "certfile": "/etc/pki/tls/certs/localhost.crt",
              "keyfile": "/etc/pki/tls/certs/localhost.crt",
              "capath": "/etc/pki/tls/certs/ca-bundle.crt"}

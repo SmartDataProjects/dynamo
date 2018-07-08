@@ -15,7 +15,6 @@ persistency_mod = source_conf.get('server', 'store')
 persistency_conf_args = source_conf.get('server', 'store_conf')
 master_mod = source_conf.get('server', 'master')
 master_conf_args = source_conf.get('server', 'master_conf')
-shadow_mod = source_conf.get('server', 'shadow')
 shadow_conf_args = source_conf.get('server', 'shadow_conf')
 local_board_mod = source_conf.get('server', 'local_board')
 local_board_conf_args = source_conf.get('server', 'local_board_conf')
@@ -34,7 +33,7 @@ generators = {}
 
 install_source_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-for mod in [persistency_mod, master_mod, shadow_mod, local_board_mod]:
+for mod in [persistency_mod, master_mod, local_board_mod]:
     if not mod:
         continue
 
@@ -76,7 +75,7 @@ server_conf['inventory']['partition_def_path'] = source_conf.get('server', 'part
 
 server_conf['manager'] = OD()
 server_conf['manager']['master'] = generators[master_mod].generate_master_conf(master_conf_args)
-server_conf['manager']['shadow'] = generators[shadow_mod].generate_master_conf(shadow_conf_args)
+server_conf['manager']['shadow'] = generators[master_mod].generate_master_conf(shadow_conf_args)
 server_conf['manager']['board'] = generators[local_board_mod].generate_local_board_conf(local_board_conf_args)
 
 ## WebServer

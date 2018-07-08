@@ -73,7 +73,7 @@ class MySQLAuthorizer(Authorizer):
 
         targets = self._mysql.query(sql, *args)
 
-        return target in targets
+        return None in targets or target in targets
 
     def list_user_auth(self, user): #override
         sql = 'SELECT r.`name`, a.`target` FROM `user_authorizations` AS a'

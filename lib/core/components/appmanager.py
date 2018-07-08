@@ -50,13 +50,13 @@ class AppManager(object):
         """
         raise NotImplementedError('get_web_write_process_id')
 
-    def schedule_application(self, title, path, args, user, host, write_request):
+    def schedule_application(self, title, path, args, user_id, host, write_request):
         """
         Schedule an application to the master server.
         @param title          Application title.
         @param path           Application path.
         @param args           Arguments to the application
-        @param user           User name of the requester
+        @param user_id        User id of the requester
         @param host           Host name of the requester
         @param write_request  Boolean
 

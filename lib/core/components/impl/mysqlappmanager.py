@@ -78,13 +78,7 @@ class MySQLAppManager(AppManager):
     def get_web_write_process_id(self): #override
         return self._mysql.query('SELECT `user_id` FROM `applications` WHERE `id` = 0')[0]
 
-    def schedule_application(self, title, path, args, user, host, write_request): #override
-        result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
-        if len(result) == 0:
-            return 0
-        else:
-            user_id = result[0]
-
+    def schedule_application(self, title, path, args, user_id, host, write_request): #override
         columns = ('write_request', 'title', 'path', 'args', 'user_id', 'user_host')
         values = (write_request, title, path, args, user_id, host)
         return self._mysql.insert_get_id('applications', columns = columns, values = values)

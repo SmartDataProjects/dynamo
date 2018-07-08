@@ -12,6 +12,7 @@ parser.add_argument('--role', '-r', metavar = 'NAME', dest = 'role', help = 'Rol
 parser.add_argument('--target', '-g', metavar = 'NAME', dest = 'target', help = 'Authorization target.')
 parser.add_argument('--revoke', '-R', action = 'store_true', dest = 'revoke', help = 'Revoke the authorization.')
 parser.add_argument('--list', '-L', action = 'store_true', dest = 'list', help = 'List authorizations')
+parser.add_argument('--yes', '-Y', action = 'store_true', dest = 'yes', help = 'Answer yes to all confirmation.')
 parser.add_argument('--log-level', '-l', metavar = 'LEVEL', dest = 'log_level', default = 'INFO', help = 'Logging level.')
 
 args = parser.parse_args()
@@ -90,14 +91,22 @@ if master_server.identify_user(name = args.user) is None:
         print 'New user; DN is required'
         sys.exit(1)
 
-    response = raw_input('Create new user (%s, %s, %s)? [y/N]' % (args.user, args.dn, args.email))
+    if args.yes:
+        response = 'y'
+    else:
+        response = raw_input('Create new user (%s, %s, %s)? [y/N]' % (args.user, args.dn, args.email))
+
     if response == 'y':
         master_server.add_user(args.user, args.dn, args.email)
     else:
         sys.exit(0)
 
 if args.role and master_server.identify_role(args.role) is None:
-    response = raw_input('Create new role "%s"? [y/N]' % args.role)
+    if args.yes:
+        response = 'y'
+    else:
+        response = raw_input('Create new role "%s"? [y/N]' % args.role)
+
     if response == 'y':
         master_server.add_role(args.role)
     else:
