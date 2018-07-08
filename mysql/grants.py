@@ -39,6 +39,23 @@ thisdir = os.path.dirname(os.path.realpath(__file__))
 with open(thisdir + '/grants.json') as source:
     config = json.load(source)
 
+try:
+    with open(thisdir + '/grants_ext.json') as source:
+        ext_config = json.load(source)
+except IOError:
+    pass
+else:
+    for user, block in ext_config.items():
+        if user is not in config:
+            config[user] = block
+        else:
+            if 'passwd' in block:
+                config[user]['passwd'] = block['passwd']
+            if 'hosts' in block:
+                config[user]['hosts'] = list(set(config[user]['hosts'] + block['hosts']))
+            if 'grants' in block:
+                config[user]['grants'].extend(block['grants'])
+
 users = set()
 for user, userconf in config.items():
     for host in userconf['hosts']:
