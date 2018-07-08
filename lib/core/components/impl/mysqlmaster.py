@@ -229,19 +229,34 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         return inserted != 0
 
     def authorize_user(self, user, role, target): #override
+        user_info = self.identify_user(name = user)
+        if user_info is None:
+            raise RuntimeError('Unknown user %s' % user)
+
+        user_id = user_info[1]
+
         if role is None:
             role_id = 0
         else:
-            try:
-                role_id = self._mysql.query('SELECT `id` FROM `roles` WHERE `name` = %s', role)[0]
-            except IndexError:
+            role_info = self.identify_role(role)
+            if role_info is None:
                 raise RuntimeError('Unknown role %s' % role)
 
-        sql = 'INSERT INTO `user_authorizations` (`user_id`, `role_id`, `target`)'
-        sql += ' SELECT u.`id`, %s, %s FROM `users` AS u WHERE u.`name` = %s'
+            role_id = role_info[1]
+
+        targets = self.list_authorization_targets()
+
+        sql = 'INSERT INTO `user_authorizations` (`user_id`, `role_id`, `target`) VALUES '
+        if target is None:
+            sql += ', '.join('(%d, %d, \'%s\')' % (user_id, role_id, target) for target in targets)
+        else:
+            if target not in targets:
+                raise RuntimeError('Unknown target %s' % target)
+            sql += '(%d, %d, \'%s\')' % (user_id, role_id, target)
+
         sql += ' ON DUPLICATE KEY UPDATE `user_id` = `user_id`'
 
-        inserted = self._mysql.query(sql, role_id, target, user)
+        inserted = self._mysql.query(sql)
         return inserted != 0
 
     def revoke_user_authorization(self, user, role, target): #override

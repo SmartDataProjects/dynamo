@@ -69,7 +69,7 @@ class Authorizer(object):
         Check the authorization on target for (user, role)
         @param user    User name.
         @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
-        @param target  Authorization target. If None, authorize the user for all targets.
+        @param target  Authorization target. If None, check against all targets.
 
         @return boolean
         """

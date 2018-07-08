@@ -50,13 +50,8 @@ master_server = MasterServer.get_instance(master_config.module, master_config.co
 if args.list:
     print 'USER   ROLE   TARGET'
 
-    targets = [None] + master_server.list_authorization_targets()
+    targets = master_server.list_authorization_targets()
     for target in targets:
-        if target is None:
-            target_name = 'ALL'
-        else:
-            target_name = target
-
         for user, role in master_server.list_authorized_users(target):
             if args.user and user != args.user:
                 continue
@@ -68,7 +63,7 @@ if args.list:
             else:
                 role_name = role
 
-            print user, role_name, target_name
+            print user, role_name, target
             
     sys.exit(0)
 
@@ -79,7 +74,12 @@ if not args.user:
 
 if args.revoke:
     if master_server.revoke_user_authorization(args.user, args.role, args.target):
-        print 'Revoked authorization on %s from user=%s role=%s' % (args.target, args.user, args.role)
+        if args.target is None:
+            target_name = 'all'
+        else:
+            target_name = args.target
+
+        print 'Revoked authorization on %s from user=%s role=%s' % (target_name, args.user, args.role)
         sys.exit(0)
     else:
         print 'No authorization was revoked.'
@@ -113,4 +113,6 @@ if args.role and master_server.identify_role(args.role) is None:
         sys.exit(0)
         
 if master_server.authorize_user(args.user, args.role, args.target):
-    print 'Authorized user=%s role=%s for %s.' % (args.user, args.role, args.target)
+    print 'Authorization for user %s:' % args.user
+    for role, target in master_server.list_user_auth(args.user):
+        print '  role=%s on target=%s' % (role, target)
