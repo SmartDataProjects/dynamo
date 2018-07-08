@@ -26,7 +26,6 @@ CONFIG_PATH=$($READCONF paths.config_path)
 ARCHIVE_PATH=$($READCONF paths.archive_path)
 SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
-POLICY_PATH=$($READCONF paths.policy_path)
 CLIENT_PATH=$($READCONF paths.client_path)
 SYSBIN_PATH=$($READCONF paths.sysbin_path)
 WEBSERVER=$($READCONF web.enabled)
@@ -192,7 +191,6 @@ echo "-> Writing $INITSCRIPT.."
 echo "export DYNAMO_BASE=$INSTALL_PATH" > $INITSCRIPT
 echo "export DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $INITSCRIPT
 echo "export DYNAMO_SPOOL=$SPOOL_PATH" >> $INITSCRIPT
-[ $POLICY_PATH ] && echo "export DYNAMO_POLICIES=$POLICY_PATH" >> $INITSCRIPT
 
 echo " Done."
 echo
@@ -311,7 +309,6 @@ then
   echo "DYNAMO_BASE=$INSTALL_PATH" > $ENV
   echo "DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $ENV
   echo "DYNAMO_SPOOL=$SPOOL_PATH" >> $ENV
-  [ $POLICY_PATH ] && echo "DYNAMO_POLICIES=$POLICY_PATH" >> $ENV
 
   systemctl daemon-reload
 else
