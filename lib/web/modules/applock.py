@@ -1,3 +1,5 @@
+import time
+
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._html import HTMLMixin
 from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
@@ -170,6 +172,22 @@ class ApplockUnlock(ApplockBase):
             return data
 
 
+class CurrentApps(WebModule):
+    """
+    List currently running applications. Not quite an app "lock".
+    """
+    def __init__(self, config):
+        WebModule.__init__(self, config)
+        self.require_appmanager = True
+
+    def run(self, caller, request, inventory):
+        result = []
+        for title, write_request, host, queued_time in self.appmanager.get_running_processes():
+            result.append({'title': title, 'write_request': write_request, 'host': host, 'queued_time': time.strftime('%Y-%m-%dT%H:%M:%S UTC', time.gmtime(queued_time))})
+
+        return result
+
+
 class ApplockHelp(WebModule, HTMLMixin):
     """
     Show a help webpage
@@ -186,7 +204,8 @@ class ApplockHelp(WebModule, HTMLMixin):
 export_data = {
     'check': ApplockCheck,
     'lock': ApplockLock,
-    'unlock': ApplockUnlock
+    'unlock': ApplockUnlock,
+    'current': CurrentApps
 }
 
 export_web = {

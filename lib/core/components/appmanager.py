@@ -31,7 +31,11 @@ class AppManager(object):
         return get_instance(AppManager, module, config)
 
     def __init__(self, config):
-        self.applock = Applock.get_instance(config.applock.module, config.applock.config)
+        self.readonly_config = None
+        if 'applock' in config:
+            self.applock = Applock.get_instance(config.applock.module, config.applock.config)
+        else:
+            self.applock = None
 
     def get_writing_process_id(self):
         """
@@ -50,6 +54,12 @@ class AppManager(object):
         Return the PID of the web write process.
         """
         raise NotImplementedError('get_web_write_process_id')
+
+    def get_running_processes(self):
+        """
+        @return  [(title, write_request, host, queued_time)]
+        """
+        raise NotImplementedError('get_running_processes')
 
     def schedule_application(self, title, path, args, user_id, host, write_request):
         """
@@ -76,7 +86,10 @@ class AppManager(object):
         #  . There is already a write process
         read_only = self.manager.master.inhibit_write()
 
-        blocked_apps = self.applock.get_locked_apps()
+        if self.applock:
+            blocked_apps = self.applock.get_locked_apps()
+        else:
+            blocked_apps = []
 
         return self._do_get_next_application(read_only, blocked_apps)
 
@@ -191,3 +204,10 @@ class AppManager(object):
         @return [name]
         """
         raise NotImplementedError('get_sequences')
+
+    def create_appmanager(self):
+        """
+        Clone self with fresh connections. Use readonly_config if available.
+        @return A new AppManager instance with a fresh connection
+        """
+        raise NotImplementedError('create_appmanager')

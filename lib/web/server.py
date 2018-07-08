@@ -393,6 +393,9 @@ class WebServer(object):
 
             provider.authorizer = authorizer
 
+        if provider.require_appmanager:
+            provider.appmanager = self.dynamo_server.manager.master.create_appmanager()
+
         try:
             ## Step 4
             if 'CONTENT_TYPE' in environ and environ['CONTENT_TYPE'] == 'application/json':

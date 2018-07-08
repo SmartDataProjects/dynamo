@@ -78,6 +78,15 @@ class MySQLAppManager(AppManager):
     def get_web_write_process_id(self): #override
         return self._mysql.query('SELECT `user_id` FROM `applications` WHERE `id` = 0')[0]
 
+    def get_running_processes(self): #override
+        sql = 'SELECT `title`, `write_request`, `server`, UNIX_TIMESTAMP(`timestamp`) FROM `applications` WHERE `status` = \'run\''
+
+        result = []
+        for title, write_request, server, timestamp in self._mysql.xquery(sql):
+            result.append((title, (write_request == 1), server, timestamp))
+
+        return result
+
     def schedule_application(self, title, path, args, user_id, host, write_request): #override
         columns = ('write_request', 'title', 'path', 'args', 'user_id', 'user_host')
         values = (write_request, title, path, args, user_id, host)
@@ -256,3 +265,12 @@ class MySQLAppManager(AppManager):
             sql += ' WHERE `status` = \'enabled\''
 
         return self._mysql.query(sql)
+
+    def create_appmanager(self): #override
+        if self.readonly_config is None:
+            db_params = self._mysql.config()
+        else:
+            db_params = self.readonly_config.db_params
+
+        config = Configuration(db_params = db_params)
+        return MySQLAppManager(config)
