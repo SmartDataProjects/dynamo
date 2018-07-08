@@ -35,7 +35,7 @@
         </pre>
         For each request, a JSON string is sent back. The structure of the JSON is
         <pre>
-          {"result": <i>status</i>, "message": <i>message</i>, "data": {"user": <i>user</i>, "service": <i>service</i>, "lock_time": <i>timestamp</i>, "depth": <i>depth</i>[, "note": <i>note</i>]}}
+          {{"result": <i>status</i>, "message": <i>message</i>, "data": {{"user": <i>user</i>, "service": <i>service</i>, "lock_time": <i>timestamp</i>, "depth": <i>depth</i>[, "note": <i>note</i>]}}}}
         </pre>
         <i>status</i> indicates the state of the HTTP request itself. If <i>message</i> is "Success", you have placed a lock on detox. If the <i>message</i> is instead "Wait", someone else has the lock, as shown in the content of the "data" block. A user can lock an application multiple times. Each lock is accounted for by incrementing the <i>depth</i> counter. To fully unlock, therefore, the user must make as many unlock calls as lock calls.
       </li>

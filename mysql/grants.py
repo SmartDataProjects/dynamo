@@ -46,7 +46,7 @@ except IOError:
     pass
 else:
     for user, block in ext_config.items():
-        if user is not in config:
+        if user not in config:
             config[user] = block
         else:
             if 'passwd' in block:

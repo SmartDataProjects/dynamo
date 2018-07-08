@@ -63,7 +63,7 @@ class ApplockCheck(ApplockBase):
 
     def run(self, caller, request, inventory):
         self._validate_request(request, ['app'])
-        user, service, timestamp, note, depth = self._get_lock(self, request['app'])
+        user, service, timestamp, note, depth = self._get_lock(request['app'])
 
         if user is None:
             self.message = 'Not locked'
@@ -105,7 +105,7 @@ class ApplockLock(ApplockBase):
 
         self.registry.db.query(sql, caller.id, service_id, request['app'], note)
 
-        user, service, timestamp, note, depth = self._get_lock(self, request['app'])
+        user, service, timestamp, note, depth = self._get_lock(request['app'])
 
         if user is None:
             # cannot happen but for safety
@@ -150,7 +150,7 @@ class ApplockUnlock(ApplockBase):
         sql += ')'
         self.registry.db.query(sql, caller.id, service_id, request['app'])
 
-        user, service, timestamp, note, depth = self._get_lock(self, request['app'])
+        user, service, timestamp, note, depth = self._get_lock(request['app'])
 
         # a little cleanup
         if self.registry.db.query('SELECT COUNT(*) FROM `activity_lock`')[0] == 0:
