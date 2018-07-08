@@ -311,12 +311,11 @@ then
   echo '#############################'
   echo
   
-  CONTENTS_PATH=$($READCONF web.contents_path)
-  mkdir -p $CONTENTS_PATH
+  mkdir -p $INSTALL_PATH/web
   
-  cp -r $SOURCE/web/html $CONTENTS_PATH/html
-  cp -r $SOURCE/web/js $CONTENTS_PATH/js
-  cp -r $SOURCE/web/css $CONTENTS_PATH/css
+  cp -r $SOURCE/web/html $INSTALL_PATH/web/html
+  cp -r $SOURCE/web/js $INSTALL_PATH/web/js
+  cp -r $SOURCE/web/css $INSTALL_PATH/web/css
 fi
 
 ### Install the daemons ###
@@ -368,7 +367,7 @@ fi
 
 ### Set up the admin user ###
 
-dynamo-user-auth --dn $($READCONF server.admin_dn) --user $($READCONF server.admin_user) --role admin --yes
+dynamo-user-auth --dn "$($READCONF server.admin_dn)" --user $($READCONF server.admin_user) --role admin --yes
 
 echo " Done."
 echo

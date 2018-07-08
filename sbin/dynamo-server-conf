@@ -74,8 +74,8 @@ if persistency_mod:
 server_conf['inventory']['partition_def_path'] = source_conf.get('server', 'partition_def')
 
 server_conf['manager'] = OD()
-server_conf['manager']['master'] = generators[master_mod].generate_master_conf(master_conf_args)
-server_conf['manager']['shadow'] = generators[master_mod].generate_master_conf(shadow_conf_args)
+server_conf['manager']['master'] = generators[master_mod].generate_master_conf(master_conf_args, master = True)
+server_conf['manager']['shadow'] = generators[master_mod].generate_master_conf(shadow_conf_args, master = False)
 server_conf['manager']['board'] = generators[local_board_mod].generate_local_board_conf(local_board_conf_args)
 
 ## WebServer
