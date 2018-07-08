@@ -75,17 +75,10 @@ class AppManager(object):
         """
         raise NotImplementedError('schedule_application')
 
-    def get_next_application(self):
+    def get_next_application(self, read_only):
         """
         @return {appid, write_request, user_name, user_host, title, path, args} or None
         """
-
-        # Cannot run a write process if
-        #  . I am supposed to be updating my inventory
-        #  . There is a server starting
-        #  . There is already a write process
-        read_only = self.manager.master.inhibit_write()
-
         if self.applock:
             blocked_apps = self.applock.get_locked_apps()
         else:

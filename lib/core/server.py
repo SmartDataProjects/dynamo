@@ -268,7 +268,13 @@ class DynamoServer(object):
 
                 self.manager.master.lock()
                 try:
-                    app = self.manager.master.get_next_application()
+                    # Cannot run a write process if
+                    #  . I am supposed to be updating my inventory
+                    #  . There is a server starting
+                    #  . There is already a write process
+                    read_only = self.manager.master.inhibit_write()
+
+                    app = self.manager.master.get_next_application(read_only)
                     if app is not None:
                         self.manager.master.update_application(app['appid'], status = AppManager.STAT_ASSIGNED, hostname = self.manager.hostname)
         
