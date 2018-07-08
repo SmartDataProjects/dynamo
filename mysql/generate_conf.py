@@ -109,6 +109,18 @@ def generate_master_conf(conf_str):
         ('scratch_db', 'dynamo_tmp')
     ])
 
+    master_conf['config']['applock'] = OD([
+        ('module': 'mysqlapplock:MySQLApplock'),
+        ('config': OD())
+    ])
+    master_conf['config']['applock']['config']['db_params'] = OD([
+        ('host', host),
+        ('db', 'dynamoregister'),
+        ('user', user),
+        ('passwd', passwd),
+        ('scratch_db', 'dynamo_tmp')
+    ])
+
     if readuser is not None:
         if 'readpasswd' in conf:
             readpasswd = conf['readpasswd']

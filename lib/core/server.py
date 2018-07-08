@@ -3,9 +3,9 @@ import sys
 import shutil
 import time
 import logging
-import socket
 import signal
 import code
+import hashlib
 import multiprocessing
 import threading
 import Queue
@@ -265,8 +265,15 @@ class DynamoServer(object):
     
                 ## Step 1: Poll
                 LOG.debug('Polling for applications.')
-    
-                app = self.manager.get_next_application()
+
+                self.manager.master.lock()
+                try:
+                    app = self.manager.master.get_next_application()
+                    if app is not None:
+                        self.manager.master.update_application(app['appid'], status = AppManager.STAT_ASSIGNED, hostname = self.manager.hostname)
+        
+                finally:
+                    self.manager.master.unlock()
     
                 if app is None:
                     if len(child_processes) == 0 and first_wait:
@@ -290,10 +297,14 @@ class DynamoServer(object):
     
                 LOG.info('Found application %s from %s (AID %s, write request: %s)', app['title'], app['user_name'], app['appid'], app['write_request'])
 
-                is_local = (app['user_host'] == socket.gethostname())
+                is_local = (app['user_host'] == self.manager.hostname)
     
                 if app['write_request']:
-                    if not self.manager.check_write_auth(app['title'], app['user_name'], app['path']):
+                    # check authorization
+                    with open(app['path'] + '/exec.py') as source:
+                        checksum = hashlib.md5(source.read()).hexdigest()
+
+                    if not self.manager.master.check_application_auth(app['title'], app['user_name'], checksum):
                         LOG.warning('Application %s from %s is not authorized for write access.', app['title'], app['user_name'])
                         # TODO send a message
     
@@ -515,7 +526,7 @@ class DynamoServer(object):
                     return 1, update_commands
 
     def _collect_updates_from_web(self):
-        if self.manager.master.get_writing_process_id() != 0 or self.manager.master.get_writing_process_host() != socket.gethostname():
+        if self.manager.master.get_writing_process_id() != 0 or self.manager.master.get_writing_process_host() != self.manager.hostname:
             return
 
         read_state, update_commands = self._collect_updates()
@@ -551,7 +562,7 @@ class DynamoServer(object):
             LOG.debug('Cleaning up %s (%s).', app['title'], app['path'])
 
             if os.path.isdir(app['path']):
-                if app['user_host'] != socket.gethostname():
+                if app['user_host'] != self.manager.hostname:
                     # First make sure all mounts are removed.
                     serverutils.clean_remote_request(app['path'])
     

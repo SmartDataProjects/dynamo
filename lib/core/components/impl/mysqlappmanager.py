@@ -83,13 +83,16 @@ class MySQLAppManager(AppManager):
         values = (write_request, title, path, args, user_id, host)
         return self._mysql.insert_get_id('applications', columns = columns, values = values)
 
-    def get_next_application(self, read_only): #override
+    def _do_get_next_application(self, read_only, blocked_apps): #override
         sql = 'SELECT `applications`.`id`, `write_request`, `title`, `path`, `args`, `users`.`name`, `user_host` FROM `applications`'
         sql += ' INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
         sql += ' WHERE `status` = \'new\''
         if read_only:
             sql += ' AND `write_request` = 0'
+        if len(blocked_apps) != 0:
+            sql += ' AND `title` NOT IN %s' % MySQL.stringify_sequence(blocked_apps)
         sql += ' ORDER BY `applications`.`id` LIMIT 1'
+
         result = self._mysql.query(sql)
 
         if len(result) == 0:

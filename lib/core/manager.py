@@ -1,7 +1,6 @@
 import time
 import threading
 import socket
-import hashlib
 import logging
 
 from dynamo.core.components.host import ServerHost, OutOfSyncError
@@ -195,65 +194,6 @@ class ServerManager(object):
 
         if self.master_host == 'localhost' or self.master_host == socket.gethostname():
             self.shadow = None
-
-    def get_next_application(self):
-        """
-        Fetch the next application to run.
-        @return id, write_request, title, path, args, user
-        """
-        self.master.lock()
-        try:
-            # Cannot run a write process if
-            #  . I am supposed to be updating my inventory
-            #  . There is a server starting
-            #  . There is already a write process
-            read_only = self.master.inhibit_write()
-
-            app = self.master.get_next_application(read_only)
-    
-            if app is None:
-                return None
-            else:
-                self.master.update_application(app['appid'], status = AppManager.STAT_ASSIGNED, hostname = self.hostname)
-                return app
-
-        finally:
-            self.master.unlock()
-
-    def get_application_status(self, app_id):
-        """
-        Get the application status.
-        """
-        applications = self.master.get_applications(app_id = app_id)
-        if len(applications) == 0:
-            # We assume the application was killed an removed
-            return AppManager.STAT_KILLED
-        else:
-            return applications[0]['status']
-
-    def set_application_status(self, app_id, status):
-        """
-        Set the application status.
-        """
-        self.master.update_application(app_id, status = status)
-
-    def check_write_auth(self, title, user, path, exc_name = 'exec.py'):
-        """
-        Check the authorization of write-requesting application. The title, user_id, and the md5 hash of the application
-        script must match the registration.
-
-        @param title    Title of the application
-        @param user     Requester user name
-        @param path     Application path
-        @param exc_name Executable file name
-
-        @return boolean
-        """
-        # check authorization
-        with open(path + '/' + exc_name) as source:
-            checksum = hashlib.md5(source.read()).hexdigest()
-
-        return self.master.check_application_auth(title, user, checksum)
 
     def find_remote_store(self, hostname = ''):
         """

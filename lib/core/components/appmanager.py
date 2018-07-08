@@ -1,4 +1,5 @@
 from dynamo.utils.classutil import get_instance
+from dynamo.registry.applock import Applock
 
 class AppManager(object):
     """
@@ -30,7 +31,7 @@ class AppManager(object):
         return get_instance(AppManager, module, config)
 
     def __init__(self, config):
-        pass
+        self.applock = Applock.get_instance(config.applock.module, config.applock.config)
 
     def get_writing_process_id(self):
         """
@@ -64,13 +65,20 @@ class AppManager(object):
         """
         raise NotImplementedError('schedule_application')
 
-    def get_next_application(self, read_only):
+    def get_next_application(self):
         """
-        @param read_only    Limit to read_only applications
-        
         @return {appid, write_request, user_name, user_host, title, path, args} or None
         """
-        raise NotImplementedError('get_next_application')
+
+        # Cannot run a write process if
+        #  . I am supposed to be updating my inventory
+        #  . There is a server starting
+        #  . There is already a write process
+        read_only = self.manager.master.inhibit_write()
+
+        blocked_apps = self.applock.get_locked_apps()
+
+        return self._do_get_next_application(read_only, blocked_apps)
 
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None):
         """
