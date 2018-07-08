@@ -46,7 +46,8 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
       ["SELECT", "dynamoserver", "users"],
       ["SELECT", "dynamoserver", "roles"],
-      ["SELECT", "dynamoserver", "user_authorizations"]
+      ["SELECT", "dynamoserver", "user_authorizations"],
+      ["SELECT", "dynamoserver", "applications"]
     ]
   },
   "dynamofod": {
