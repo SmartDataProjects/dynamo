@@ -2,7 +2,7 @@ import time
 
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._html import HTMLMixin
-from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
+from dynamo.web.exceptions import MissingParameter, ExtraParameter
 from dynamo.registry.registry import RegistryDatabase
 
 class ApplockBase(WebModule):
