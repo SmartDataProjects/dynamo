@@ -393,11 +393,13 @@ class BlockReplica(object):
                 tmplist = []
                 for fid in other.file_ids:
                     if type(fid) is str:
-                        lfile = Block._inventory_store.get_file(self._block, fid)
-                        if lfile is None:
-                            raise ObjectError('Cannot find file %s' % fid)
-
-                        tmplist.append(lfile.id)
+                        lfn = fid
+                        fid = Block._inventory_store.get_file_id(lfn)
+                        if fid is None:
+                            # file not in store yet
+                            tmplist.append(lfn)
+                        else:
+                            tmplist.append(fid)
                     else:
                         tmplist.append(fid)
     
