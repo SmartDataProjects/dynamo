@@ -400,29 +400,33 @@ class WebServer(object):
             ## Step 4
             if 'CONTENT_TYPE' in environ and environ['CONTENT_TYPE'] == 'application/json':
                 try:
-                    request = json.loads(environ['wsgi.input'].read())
+                    provider.input_data = json.loads(environ['wsgi.input'].read())
                 except:
                     self.code = 400
                     self.message = 'Could not parse input.'
                     return
-            else:
-                # Use FieldStorage to parse URL-encoded GET and POST requests
-                fstorage = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
-                if fstorage.list is None:
-                    self.code = 400
-                    self.message = 'Could not parse input.'
-                    return 
 
-                request = {}
-                for item in fstorage.list:
-                    if item.name.endswith('[]'):
-                        key = item.name[:-2]
-                        try:
-                            request[key].append(item.value)
-                        except KeyError:
-                            request[key] = [item.value]
-                    else:
-                        request[item.name] = item.value
+                fp = None
+            else:
+                fp = environ['wsgi.input']
+
+            # Use FieldStorage to parse URL-encoded GET and POST requests
+            fstorage = FieldStorage(fp = fp, environ = environ, keep_blank_values = True)
+            if fstorage.list is None:
+                self.code = 400
+                self.message = 'Could not parse input.'
+                return 
+
+            request = {}
+            for item in fstorage.list:
+                if item.name.endswith('[]'):
+                    key = item.name[:-2]
+                    try:
+                        request[key].append(item.value)
+                    except KeyError:
+                        request[key] = [item.value]
+                else:
+                    request[item.name] = item.value
 
             unicode2str(request)
     

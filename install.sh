@@ -56,7 +56,7 @@ echo
 
 echo "-> Checking dependencies.."
 
-REQUIRED="python sqlite"
+REQUIRED="python sqlite python-dateutil"
 
 if [ "$APPSERVER" = "true" ]
 then

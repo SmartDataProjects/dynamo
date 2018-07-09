@@ -7,6 +7,8 @@ class WebModule(object):
         self.additional_headers = []
         self.message = ''
 
+        self.input_data = None
+
     def run(self, caller, request, inventory):
         """
         Main module code.
