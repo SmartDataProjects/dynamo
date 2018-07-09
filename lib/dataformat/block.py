@@ -3,7 +3,7 @@ import collections
 import threading
 import weakref
 
-from exceptions import ObjectError, IntegrityError
+from exceptions import ObjectError, IntegrityError, OperationalError
 from _namespace import customize_block
 
 class Block(object):
@@ -13,6 +13,7 @@ class Block(object):
 
     __slots__ = ['_name', '_dataset', 'id', '_size', '_num_files', 'is_open', 'replicas', 'last_update', '_files']
 
+    # Container for the file-set "originals" - Block._files will normally be a weakref pointing to a value of this dict
     _files_cache = collections.OrderedDict()
     _files_cache_lock = threading.Lock()
     _MAX_FILES_CACHE_DEPTH = 100
@@ -190,7 +191,7 @@ class Block(object):
         """
         Add a file to self._files. This function does *not* increment _num_files or _size.
         """
-        # make self._files a non-volatile set
+        # make self._files a non-volatile set and add the file to it
         self._check_and_load_files(cache = False)
         self._files.add(lfile)
 
@@ -201,7 +202,7 @@ class Block(object):
         if lfile not in self.files:
             return
 
-        # make self._files a non-volatile set
+        # make self._files a non-volatile set and remove the file from it
         self._check_and_load_files(cache = False)
         self._files.remove(lfile)
 
@@ -245,10 +246,18 @@ class Block(object):
                         Block._files_cache.popitem(last = False)
 
                     files = frozenset(self._load_files())
+                    
+                    if Block._inventory_store._server_side:
+                        # In server side inventory, we don't keep the files in memory
+                        return files
+
                     Block._files_cache[self] = files
                     self._files = weakref.proxy(files)
 
             else:
+                if Block._inventory_store._server_side:
+                    raise OperationalError('Block.files should not be loaded as non-cache on the server side.')
+
                 if type(self._files) is weakref.ProxyType:
                     try:
                         self._files = set(self._files)

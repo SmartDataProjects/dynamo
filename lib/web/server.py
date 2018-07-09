@@ -248,9 +248,11 @@ class WebServer(object):
                 if content is not None:
                     json_data['data'] = content
 
-                content = json.dumps(json_data)
+                # replace content with the json string
                 if self.callback is not None:
-                    content = self.callback + '(' + content + ')'
+                    content = '%s(%s)' % (self.callback, json.dumps(json_data))
+                else:
+                    content = json.dumps(json_data)
 
             headers = [('Content-Type', self.content_type)] + self.headers
 
@@ -364,6 +366,11 @@ class WebServer(object):
         except:
             return self._internal_server_error()
 
+        if provider.must_authenticate and user is None:
+            self.code = 400
+            self.message = 'Resource only available with HTTPS.'
+            return
+
         if provider.write_enabled:
             self.dynamo_server.manager.master.lock()
 
@@ -391,33 +398,40 @@ class WebServer(object):
 
             provider.authorizer = authorizer
 
+        if provider.require_appmanager:
+            provider.appmanager = self.dynamo_server.manager.master.create_appmanager()
+
         try:
             ## Step 4
             if 'CONTENT_TYPE' in environ and environ['CONTENT_TYPE'] == 'application/json':
                 try:
-                    request = json.loads(environ['wsgi.input'].read())
+                    provider.input_data = json.loads(environ['wsgi.input'].read())
                 except:
                     self.code = 400
                     self.message = 'Could not parse input.'
                     return
-            else:
-                # Use FieldStorage to parse URL-encoded GET and POST requests
-                fstorage = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
-                if fstorage.list is None:
-                    self.code = 400
-                    self.message = 'Could not parse input.'
-                    return 
 
-                request = {}
-                for item in fstorage.list:
-                    if item.name.endswith('[]'):
-                        key = item.name[:-2]
-                        try:
-                            request[key].append(item.value)
-                        except KeyError:
-                            request[key] = [item.value]
-                    else:
-                        request[item.name] = item.value
+                fp = None
+            else:
+                fp = environ['wsgi.input']
+
+            # Use FieldStorage to parse URL-encoded GET and POST requests
+            fstorage = FieldStorage(fp = fp, environ = environ, keep_blank_values = True)
+            if fstorage.list is None:
+                self.code = 400
+                self.message = 'Could not parse input.'
+                return 
+
+            request = {}
+            for item in fstorage.list:
+                if item.name.endswith('[]'):
+                    key = item.name[:-2]
+                    try:
+                        request[key].append(item.value)
+                    except KeyError:
+                        request[key] = [item.value]
+                else:
+                    request[item.name] = item.value
 
             unicode2str(request)
     

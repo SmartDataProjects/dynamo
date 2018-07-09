@@ -78,24 +78,30 @@ class MySQLAppManager(AppManager):
     def get_web_write_process_id(self): #override
         return self._mysql.query('SELECT `user_id` FROM `applications` WHERE `id` = 0')[0]
 
-    def schedule_application(self, title, path, args, user, host, write_request): #override
-        result = self._mysql.query('SELECT `id` FROM `users` WHERE `name` = %s', user)
-        if len(result) == 0:
-            return 0
-        else:
-            user_id = result[0]
+    def get_running_processes(self): #override
+        sql = 'SELECT `title`, `write_request`, `server`, UNIX_TIMESTAMP(`timestamp`) FROM `applications` WHERE `status` = \'run\''
 
+        result = []
+        for title, write_request, server, timestamp in self._mysql.xquery(sql):
+            result.append((title, (write_request == 1), server, timestamp))
+
+        return result
+
+    def schedule_application(self, title, path, args, user_id, host, write_request): #override
         columns = ('write_request', 'title', 'path', 'args', 'user_id', 'user_host')
         values = (write_request, title, path, args, user_id, host)
         return self._mysql.insert_get_id('applications', columns = columns, values = values)
 
-    def get_next_application(self, read_only): #override
+    def _do_get_next_application(self, read_only, blocked_apps): #override
         sql = 'SELECT `applications`.`id`, `write_request`, `title`, `path`, `args`, `users`.`name`, `user_host` FROM `applications`'
         sql += ' INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
         sql += ' WHERE `status` = \'new\''
         if read_only:
             sql += ' AND `write_request` = 0'
+        if len(blocked_apps) != 0:
+            sql += ' AND `title` NOT IN %s' % MySQL.stringify_sequence(blocked_apps)
         sql += ' ORDER BY `applications`.`id` LIMIT 1'
+
         result = self._mysql.query(sql)
 
         if len(result) == 0:
@@ -259,3 +265,12 @@ class MySQLAppManager(AppManager):
             sql += ' WHERE `status` = \'enabled\''
 
         return self._mysql.query(sql)
+
+    def create_appmanager(self): #override
+        if self.readonly_config is None:
+            db_params = self._mysql.config()
+        else:
+            db_params = self.readonly_config.db_params
+
+        config = Configuration(db_params = db_params)
+        return MySQLAppManager(config)

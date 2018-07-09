@@ -1,4 +1,5 @@
 from dynamo.utils.classutil import get_instance
+from dynamo.registry.applock import Applock
 
 class AppManager(object):
     """
@@ -30,7 +31,11 @@ class AppManager(object):
         return get_instance(AppManager, module, config)
 
     def __init__(self, config):
-        pass
+        self.readonly_config = None
+        if 'applock' in config:
+            self.applock = Applock.get_instance(config.applock.module, config.applock.config)
+        else:
+            self.applock = None
 
     def get_writing_process_id(self):
         """
@@ -50,13 +55,19 @@ class AppManager(object):
         """
         raise NotImplementedError('get_web_write_process_id')
 
-    def schedule_application(self, title, path, args, user, host, write_request):
+    def get_running_processes(self):
+        """
+        @return  [(title, write_request, host, queued_time)]
+        """
+        raise NotImplementedError('get_running_processes')
+
+    def schedule_application(self, title, path, args, user_id, host, write_request):
         """
         Schedule an application to the master server.
         @param title          Application title.
         @param path           Application path.
         @param args           Arguments to the application
-        @param user           User name of the requester
+        @param user_id        User id of the requester
         @param host           Host name of the requester
         @param write_request  Boolean
 
@@ -66,11 +77,14 @@ class AppManager(object):
 
     def get_next_application(self, read_only):
         """
-        @param read_only    Limit to read_only applications
-        
         @return {appid, write_request, user_name, user_host, title, path, args} or None
         """
-        raise NotImplementedError('get_next_application')
+        if self.applock:
+            blocked_apps = self.applock.get_locked_apps()
+        else:
+            blocked_apps = []
+
+        return self._do_get_next_application(read_only, blocked_apps)
 
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None):
         """
@@ -183,3 +197,10 @@ class AppManager(object):
         @return [name]
         """
         raise NotImplementedError('get_sequences')
+
+    def create_appmanager(self):
+        """
+        Clone self with fresh connections. Use readonly_config if available.
+        @return A new AppManager instance with a fresh connection
+        """
+        raise NotImplementedError('create_appmanager')

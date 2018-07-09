@@ -150,6 +150,17 @@ class MySQLInventoryStore(InventoryStore):
 
         return files
 
+    def get_file_id(self, lfn): #override
+        LOG.debug('Loading file id for LFN %s', lfn)
+
+        sql = 'SELECT `id` FROM `files` WHERE `name` = %s'
+        result = self._mysql.query(sql, lfn)
+
+        if len(result) == 0:
+            return None
+
+        return result[0]
+
     def find_block_containing(self, lfn): #override
         sql = 'SELECT d.`name`, b.`name` FROM `files` AS f'
         sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'

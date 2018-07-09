@@ -116,6 +116,10 @@ class BlockReplica(object):
     def __eq__(self, other):
         if BlockReplica._use_file_ids:
             # check len() first to avoid having to create sets for no good reason
+            if (self.file_ids is None and other.file_ids is not None) or \
+               (self.file_ids is not None and other.file_ids is None):
+                return False
+
             file_ids_match = (self.file_ids == other.file_ids) or ((len(self.file_ids) == len(other.file_ids)) and (set(self.file_ids) == set(other.file_ids)))
         else:
             file_ids_match = self.file_ids == other.file_ids
@@ -389,7 +393,13 @@ class BlockReplica(object):
                 tmplist = []
                 for fid in other.file_ids:
                     if type(fid) is str:
-                        tmplist.append(self._block.find_file(fid, must_find = True).id)
+                        lfn = fid
+                        fid = Block._inventory_store.get_file_id(lfn)
+                        if fid is None:
+                            # file not in store yet
+                            tmplist.append(lfn)
+                        else:
+                            tmplist.append(fid)
                     else:
                         tmplist.append(fid)
     

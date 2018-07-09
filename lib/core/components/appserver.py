@@ -15,6 +15,7 @@ from email.mime.text import MIMEText
 
 from dynamo.core.components.appmanager import AppManager
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat.exceptions import ConfigurationError
 
 LOG = logging.getLogger(__name__)
 
@@ -39,6 +40,12 @@ class AppServer(object):
 
         # Base directory for scheduled application sequences
         self.scheduler_base = config.scheduler_base
+
+        # User id for the scheduler
+        user_info = self.dynamo_server.manager.master.identify_user(name = config.scheduler_user)
+        if user_info is None:
+            raise ConfigurationError('Unknown user %s given for the scheduler.' % config.scheduler_user)
+        self.scheduler_user_id = user_info[1]
 
         ## Queues synchronous applications will wait on. {app_id: Queue}
         self.synch_app_queues = {}
@@ -170,7 +177,7 @@ class AppServer(object):
 
         with self.notify_lock:
             keys = set(app_data.keys())
-            args = set(['title', 'path', 'args', 'user', 'host', 'write_request'])
+            args = set(['title', 'path', 'args', 'user_id', 'host', 'write_request'])
             if len(keys - args) != 0:
                 return False, 'Extra parameter(s): %s' % (str(list(keys - args)))
             if len(args - keys) != 0:
@@ -540,7 +547,7 @@ class AppServer(object):
                     out.write('++++ %s: %s\n' % (timestamp, title))
                     out.write('%s/%s %s\n\n' % (work_dir, title, arguments))
 
-                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.dynamo_server.user, socket.gethostname(), (write_request != 0))
+                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.scheduler_user_id, socket.gethostname(), (write_request != 0))
                 cursor.execute('UPDATE `sequence` SET `app_id` = ? WHERE `id` = ?', (app_id, sid))
                 LOG.info('[Scheduler] Scheduled %s/%s %s (AID %s).', sequence_name, title, arguments, app_id)
 

@@ -73,7 +73,7 @@ def generate_store_conf(conf_str):
 
     return store_conf
 
-def generate_master_conf(conf_str):
+def generate_master_conf(conf_str, master = True):
     conf = json.loads(conf_str)
 
     with open(thisdir + '/grants.json') as source:
@@ -108,6 +108,19 @@ def generate_master_conf(conf_str):
         ('passwd', passwd),
         ('scratch_db', 'dynamo_tmp')
     ])
+
+    if master:
+        master_conf['config']['applock'] = OD([
+            ('module', 'mysqlapplock:MySQLApplock'),
+            ('config', OD())
+        ])
+        master_conf['config']['applock']['config']['db_params'] = OD([
+            ('host', host),
+            ('db', 'dynamoregister'),
+            ('user', user),
+            ('passwd', passwd),
+            ('scratch_db', 'dynamo_tmp')
+        ])
 
     if readuser is not None:
         if 'readpasswd' in conf:

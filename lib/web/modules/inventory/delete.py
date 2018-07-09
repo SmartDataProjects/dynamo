@@ -15,6 +15,7 @@ class DeleteDataBase(WebModule):
 
     def __init__(self, config):
         WebModule.__init__(self, config)
+        self.must_authenticate = True
 
     def run(self, caller, request, inventory):
         """
@@ -28,22 +29,22 @@ class DeleteDataBase(WebModule):
         if ('admin', 'inventory') not in caller.authlist:
             raise AuthorizationError()
 
-        if type(request) is not dict:
-            raise IllFormedRequest('request', type(request).__name__, hint = 'data must be a dict type')
+        if type(self.input_data) is not dict:
+            raise IllFormedRequest('input', type(self.input_data).__name__, hint = 'data must be a dict type')
 
         counts = {}
 
-        if 'dataset' in request:
-            self._delete_datasets(request['dataset'], inventory, counts)
+        if 'dataset' in self.input_data:
+            self._delete_datasets(self.input_data['dataset'], inventory, counts)
 
-        if 'site' in request:
-            self._delete_sites(request['site'], inventory, counts)
+        if 'site' in self.input_data:
+            self._delete_sites(self.input_data['site'], inventory, counts)
 
-        if 'group' in request:
-            self._delete_groups(request['group'], inventory, counts)
+        if 'group' in self.input_data:
+            self._delete_groups(self.input_data['group'], inventory, counts)
 
-        if 'datasetreplica' in request:
-            self._delete_datasetreplicas(request['datasetreplica'], inventory, counts)
+        if 'datasetreplica' in self.input_data:
+            self._delete_datasetreplicas(self.input_data['datasetreplica'], inventory, counts)
 
         self._finalize()
 

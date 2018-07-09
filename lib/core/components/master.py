@@ -189,7 +189,7 @@ class MasterServer(Authorizer, AppManager):
         Revoke authorization on target from (user, role).
         @param user    User name.
         @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
-        @param target  Authorization target. If None, authorize the user for all targets.
+        @param target  Authorization target. If None, revoke for all targets.
 
         @return True if success, False if not.
         """

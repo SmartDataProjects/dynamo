@@ -18,7 +18,9 @@ class InventoryStore(object):
         return get_instance(InventoryStore, module, config)
 
     def __init__(self, config):
-        pass
+        # We need to distinguish server-side storage with storage used by applications
+        # When using server-side applications, we never load files into memory (even as cache).
+        self._server_side = False
 
     def close(self):
         pass
@@ -83,6 +85,17 @@ class InventoryStore(object):
         """
         
         raise NotImplementedError('get_files')
+
+    def get_file_id(self, lfn):
+        """
+        Return the id of a file with the given LFN.
+
+        @param lfn    LFN of the file.
+
+        @return File id or None.
+        """
+
+        raise NotImplementedError('get_file_id')
 
     def find_block_containing(self, lfn):
         """
