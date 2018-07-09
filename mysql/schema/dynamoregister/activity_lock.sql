@@ -6,5 +6,5 @@ CREATE TABLE `activity_lock` (
   `timestamp` datetime NOT NULL,
   `note` text COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
-  KEY `lock` (`user_id`,`service_id`,`application`)
+  KEY `lock` (`user`,`service_id`,`application`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

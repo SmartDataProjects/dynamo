@@ -331,6 +331,7 @@ class MySQL(object):
 
         except:
             self._fully_unlock()
+            raise
 
     def xquery(self, sql, *args):
         """

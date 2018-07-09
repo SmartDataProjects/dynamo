@@ -1,3 +1,4 @@
+import time
 import dateutil.parser as dateparser
 import calendar
 
@@ -141,7 +142,7 @@ class DetoxLockBase(WebModule):
         service_id = 0
         if 'service' in request:
             try:
-                service_id = self.registry.db.query('SELECT `id` FROM `services` WHERE `name` = %s', request['service'])[0]
+                service_id = self.registry.db.query('SELECT `id` FROM `user_services` WHERE `name` = %s', request['service'])[0]
             except IndexError:
                 pass
 
@@ -168,7 +169,7 @@ class DetoxLockBase(WebModule):
         new_locks = []
 
         for v in values:
-            lock_id = self.registry.db.insert_get_id('detox_locks', columns, values)
+            lock_id = self.registry.db.insert_get_id('detox_locks', columns, v)
 
             new_lock = {
                 'lockid': lock_id,
@@ -251,24 +252,20 @@ class DetoxLock(DetoxLockBase):
 
         self._lock_tables()
 
-        try:
-            existing = self._get_lock(request, valid_only = True)
-    
-            if len(existing) == 0:
-                # new lock
-                new_locks = self._create_lock(request)
-    
-                self.message = 'Lock created'
-                return new_locks
-    
-            else:
-                updated_locks = self._update_lock(existing, request)
-                
-                self.message = 'Lock updated'
-                return updated_locks
+        existing = self._get_lock(request, valid_only = True)
 
-        finally:
-            self._unlock_tables()
+        if len(existing) == 0:
+            # new lock
+            locks = self._create_lock(request)
+            self.message = 'Lock created'
+
+        else:
+            locks = self._update_lock(existing, request)
+            self.message = 'Lock updated'
+
+        self._unlock_tables()
+
+        return locks
 
 
 class DetoxUnlock(DetoxLockBase):
@@ -283,21 +280,20 @@ class DetoxUnlock(DetoxLockBase):
 
         self._lock_tables()
 
-        try:
-            existing = self._get_lock(request, valid_only = True)
+        existing = self._get_lock(request, valid_only = True)
 
-            if len(existing) == 0:
-                self.message = 'No lock found'
-                return None
+        if len(existing) == 0:
+            self.message = 'No lock found'
+            locks = None
 
-            else:
-                disabled_locks = self._disable_lock(existing)
+        else:
+            locks = self._disable_lock(existing)
 
-                self.message = 'Unlocked'
-                return disabled_locks
+            self.message = 'Unlocked'
 
-        finally:
-            self._unlock_tables()
+        self._unlock_tables()
+
+        return locks
 
 
 class DetoxListLock(DetoxLockBase):
@@ -337,27 +333,25 @@ class DetoxLockSet(DetoxLockBase):
         found_ids = set()
         n_inserted = 0
 
-        try:
-            for entry in self.input_data:
-                self._validate_request(entry, inventory, ['item', 'expires'], ['sites', 'groups', 'comment'])
+        for entry in self.input_data:
+            self._validate_request(entry, inventory, ['item', 'expires'], ['sites', 'groups', 'comment'])
 
-                entry['user'] = caller.name
-                if 'service' in request:
-                    entry['service'] = request['service']
+            entry['user'] = caller.name
+            if 'service' in request:
+                entry['service'] = request['service']
 
-                existing = self._get_lock(entry, valid_only = True)
+            existing = self._get_lock(entry, valid_only = True)
 
-                if len(existing) == 0:
-                    n_inserted += len(self._create_lock(entry))
-                else:
-                    found_ids.update(e['lockid'] for e in existing)
-                    self._update_lock(existing, entry)
+            if len(existing) == 0:
+                n_inserted += len(self._create_lock(entry))
+            else:
+                found_ids.update(e['lockid'] for e in existing)
+                self._update_lock(existing, entry)
 
-            to_unlock = set(e['lockid'] for e in user_all) - found_ids
-            n_disabled = len(self._disable_lock(dict(('lockid', i) for i in to_unlock)))
+        to_unlock = set(e['lockid'] for e in user_all) - found_ids
+        n_disabled = len(self._disable_lock(dict(('lockid', i) for i in to_unlock)))
             
-        finally:
-            self._unlock_tables()
+        self._unlock_tables()
 
         self.message = '%d locks' % (len(user_all) + n_inserted - n_disabled)
 
