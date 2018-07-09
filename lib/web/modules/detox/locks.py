@@ -2,8 +2,9 @@ import dateutil.parser as dateparser
 import calendar
 
 from dynamo.web.modules._base import WebModule
-from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
+from dynamo.web.modules._html import HTMLMixin
 from dynamo.web.modules._common import yesno
+from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
 from dynamo.registry.registry import RegistryDatabase
 from dynamo.utils.interface.mysql import MySQL
 
@@ -203,6 +204,7 @@ class DetoxLockBase(WebModule):
 
         sql = 'UPDATE `detox_locks` SET ' + ', '.join(updates)
 
+
         updated = []
 
         for lock in existing:
@@ -348,9 +350,27 @@ class DetoxLockSet(DetoxLockBase):
 
         return None
 
+
+class DetoxLockHelp(WebModule, HTMLMixin):
+    """
+    Show a help webpage
+    """
+
+    def __init__(self, config):
+        WebModule.__init__(self, config) 
+        HTMLMixin.__init__(self, 'Dynamo Detox locks API', 'detox/help.html')
+
+    def run(self, caller, request, inventory):
+        return self.form_html({})
+
+
 export_data = {
-    'lock': DetoxLock,
-    'unlock': DetoxUnlock,
-    'list': DetoxListLock,
-    'set': DetoxLockSet
+    'lock/lock': DetoxLock,
+    'lock/unlock': DetoxUnlock,
+    'lock/list': DetoxListLock,
+    'lock/set': DetoxLockSet
+}
+
+export_web = {
+    'lock/help': DetoxLockHelp
 }

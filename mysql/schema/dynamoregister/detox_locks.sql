@@ -6,7 +6,7 @@ CREATE TABLE `detox_locks` (
   `lock_date` datetime NOT NULL,
   `unlock_date` datetime DEFAULT NULL,
   `expiration_date` datetime NOT NULL,
-  `user` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
+  `user` varchar(64) COLLATE latin1_general_cs NOT NULL,
   `service_id` int(10) unsigned NOT NULL DEFAULT '0',
   `comment` mediumtext COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
