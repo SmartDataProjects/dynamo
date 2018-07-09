@@ -8,7 +8,6 @@ from dynamo.registry.registry import RegistryDatabase
 class ApplockBase(WebModule):
     def __init__(self, config):
         WebModule.__init__(self, config)
-        self.require_authorizer = True
         self.registry = RegistryDatabase()
 
     def _validate_request(self, request, required, allowed = None):
@@ -24,7 +23,7 @@ class ApplockBase(WebModule):
         # this function can be called within a table lock, so we need to lock what we use
         self.registry.db.lock_tables(read = [('activity_lock', 'l'), ('user_services', 's')])
 
-        sql = 'SELECT l.`user_id`, s.`name`, UNIX_TIMESTAMP(l.`timestamp`), l.`note` FROM `activity_lock` AS l'
+        sql = 'SELECT l.`user`, s.`name`, UNIX_TIMESTAMP(l.`timestamp`), l.`note` FROM `activity_lock` AS l'
         sql += ' LEFT JOIN `user_services` AS s ON s.`id` = l.`service_id`'
         sql += ' WHERE l.`application` = %s ORDER BY l.`timestamp` ASC';
 
@@ -35,28 +34,15 @@ class ApplockBase(WebModule):
         if len(lock_data) == 0:
             return None, None, None, None, 0
 
-        il = 0
-        while il != len(lock_data):
-            first_uid, first_service, lock_time, note = lock_data[il]
-            user_info = self.authorizer.identify_user(uid = first_uid)
-            il += 1
-
-            if user_info is None:
-                # this can accumulate - need to delete some time
-                continue
-            else:
-                break
-
-        if user_info is None:
-            return None, None, None, None, 0
+        first_user, first_service, lock_time, note = lock_data[0]
 
         depth = 1
         
-        for uid, service, _, _ in lock_data[il:]:
-            if uid == first_uid and service == first_service:
+        for user, service, _, _ in lock_data[1:]:
+            if user == first_user and service == first_service:
                 depth += 1
                 
-        return user_info[0], first_service, lock_time, note, depth
+        return user, first_service, lock_time, note, depth
 
 class ApplockCheck(ApplockBase):
     """
@@ -83,6 +69,9 @@ class ApplockLock(ApplockBase):
     """
     Lock an application.
     """
+    def __init__(self, config):
+        ApplockBase.__init__(self, config)
+        self.must_authenticate = True
 
     def run(self, caller, request, inventory):
         self._validate_request(request, ['app'], ['service', 'note'])
@@ -102,10 +91,10 @@ class ApplockLock(ApplockBase):
         else:
             note = None
     
-        sql = 'INSERT INTO `activity_lock` (`user_id`, `service_id`, `application`, `timestamp`, `note`)'
+        sql = 'INSERT INTO `activity_lock` (`user`, `service_id`, `application`, `timestamp`, `note`)'
         sql += ' VALUES (%s, %s, %s, NOW(), %s)'
 
-        self.registry.db.query(sql, caller.id, service_id, request['app'], note)
+        self.registry.db.query(sql, caller.name, service_id, request['app'], note)
 
         user, service, timestamp, note, depth = self._get_lock(request['app'])
 
@@ -130,6 +119,9 @@ class ApplockUnlock(ApplockBase):
     """
     Unlock an application.
     """
+    def __init__(self, config):
+        ApplockBase.__init__(self, config)
+        self.must_authenticate = True
 
     def run(self, caller, request, inventory):
         self._validate_request(request, ['app'], ['service'])
@@ -147,10 +139,10 @@ class ApplockUnlock(ApplockBase):
         sql = 'DELETE FROM `activity_lock` WHERE `id` = ('
         sql += ' SELECT m FROM ('
         sql += '  SELECT MAX(`id`) m FROM `activity_lock` AS l'
-        sql += '  WHERE `user_id` = %s AND `service_id` = %s AND `application` = %s'
+        sql += '  WHERE `user` = %s AND `service_id` = %s AND `application` = %s'
         sql += ' ) AS tmp'
         sql += ')'
-        self.registry.db.query(sql, caller.id, service_id, request['app'])
+        self.registry.db.query(sql, caller.name, service_id, request['app'])
 
         user, service, timestamp, note, depth = self._get_lock(request['app'])
 

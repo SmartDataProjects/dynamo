@@ -10,6 +10,7 @@ from dynamo.utils.interface.mysql import MySQL
 
 class DetoxLockBase(WebModule):
     def __init__(self, config):
+        WebModule.__init__(self, config)
         self.registry = RegistryDatabase()
 
     def _validate_request(self, request, inventory, required, allowed = None):
@@ -239,6 +240,10 @@ class DetoxLockBase(WebModule):
 
 
 class DetoxLock(DetoxLockBase):
+    def __init__(self, config):
+        DetoxLockBase.__init__(self, config)
+        self.must_authenticate = True
+
     def run(self, caller, request, inventory):
         self._validate_request(request, inventory, ['item', 'expires'], ['service', 'sites', 'groups', 'comment'])
 
@@ -267,6 +272,10 @@ class DetoxLock(DetoxLockBase):
 
 
 class DetoxUnlock(DetoxLockBase):
+    def __init__(self, config):
+        DetoxLockBase.__init__(self, config)
+        self.must_authenticate = True
+
     def run(self, caller, request, inventory):
         self._validate_request(request, inventory, [], ['service', 'lockid', 'item', 'sites', 'groups', 'created_before', 'created_after', 'expires_before', 'expires_after'])
 
@@ -307,6 +316,10 @@ class DetoxListLock(DetoxLockBase):
 
 
 class DetoxLockSet(DetoxLockBase):
+    def __init__(self, config):
+        DetoxLockBase.__init__(self, config)
+        self.must_authenticate = True
+
     def run(self, caller, request, inventory):
         if type(self.input_data) is not list:
             raise IllFormedRequest('input', type(self.input_data).__name__, hint = 'data must be a list')
@@ -358,7 +371,7 @@ class DetoxLockHelp(WebModule, HTMLMixin):
 
     def __init__(self, config):
         WebModule.__init__(self, config) 
-        HTMLMixin.__init__(self, 'Dynamo Detox locks API', 'detox/help.html')
+        HTMLMixin.__init__(self, 'Dynamo Detox locks API', 'detox/locks_help.html')
 
     def run(self, caller, request, inventory):
         return self.form_html({})

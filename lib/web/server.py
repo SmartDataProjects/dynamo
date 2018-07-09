@@ -366,6 +366,11 @@ class WebServer(object):
         except:
             return self._internal_server_error()
 
+        if provider.must_authenticate and user is None:
+            self.code = 400
+            self.message = 'Resource only available with HTTPS.'
+            return
+
         if provider.write_enabled:
             self.dynamo_server.manager.master.lock()
 

@@ -25,6 +25,7 @@ class CopyRequestBase(WebModule, ParseInputMixin):
 class MakeCopyRequest(CopyRequestBase):
     def __init__(self, config):
         CopyRequestBase.__init__(self, config)
+        self.must_authenticate = True
 
         # config.request.copy points to the "copy" method of dict
         self.default_group = config['request']['copy']['default_group']
@@ -127,6 +128,7 @@ class PollCopyRequest(CopyRequestBase):
 class CancelCopyRequest(CopyRequestBase):
     def __init__(self, config):
         CopyRequestBase.__init__(self, config)
+        self.must_authenticate = True
 
     def run(self, caller, request, inventory):
         self.parse_input(request, inventory, ('request_id',), ('request_id',))

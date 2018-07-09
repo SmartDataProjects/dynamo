@@ -15,6 +15,7 @@ class InjectDataBase(WebModule):
 
     def __init__(self, config):
         WebModule.__init__(self, config)
+        self.must_authenticate = True
 
     def run(self, caller, request, inventory):
         """

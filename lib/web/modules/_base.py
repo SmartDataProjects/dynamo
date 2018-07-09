@@ -1,6 +1,7 @@
 class WebModule(object):
     def __init__(self, config):
         self.write_enabled = False
+        self.must_authenticate = False
         self.require_authorizer = False
         self.require_appmanager = False
         self.content_type = 'application/json'
