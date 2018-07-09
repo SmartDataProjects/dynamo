@@ -121,6 +121,8 @@ class DynamoServer(object):
             else:
                 self._setup_remote_store()
 
+            Block._inventory_store = self.inventory._store
+
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
 

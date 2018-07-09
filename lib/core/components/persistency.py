@@ -84,6 +84,15 @@ class InventoryStore(object):
         
         raise NotImplementedError('get_files')
 
+    def get_file(self, lfn):
+        """
+        Return a File object with the given LFN.
+
+        @param lfn    LFN of the file.
+        """
+
+        raise NotImplementedError('get_file')
+
     def find_block_containing(self, lfn):
         """
         Find the names of the dataset and the block containing a given file.
