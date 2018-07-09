@@ -391,7 +391,12 @@ class RLFSM(object):
                 if status == 'retry':
                     failed_sources = {}
                     for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
-                        source = inventory.sites[source_name]
+                        try:
+                            source = inventory.sites[source_name]
+                        except KeyError:
+                            # this site may have been deleted in this process
+                            continue
+
                         if source not in failed_sources:
                             failed_sources[source] = [exitcode]
                         else:
@@ -431,6 +436,11 @@ class RLFSM(object):
             sql += ' LEFT JOIN `files` AS f ON f.`id` = u.`file_id`'
             sql += ' LEFT JOIN `sites` AS s ON s.`id` = u.`site_id`'
             sql += ' WHERE f.`name` IS NULL OR s.`name` IS NULL'
+            self.db.query(sql)
+
+            sql = 'DELETE FROM f USING `failed_transfers` AS f'
+            sql += ' LEFT JOIN `file_subscriptions` AS u ON u.`id` = f.`subscription_id`'
+            sql += ' WHERE u.`id` IS NULL'
             self.db.query(sql)
 
         return subscriptions
@@ -832,7 +842,10 @@ class RLFSM(object):
         sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
 
         for site_name, file_name in self.db.execute_many(sql, 'u.`id`', subscription_ids):
-            site = inventory.sites[site_name]
+            try:
+                site = inventory.sites[site_name]
+            except KeyError:
+                continue
 
             try:
                 dirs = site_dirs[site]
