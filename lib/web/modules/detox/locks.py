@@ -1,6 +1,7 @@
 import time
 import dateutil.parser as dateparser
 import calendar
+import logging
 
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules._html import HTMLMixin
@@ -8,6 +9,8 @@ from dynamo.web.modules._common import yesno
 from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
 from dynamo.registry.registry import RegistryDatabase
 from dynamo.utils.interface.mysql import MySQL
+
+LOG = logging.getLogger(__name__)
 
 class DetoxLockBase(WebModule):
     def __init__(self, config):
@@ -115,6 +118,9 @@ class DetoxLockBase(WebModule):
 
         existing = []
 
+        LOG.info(sql)
+        LOG.info(args)
+
         for lock_id, user, service, item, site, group, lock_date, unlock_date, expiration_date, comment in self.registry.db.xquery(sql, *args):
             lock = {
                 'lockid': lock_id,
@@ -152,7 +158,7 @@ class DetoxLockBase(WebModule):
         if 'comment' in request:
             comment = request['comment']
 
-        values = [(request['item'], None, None, request['expires'], request['user'], service_id, comment)]
+        values = [(request['item'], None, None, MySQL.bare('NOW()'), MySQL.bare('FROM_UNIXTIME(%d)' % request['expires']), request['user'][0], service_id, comment)]
         if 'sites' in request:
             new_values = []
             for site in request['sites']:
@@ -173,19 +179,19 @@ class DetoxLockBase(WebModule):
 
             new_lock = {
                 'lockid': lock_id,
-                'user': v[4],
-                'item': v[0],
+                'user': request['user'][0],
+                'item': request['item'],
                 'locked': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()),
                 'expires': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(request['expires']))
             }
-            if v[5] != 0:
+            if v[6] != 0:
                 new_lock['service'] = request['service']
             if v[1] is not None:
                 new_lock['sites'] = v[1]
             if v[2] is not None:
                 new_lock['groups'] = v[2]
-            if v[6] is not None:
-                new_lock['comment'] = v[6]
+            if 'comment' in request:
+                new_lock['comment'] = request['comment']
 
             new_locks.append(new_lock)
 
@@ -248,7 +254,7 @@ class DetoxLock(DetoxLockBase):
     def run(self, caller, request, inventory):
         self._validate_request(request, inventory, ['item', 'expires'], ['service', 'sites', 'groups', 'comment'])
 
-        request['user'] = caller.name
+        request['user'] = (caller.name,)
 
         self._lock_tables()
 
@@ -276,7 +282,7 @@ class DetoxUnlock(DetoxLockBase):
     def run(self, caller, request, inventory):
         self._validate_request(request, inventory, [], ['service', 'lockid', 'item', 'sites', 'groups', 'created_before', 'created_after', 'expires_before', 'expires_after'])
 
-        request['user'] = caller.name
+        request['user'] = (caller.name,)
 
         self._lock_tables()
 
@@ -301,9 +307,9 @@ class DetoxListLock(DetoxLockBase):
         self._validate_request(request, inventory, [], ['lockid', 'user', 'service', 'item', 'sites', 'groups', 'created_before', 'created_after', 'expires_before', 'expires_after', 'showall'])
 
         if 'user' not in request:
-            request['user'] = caller.name
+            request['user'] = (caller.name,)
 
-        valid_only = yesno(request, 'showall', True)
+        valid_only = (not yesno(request, 'showall', False))
 
         existing = self._get_lock(request, valid_only = valid_only)
 
@@ -324,7 +330,7 @@ class DetoxLockSet(DetoxLockBase):
 
         self._lock_tables()
 
-        constraint = {'user': caller.name}
+        constraint = {'user': (caller.name,)}
         if 'service' in request:
             constraint['service'] = request['service']
 
@@ -336,7 +342,7 @@ class DetoxLockSet(DetoxLockBase):
         for entry in self.input_data:
             self._validate_request(entry, inventory, ['item', 'expires'], ['sites', 'groups', 'comment'])
 
-            entry['user'] = caller.name
+            entry['user'] = (caller.name,)
             if 'service' in request:
                 entry['service'] = request['service']
 
