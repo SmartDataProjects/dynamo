@@ -89,6 +89,7 @@ class MySQLAuthorizer(Authorizer):
         sql = 'SELECT u.`name`, s.`name` FROM `user_authorizations` AS a'
         sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
         sql += ' INNER JOIN `roles` AS s ON s.`id` = a.`role_id`'
+        args = tuple()
 
         if target is not None:
             sql += ' WHERE a.`target` = %s'
