@@ -403,7 +403,7 @@ class WebServer(object):
 
         try:
             ## Step 4
-            post_request = {}
+            post_request = None
 
             if environ['REQUEST_METHOD'] == 'POST':
                 try:
@@ -433,12 +433,13 @@ class WebServer(object):
 
             get_request = parse_qs(environ['QUERY_STRING'])
 
-            for key, value in post_request:
-                if key in get_request:
-                    # return dict of parse_qs is {key: list}
-                    get_request[key].extend(post_request[key])
-                else:
-                    get_request[key] = post_request[key]
+            if post_request is not None:
+                for key, value in post_request.iteritems():
+                    if key in get_request:
+                        # return dict of parse_qs is {key: list}
+                        get_request[key].extend(post_request[key])
+                    else:
+                        get_request[key] = post_request[key]
 
             request = {}
             for key, value in get_request:

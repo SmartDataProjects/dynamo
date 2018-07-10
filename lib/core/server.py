@@ -830,8 +830,6 @@ class DynamoServer(object):
         executable.inventory = inventory
         executable.authorizer = self.manager.master.create_authorizer()
     
-        Block._inventory_store = inventory._store
-    
         if not read_only:
             executable.read_only = False
             # create a list of updated and deleted objects the executable can fill

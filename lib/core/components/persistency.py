@@ -1,7 +1,7 @@
 import time
 import logging
 
-from dynamo.dataformat import Dataset
+from dynamo.dataformat import Block
 from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
@@ -36,7 +36,10 @@ class InventoryStore(object):
         Return a clone of self with new connections etc.
         """
 
-        raise NotImplementedError('new_handle')
+        handle = self._do_new_handle()
+        Block._inventory_store = handle
+
+        return handle
 
     def get_partitions(self, conditions):
         """
