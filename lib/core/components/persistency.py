@@ -1,7 +1,7 @@
 import time
 import logging
 
-from dynamo.dataformat import Dataset
+from dynamo.dataformat import Block
 from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class InventoryStore(object):
     def __init__(self, config):
         # We need to distinguish server-side storage with storage used by applications
         # When using server-side applications, we never load files into memory (even as cache).
-        self._server_side = False
+        self.server_side = False
 
     def close(self):
         pass

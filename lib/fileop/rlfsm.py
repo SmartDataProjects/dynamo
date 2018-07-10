@@ -314,10 +314,8 @@ class RLFSM(object):
 
         subscriptions = []
 
-        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, d.`name`, b.`name`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
+        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
         get_all += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-        get_all += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
-        get_all += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         get_all += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
 
         constraints = []
@@ -331,18 +329,12 @@ class RLFSM(object):
         if len(constraints) != 0:
             get_all += ' WHERE ' + ' AND '.join(constraints)
 
-        get_all += ' ORDER BY d.`id`, b.`id`, s.`id`'
+        get_all += ' ORDER BY s.`id`'
 
         get_tried_sites = 'SELECT s.`name`, f.`exitcode` FROM `failed_transfers` AS f'
         get_tried_sites += ' INNER JOIN `sites` AS s ON s.`id` = f.`source_id`'
         get_tried_sites += ' WHERE f.`subscription_id` = %s'
 
-        _dataset_name = ''
-        _block_name = ''
-        _site_name = ''
-
-        dataset = None
-        block = None
         destination = None
 
         to_hold = []
@@ -352,27 +344,21 @@ class RLFSM(object):
         DELETE = 1
 
         for row in self.db.query(get_all):
-            sub_id, status, optype, dataset_name, block_name, file_id, file_name, site_name = row
+            sub_id, status, optype, file_id, file_name, site_name = row
 
-            if dataset_name != _dataset_name:
-                _dataset_name = dataset_name
-                # dataset must exist
-                dataset = inventory.datasets[dataset_name]
+            if destination is None or site_name != destination.name:
+                try:
+                    destination = inventory.sites[site_name]
+                except KeyError:
+                    # Site disappeared from the inventory - weird but can happen!
+                    continue
 
-                _block_name = ''
+            lfile = inventory.find_file(file_name)
+            if lfile is None:
+                # Dataset, block, or file was deleted from the inventory earlier in this process (deletion not reflected in the inventory store yet)
+                continue
 
-            if block_name != _block_name:
-                _block_name = block_name
-                # block must exist
-                block = dataset.find_block(Block.to_internal_name(block_name), must_find = True)
-
-            if site_name != _site_name:
-                _site_name = site_name
-                # site must exist
-                destination = inventory.sites[site_name]
-
-            lfile = block.find_file(file_name, must_find = True)
-            dest_replica = block.find_replica(destination, must_find = True)
+            dest_replica = lfile.block.find_replica(destination, must_find = True)
 
             if optype == COPY:
                 if status not in ('done', 'held', 'cancelled'):
@@ -383,7 +369,7 @@ class RLFSM(object):
 
                     disk_sources = []
                     tape_sources = []
-                    for replica in block.replicas:
+                    for replica in lfile.block.replicas:
                         if replica.site == destination or replica.site.status != Site.STAT_READY:
                             continue
         
@@ -405,7 +391,12 @@ class RLFSM(object):
                 if status == 'retry':
                     failed_sources = {}
                     for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
-                        source = inventory.sites[source_name]
+                        try:
+                            source = inventory.sites[source_name]
+                        except KeyError:
+                            # this site may have been deleted in this process
+                            continue
+
                         if source not in failed_sources:
                             failed_sources[source] = [exitcode]
                         else:
@@ -439,6 +430,18 @@ class RLFSM(object):
         if not self._read_only:
             self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'done\', `last_update` = NOW()', 'id', to_done)
             self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', to_hold)
+
+            # Clean up subscriptions for deleted files / sites
+            sql = 'DELETE FROM u USING `file_subscriptions` AS u'
+            sql += ' LEFT JOIN `files` AS f ON f.`id` = u.`file_id`'
+            sql += ' LEFT JOIN `sites` AS s ON s.`id` = u.`site_id`'
+            sql += ' WHERE f.`name` IS NULL OR s.`name` IS NULL'
+            self.db.query(sql)
+
+            sql = 'DELETE FROM f USING `failed_transfers` AS f'
+            sql += ' LEFT JOIN `file_subscriptions` AS u ON u.`id` = f.`subscription_id`'
+            sql += ' WHERE u.`id` IS NULL'
+            self.db.query(sql)
 
         return subscriptions
 
@@ -839,7 +842,10 @@ class RLFSM(object):
         sql += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
 
         for site_name, file_name in self.db.execute_many(sql, 'u.`id`', subscription_ids):
-            site = inventory.sites[site_name]
+            try:
+                site = inventory.sites[site_name]
+            except KeyError:
+                continue
 
             try:
                 dirs = site_dirs[site]

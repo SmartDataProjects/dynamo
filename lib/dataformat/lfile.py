@@ -53,7 +53,7 @@ class File(object):
 
         block = dataset.find_block(self._block_name(), must_find = True)
 
-        if Block._inventory_store._server_side:
+        if Block.inventory_store.server_side:
             # This is the server-side main inventory which doesn't need a running image of files,
             # so we don't call block.find_file (which triggers an inventory store lookup) but simply
             # return a clone of this file linked to the proper block.
