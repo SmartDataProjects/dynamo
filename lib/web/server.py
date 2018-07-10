@@ -428,6 +428,8 @@ class WebServer(object):
                         self.message = 'Could not parse input.'
                         return
 
+                    unicode2str(provider.input_data)
+
                 elif content_type == 'application/x-www-form-urlencoded':
                     post_request = parse_qs(post_data)
 
@@ -440,6 +442,8 @@ class WebServer(object):
                         get_request[key].extend(post_request[key])
                     else:
                         get_request[key] = post_request[key]
+
+            unicode2str(get_request)
 
             request = {}
             for key, value in get_request.iteritems():
