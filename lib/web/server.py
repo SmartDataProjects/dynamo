@@ -10,7 +10,7 @@ import collections
 import warnings
 import multiprocessing
 import cStringIO
-from cgi import FieldStorage
+from cgi import parse_qs, escape
 from flup.server.fcgi_fork import WSGIServer
 
 import dynamo.core.serverutils as serverutils
@@ -403,38 +403,54 @@ class WebServer(object):
 
         try:
             ## Step 4
-            if 'CONTENT_TYPE' in environ and environ['CONTENT_TYPE'] == 'application/json':
+            post_request = {}
+
+            if environ['REQUEST_METHOD'] == 'POST':
                 try:
-                    provider.input_data = json.loads(environ['wsgi.input'].read())
-                except:
-                    self.code = 400
-                    self.message = 'Could not parse input.'
-                    return
+                    content_type = environ['CONTENT_TYPE']
+                except KeyError:
+                    content_type = 'application/x-www-form-urlencoded'
 
-                fp = None
-            else:
-                fp = environ['wsgi.input']
+                # In principle we should grab CONTENT_LENGTH from environ and only read as many bytes as given, but wsgi.input seems to know where the EOF is
+                try:
+                    content_length = environ['CONTENT_LENGTH']
+                except KeyError:
+                    # length -1: rely on wsgi.input having an EOF at the end
+                    content_length = -1
 
-            # Use FieldStorage to parse URL-encoded GET and POST requests
-            fstorage = FieldStorage(fp = fp, environ = environ, keep_blank_values = True)
-            if fstorage.list is None:
-                self.code = 400
-                self.message = 'Could not parse input.'
-                return 
+                post_data = environ['wsgi.input'].read(content_length)
+
+                if content_type == 'application/json':
+                    try:
+                        provider.input_data = json.loads(post_data)
+                    except:
+                        self.code = 400
+                        self.message = 'Could not parse input.'
+                        return
+
+                elif content_type == 'application/x-www-form-urlencoded':
+                    post_request = parse_qs(post_data)
+
+            get_request = parse_qs(environ['QUERY_STRING'])
+
+            for key, value in post_request:
+                if key in get_request:
+                    # return dict of parse_qs is {key: list}
+                    get_request[key].extend(post_request[key])
+                else:
+                    get_request[key] = post_request[key]
 
             request = {}
-            for item in fstorage.list:
-                if item.name.endswith('[]'):
-                    key = item.name[:-2]
-                    try:
-                        request[key].append(item.value)
-                    except KeyError:
-                        request[key] = [item.value]
+            for key, value in get_request:
+                if key.endswith('[]'):
+                    key = key[:-2]
+                    request[key] = map(escape, value)
                 else:
-                    request[item.name] = item.value
+                    if len(value) == 1:
+                        request[key] = escape(value[0])
+                    else:
+                        request[key] = map(escape, value)
 
-            unicode2str(request)
-    
             ## Step 5
             caller = WebServer.User(user, dn, user_id, authlist)
 
