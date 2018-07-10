@@ -108,9 +108,12 @@ class DynamoServer(object):
             if not self.inventory.has_store:
                 raise RuntimeError('No persistent inventory storage is available.')
         else:
+            # find_remote_store raises a RuntimeError if no source is found
+            hostname, module, config, version = self.manager.find_remote_store()
+
             if self.inventory.has_store:
                 # Clone the content from a remote store
-                hostname, module, config, version = self.manager.find_remote_store()
+
                 # No server will be updating because write process is blocked while we load
                 if version == self.inventory.store_version():
                     LOG.info('Local persistency store is up to date.')
@@ -119,7 +122,8 @@ class DynamoServer(object):
                     LOG.info('Cloning inventory content from persistency store at %s', hostname)
                     self.inventory.clone_store(module, config)
             else:
-                self._setup_remote_store()
+                # Use this remote store as mine (read-only)
+                self._setup_remote_store(hostname, module, config)
 
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
@@ -209,7 +213,8 @@ class DynamoServer(object):
         if self.inventory is not None and not self.inventory.check_store():
             # We lost connection to the remote persistency store. Try another server.
             # If there is no server to connect to, this method raises a RuntimeError
-            self._setup_remote_store()
+            hostname, module, config, version = self.manager.find_remote_store()
+            self._setup_remote_store(hostname, module, config)
 
     def _run_application_cycles(self):
         """
@@ -408,12 +413,9 @@ class DynamoServer(object):
 
             raise
 
-    def _setup_remote_store(self, hostname = ''):
-        # find_remote_store raises a RuntimeError if not source is found
-        hostname, module, config, version = self.manager.find_remote_store(hostname = hostname)
+    def _setup_remote_store(self, hostname, module, config):
         LOG.info('Using persistency store at %s', hostname)
         self.manager.register_remote_store(hostname)
-
         self.inventory.init_store(module, config)
 
     def _collect_processes(self, child_processes):
