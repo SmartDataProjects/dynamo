@@ -20,7 +20,7 @@ class InventoryStore(object):
     def __init__(self, config):
         # We need to distinguish server-side storage with storage used by applications
         # When using server-side applications, we never load files into memory (even as cache).
-        self._server_side = False
+        self.server_side = False
 
     def close(self):
         pass
@@ -36,10 +36,7 @@ class InventoryStore(object):
         Return a clone of self with new connections etc.
         """
 
-        handle = self._do_new_handle()
-        Block._inventory_store = handle
-
-        return handle
+        raise NotImplementedError('new_handle')
 
     def get_partitions(self, conditions):
         """

@@ -28,7 +28,7 @@ class MySQLInventoryStore(InventoryStore):
 
         return True
 
-    def _do_new_handle(self): #override
+    def new_handle(self): #override
         config = Configuration(db_params = self._mysql.config())
         return MySQLInventoryStore(config)
 

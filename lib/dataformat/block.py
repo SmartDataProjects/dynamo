@@ -17,7 +17,9 @@ class Block(object):
     _files_cache = collections.OrderedDict()
     _files_cache_lock = threading.Lock()
     _MAX_FILES_CACHE_DEPTH = 100
-    _inventory_store = None
+
+    # Pointer to inventory._store
+    inventory_store = None
 
     # Regular expression object (from re.compile) of the block name format, if there is any.
     name_pattern = None
@@ -247,7 +249,7 @@ class Block(object):
 
                     files = frozenset(self._load_files())
                     
-                    if Block._inventory_store._server_side:
+                    if Block.inventory_store.server_side:
                         # In server side inventory, we don't keep the files in memory
                         return files
 
@@ -255,7 +257,7 @@ class Block(object):
                     self._files = weakref.proxy(files)
 
             else:
-                if Block._inventory_store._server_side:
+                if Block.inventory_store.server_side:
                     raise OperationalError('Block.files should not be loaded as non-cache on the server side.')
 
                 if type(self._files) is weakref.ProxyType:
@@ -279,7 +281,7 @@ class Block(object):
         if self.id == 0:
             return set()
 
-        files = Block._inventory_store.get_files(self)
+        files = Block.inventory_store.get_files(self)
 
         if len(files) != self._num_files:
             raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(self), self._num_files, len(files)))

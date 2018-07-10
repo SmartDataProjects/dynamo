@@ -95,6 +95,7 @@ class DynamoInventoryProxy(ObjectRepository):
         self.datasets = inventory.datasets
         self.partitions = inventory.partitions
         self._store = inventory.new_store_handle()
+        self._store.server_side = False
 
         # When the user application is authorized to change the inventory state, all updated
         # and deleted objects are kept in this list until the end of execution.
@@ -191,8 +192,9 @@ class DynamoInventory(ObjectRepository):
             self._store.close()
 
         self._store = InventoryStore.get_instance(module, config)
+        self._store.server_side = True
 
-        df.Block._inventory_store = self._store
+        df.Block.inventory_store = self._store
 
     def clone_store(self, module, config):
         source = InventoryStore.get_instance(module, config)

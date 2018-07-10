@@ -22,7 +22,7 @@ from dynamo.web.server import WebServer
 from dynamo.fileop.rlfsm import RLFSM
 from dynamo.utils.log import log_exception, reset_logger
 from dynamo.utils.signaling import SignalBlocker
-from dynamo.dataformat import Configuration, Block
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 CHANGELOG = logging.getLogger('changelog')
@@ -120,9 +120,6 @@ class DynamoServer(object):
                     self.inventory.clone_store(module, config)
             else:
                 self._setup_remote_store()
-
-        self.inventory._store._server_side = True
-        Block._inventory_store = self.inventory._store
 
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
