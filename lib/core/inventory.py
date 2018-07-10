@@ -96,6 +96,7 @@ class DynamoInventoryProxy(ObjectRepository):
         self.partitions = inventory.partitions
         self._store = inventory.new_store_handle()
         self._store.server_side = False
+        df.Block.inventory_store = self._store
 
         # When the user application is authorized to change the inventory state, all updated
         # and deleted objects are kept in this list until the end of execution.

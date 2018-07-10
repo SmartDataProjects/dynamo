@@ -442,7 +442,7 @@ class WebServer(object):
                         get_request[key] = post_request[key]
 
             request = {}
-            for key, value in get_request:
+            for key, value in get_request.iteritems():
                 if key.endswith('[]'):
                     key = key[:-2]
                     request[key] = map(escape, value)
