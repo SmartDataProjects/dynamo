@@ -344,7 +344,7 @@ class RLFSM(object):
         DELETE = 1
 
         for row in self.db.query(get_all):
-            sub_id, status, optype, file_id, file_name, site_name = row
+            sub_id, st, optype, file_id, file_name, site_name = row
 
             if destination is None or site_name != destination.name:
                 try:
@@ -358,10 +358,22 @@ class RLFSM(object):
                 # Dataset, block, or file was deleted from the inventory earlier in this process (deletion not reflected in the inventory store yet)
                 continue
 
-            dest_replica = lfile.block.find_replica(destination, must_find = True)
+            dest_replica = lfile.block.find_replica(destination)
+            if dest_replica is None and st != 'cancelled':
+                # Replica was invalidated
+                sql = 'UPDATE `file_subscriptions` SET `status` = \'cancelled\''
+                sql += ' WHERE `id` = %s'
+                if not self._read_only:
+                    self.db.query(sql, sub_id)
 
+                if status is not None and 'cancelled' not in status:
+                    # We are not asked to return cancelled subscriptions
+                    continue
+
+                st = 'cancelled'
+                
             if optype == COPY:
-                if status not in ('done', 'held', 'cancelled'):
+                if st not in ('done', 'held', 'cancelled'):
                     if dest_replica.has_file(lfile):
                         LOG.debug('%s already exists at %s', file_name, site_name)
                         to_done.append(sub_id)
@@ -388,7 +400,7 @@ class RLFSM(object):
                     disk_sources = None
                     tape_sources = None
     
-                if status == 'retry':
+                if st == 'retry':
                     failed_sources = {}
                     for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
                         try:
@@ -415,16 +427,16 @@ class RLFSM(object):
                 else:
                     failed_sources = None
     
-                subscription = RLFSM.Subscription(sub_id, status, lfile, destination, disk_sources, tape_sources, failed_sources)
+                subscription = RLFSM.Subscription(sub_id, st, lfile, destination, disk_sources, tape_sources, failed_sources)
                 subscriptions.append(subscription)
 
             elif optype == DELETE:
-                if status not in ('done', 'held', 'cancelled') and not dest_replica.has_file(lfile):
+                if st not in ('done', 'held', 'cancelled') and not dest_replica.has_file(lfile):
                     LOG.debug('%s is already gone from %s', file_name, site_name)
                     to_done.append(sub_id)
                     continue
 
-                desubscription = RLFSM.Desubscription(sub_id, status, lfile, destination)
+                desubscription = RLFSM.Desubscription(sub_id, st, lfile, destination)
                 subscriptions.append(desubscription)
 
         if not self._read_only:
