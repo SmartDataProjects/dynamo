@@ -28,6 +28,7 @@ from dynamo.request.deletion import DeletionRequestManager
 from dynamo.request.copy import CopyRequestManager
 from dynamo.operation.deletion import DeletionInterface
 from dynamo.operation.history import DeletionHistoryDatabase
+from dynamo.fileop.rlfsm import RLFSM
 import dynamo.dataformat as df
 from dynamo.dataformat.request import Request, RequestAction
 from dynamo.dataformat.history import DeletedReplica
@@ -35,6 +36,7 @@ from dynamo.dataformat.history import DeletedReplica
 deletion_manager = DeletionRequestManager(config.get('manager', None))
 copy_manager = CopyRequestManager(config.get('manager', None))
 history = DeletionHistoryDatabase(config.get('history', None))
+rlfsm = RLFSM(config.get('rlfsm', None))
 if 'deletion' in config:
     deletion = DeletionInterface.get_instance(config.deletion.module, config.deletion.config)
 else:
@@ -44,11 +46,34 @@ if read_only:
     deletion_manager.set_read_only()
     copy_manager.set_read_only()
     history.set_read_only()
+    rlfsm.set_read_only()
     deletion.set_read_only()
 
 # Check the inventory content and update the requests
 deletion_manager.collect_updates(inventory)
-copy_manager.collect_updates(inventory)
+incomplete_drep, incomplete_brep = copy_manager.collect_updates(inventory)
+
+# Make sure incomplete replicas do have file subscriptions
+subscriptions = rlfsm.get_subscriptions(inventory, 'transfer', status = ['new', 'inbatch', 'done', 'retry'])
+subscribed_files = set(s.file for s in subscriptions)
+
+for replica in incomplete_drep:
+    for block_replica in replica.block_replicas:
+        if block_replica.is_complete():
+            continue
+
+        LOG.info('%s is incomplete', block_replica)
+
+        for lfile in block_replica.block.files - block_replica.files():
+            if lfile not in subscribed_files:
+                LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, block_replica.site.name)
+                rlfsm.subscribe_file(block_replica.site, lfile)
+
+for replica in incomplete_brep:
+    for lfile in replica.block.files - replica.files():
+        if lfile not in subscribed_files:
+            LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, replica.site.name)
+            rlfsm.subscribe_file(replica.site, lfile)
 
 # Execute deletion operations on new deletion requests
 new_requests = deletion_manager.get_requests(statuses = [Request.ST_NEW])

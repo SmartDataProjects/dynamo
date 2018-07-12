@@ -177,6 +177,8 @@ class CopyRequestManager(RequestManager):
 
         now = int(time.time())
 
+        incomplete_replicas = ([], [])
+
         self.lock()
 
         try:
@@ -252,6 +254,7 @@ class CopyRequestManager(RequestManager):
                             action.last_update = now
                             updated = True
                         else:
+                            incomplete_replicas[0].append(replica)
                             LOG.debug('%s incomplete', replica)
                 
                     else:
@@ -279,6 +282,7 @@ class CopyRequestManager(RequestManager):
                             action.last_update = now
                             updated = True
                         else:
+                            incomplete_replicas[1].append(replica)
                             LOG.debug('%s incomplete', replica)
 
                 n_complete = sum(1 for a in request.actions if a.status in (RequestAction.ST_COMPLETED, RequestAction.ST_FAILED))
@@ -291,3 +295,5 @@ class CopyRequestManager(RequestManager):
 
         finally:
             self.unlock()
+
+        return incomplete_replicas
