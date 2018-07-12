@@ -62,8 +62,6 @@ for replica in incomplete_drep:
         if block_replica.is_complete():
             continue
 
-        LOG.info('%s is incomplete', block_replica)
-
         for lfile in block_replica.block.files - block_replica.files():
             if lfile not in subscribed_files:
                 LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, block_replica.site.name)
