@@ -43,6 +43,9 @@ class FilePopularity(object):
     
                 lfn = replacement + name
                 file_object = inventory.find_file(lfn)
+                if file_object is None:
+                    continue
+
                 dataset = file_object.block.dataset
                 attribute = dataset.attr
     

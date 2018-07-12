@@ -138,6 +138,7 @@ do
   if [[ $PYPATH =~ ^/usr/lib/python.*/site-packages$ ]]
   then
     mkdir -p $PYPATH/dynamo
+    rm -rf $PYPATH/dynamo/*
     cp -r $SOURCE/lib/* $PYPATH/dynamo/
     python -m compileall $PYPATH/dynamo > /dev/null
     break

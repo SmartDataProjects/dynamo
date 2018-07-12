@@ -232,6 +232,14 @@ class BlockReplica(object):
         self._block.replicas.remove(self)
 
     def write_into(self, store):
+        if BlockReplica._use_file_ids and self.file_ids is not None:
+            for fid in self.file_ids:
+                try:
+                    fid += 0
+                except TypeError:
+                    # was some string
+                    raise ObjectError('Cannot write %s into store because one of the files %s %s is not known yet' % (str(self), fid, type(fid).__name__))
+
         store.save_blockreplica(self)
 
     def delete_from(self, store):
@@ -392,9 +400,11 @@ class BlockReplica(object):
             else:
                 tmplist = []
                 for fid in other.file_ids:
-                    if type(fid) is str:
+                    try:
+                        fid += 0
+                    except TypeError:
                         lfn = fid
-                        fid = Block._inventory_store.get_file_id(lfn)
+                        fid = Block.inventory_store.get_file_id(lfn)
                         if fid is None:
                             # file not in store yet
                             tmplist.append(lfn)

@@ -269,8 +269,12 @@ class WebServer(object):
 
             delim = '--------------'
             log_tmp = stream.getvalue().strip()
-            log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
-            LOG.info('%s-%s %s (%s:%s) return:\n%s\n%s%s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], delim, log, delim)
+            if len(log_tmp) == 0:
+                log = 'empty log'
+            else:
+                log = 'return:\n%s\n%s%s' % (delim, ''.join('  %s\n' % line for line in log_tmp.split('\n')), delim)
+
+            LOG.info('%s-%s %s (%s:%s) %s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], log)
 
             with self.active_count.get_lock():
                 self.active_count.value -= 1
@@ -428,6 +432,8 @@ class WebServer(object):
                         self.message = 'Could not parse input.'
                         return
 
+                    unicode2str(provider.input_data)
+
                 elif content_type == 'application/x-www-form-urlencoded':
                     post_request = parse_qs(post_data)
 
@@ -440,6 +446,8 @@ class WebServer(object):
                         get_request[key].extend(post_request[key])
                     else:
                         get_request[key] = post_request[key]
+
+            unicode2str(get_request)
 
             request = {}
             for key, value in get_request.iteritems():

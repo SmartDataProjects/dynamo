@@ -171,9 +171,9 @@ for sub in subscriptions:
 
     if replica is None:
         # unexpected file! -> mark the subscription for deletion and move on
-        if status == 'done':
+        if sub.status == 'done':
             done_ids.append(sub.id)
-            continue
+        continue
 
     try:
         file_ids, projected = by_replica[replica]

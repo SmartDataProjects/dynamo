@@ -229,8 +229,6 @@ class SocketAppServer(AppServer):
 
             user_name, user_id = user_info[:2]
 
-            authlist = master.list_user_auth(user_name)
-
             io.send('OK', 'Connected')
 
             app_data = io.recv()
