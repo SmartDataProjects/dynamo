@@ -198,13 +198,13 @@ class WebServer(object):
         # Increment the active count so that the parent process won't be killed before this function returns
         with self.active_count.get_lock():
             self.active_count.value += 1
+            # Log file is a shared resource - write within the lock
+            LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], agent)
 
         try:
             agent = environ['HTTP_USER_AGENT']
         except KeyError:
             agent = 'Unknown'
-
-        LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], agent)
 
         # Then immediately switch to logging to a buffer
         root_logger = logging.getLogger()
@@ -274,9 +274,8 @@ class WebServer(object):
             else:
                 log = 'return:\n%s\n%s%s' % (delim, ''.join('  %s\n' % line for line in log_tmp.split('\n')), delim)
 
-            LOG.info('%s-%s %s (%s:%s) %s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], log)
-
             with self.active_count.get_lock():
+                LOG.info('%s-%s %s (%s:%s) %s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], log)
                 self.active_count.value -= 1
 
     def _main(self, environ):
