@@ -264,7 +264,18 @@ class BlockReplica(object):
         if self.file_ids is None:
             return set(block_files)
         else:
-            return set(f for f in block_files if f.id in self.file_ids)
+            by_id = dict((f.id, f) for f in block_files if f.id != 0)
+            result = set()
+            for fid in self.file_ids:
+                try:
+                    fid += 0
+                except TypeError:
+                    # fid is lfn
+                    result.add(self._block.find_file(fid))
+                else:
+                    result.add(by_id[fid])
+
+            return result
 
     def has_file(self, lfile):
         if self.file_ids is None:
@@ -288,8 +299,6 @@ class BlockReplica(object):
         if lfile.block != self.block:
             raise ObjectError('Cannot add file %s (block %s) to %s', lfile.lfn, lfile.block.full_name(), str(self))
 
-        self.size += lfile.size
-
         if BlockReplica._use_file_ids:
             if self.file_ids is None:
                 # This was a full replica. A new file was added to the block. The replica remains full.
@@ -298,11 +307,19 @@ class BlockReplica(object):
                 file_ids = set(self.file_ids)
 
             if lfile.id == 0:
+                if lfile.lfn in file_ids:
+                    return
+                if lfile.lfn in set(f.lfn for f in self.files()):
+                    return
                 file_ids.add(lfile.lfn)
             else:
+                if lfile.id in file_ids:
+                    return
                 file_ids.add(lfile.id)
+
+            self.size += lfile.size
     
-            if len(file_ids) == self.block.num_files:
+            if self.size == self.block.size and len(file_ids) == self.block.num_files:
                 self.file_ids = None
             else:
                 self.file_ids = tuple(file_ids)

@@ -43,6 +43,7 @@ LOG.info('Updating the inventory from injections.')
 processed_injection_ids = []
 
 n_injected = 0
+n_updated = 0
 n_deleted = 0
 new_files = []
 
@@ -75,6 +76,64 @@ for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data
                 obj._num_files = block.num_files
                 obj._size = block.size
                 inventory.update(obj)
+                n_updated += 1
+
+        elif type(obj) is BlockReplica:
+            # Don't set the file_ids list to one injection - always just expand
+
+            dataset_name, block_name = Block.from_full_name(obj.block)
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                continue
+
+            block = dataset.find_block(block_name)
+            if block is None:
+                continue
+
+            try:
+                site = inventory.sites[obj.site]
+            except KeyError:
+                continue
+
+            replica = block.find_replica(site)
+
+            if replica is None:
+                # new replica
+                inventory.update(obj)
+                n_injected += 1
+            else:
+                if replica.file_ids is None:
+                    # If there was a new file injected, file_ids will not be None
+                    # We are not going to encounter a brand new file id here, so everything must be included already
+                    continue
+                
+                if obj.file_ids is None:
+                    replica.file_ids = None
+                    replica.size = block.size
+                else:
+                    file_ids = list(replica.file_ids)
+                    updated = False
+
+                    # replace obj.block so that we can use obj.files()
+                    obj._block = block
+
+                    for lfile in obj.files() - replica.files():
+                        updated = True
+                        replica.size += lfile.size
+                        if lfile.id == 0:
+                            file_ids.append(lfile.lfn)
+                        else:
+                            file_ids.append(lfile.id)
+                            
+                    if updated:
+                        if len(file_ids) == block.num_files and replica.size == block.size:
+                            replica.file_ids = None
+                        else:
+                            replica.file_ids = tuple(file_ids)
+
+                        inventory.register_update(replica)
+                        n_updated += 1
 
         elif type(obj) is File:
             # Update the block properties when injecting files
@@ -108,6 +167,7 @@ for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data
                 if replica.file_ids is None:
                     replica.file_ids = block_current_files
                     inventory.register_update(replica)
+                    n_updated += 1
 
         else:
             inventory.update(obj)
@@ -133,7 +193,8 @@ for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data
             block.num_files -= 1
             block.size -= lfile.size
             inventory.register_update(block)
-            inventory.delete(lfile)
+            n_updated += 1
+            inventory.delete(lfile) # block replicas get updated automatically
             n_deleted += 1
 
         else:
@@ -209,8 +270,13 @@ for sub in subscriptions:
         replicas_to_update.add(replica)
         done_ids.append(sub.id)
 
+# collect all subscribed files and check against incomplete block replicas
+subscribed_files = set()
+
 for replica in replicas_to_update:
     file_ids, projected = by_replica[replica]
+
+    subscribed_files.extend(projected)
 
     n_projected = len(projected)
 
@@ -241,6 +307,18 @@ for replica in replicas_to_update:
                 replica.size = sum(f.size for f in all_files if f.id in file_ids)
                 replica.last_update = int(time.time())
                 inventory.register_update(replica)
+
+# Make subscriptions for incomplete block replicas who lost file subscriptions for whatever reasons
+for site in inventory.sites.itervalues():
+    for dataset_replica in site.dataset_replicas():
+        for block_replica in dataset_replica.block_replicas:
+            if block_replica.is_complete():
+                continue
+
+            for lfile in block_replica.block.files - block_replica.files():
+                if lfile not in subscribed_files:
+                    LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, site.name)
+                    rlfsm.subscribe_file(site, lfile)
 
 # Remove injections and subscriptions
 # This is dangerous though - if inventory update fails on the server side for some reason,
