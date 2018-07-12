@@ -409,12 +409,6 @@ class InjectDataBase(WebModule):
             self._register_update(inventory, block)
 
         try:
-            for block_replica in block_replicas.itervalues():
-                self._update(inventory, block_replica)
-        except:
-            raise RuntimeError('Inventory update failed')
-
-        try:
             counts['files'] += num_files
         except KeyError:
             counts['files'] = num_files
@@ -492,6 +486,8 @@ class InjectDataBase(WebModule):
 
                     if lfile.id == 0:
                         if lfn in file_ids:
+                            continue
+                        if lfn in set(f.lfn for f in block_replica.files()):
                             continue
 
                         file_ids.append(lfn)
