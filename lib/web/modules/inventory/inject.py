@@ -467,43 +467,51 @@ class InjectDataBase(WebModule):
 
                 num_blockreplicas += 1
 
+                try:
+                    block_replica = self._update(inventory, block_replica)
+                except:
+                    raise RuntimeError('Inventory update failed')
+
             if 'files' in obj:
-                file_names = obj['files']
+                # add file to the block replica (no need to give the full list of files)
+                if not df.BlockReplica._use_file_ids:
+                    raise RuntimeError('File addition to block replica not supported in this Dynamo installation.')
 
-                if df.BlockReplica._use_file_ids:
-                    file_ids = []
+                if block_replica.file_ids is None:
+                    # the replica is already complete
+                    continue
 
-                size = 0
-                for lfn in file_names:
+                file_ids = list(block_replica.file_ids)
+
+                updated = False
+
+                for lfn in obj['files']:
                     lfile = block.find_file(lfn)
                     if lfile is None:
                         raise InvalidRequest('Unknown file %s' % lfn)
 
-                    size += lfile.size
+                    if lfile.id == 0:
+                        if lfn in file_ids:
+                            continue
 
-                    if df.BlockReplica._use_file_ids:
-                        if lfile.id == 0:
-                            file_ids.append(lfn)
-                        else:
-                            file_ids.append(lfile.id)
+                        file_ids.append(lfn)
+                    else:
+                        if lfile.id in file_ids:
+                            continue
 
-                block_replica.size = size
+                        file_ids.append(lfile.id)
 
-                if len(file_names) == block.num_files and size == block.size:
-                    if df.BlockReplica._use_file_ids:
+                    block_replica.size += lfile.size
+
+                    updated = True
+
+                if updated:
+                    if len(file_ids) == block.num_files and block_replica.size == block.size:
                         block_replica.file_ids = None
                     else:
-                        block_replica.file_ids = block.num_files
-                else:
-                    if df.BlockReplica._use_file_ids:
                         block_replica.file_ids = tuple(file_ids)
-                    else:
-                        block_replica.file_ids = len(file_names)
 
-            try:
-                self._update(inventory, block_replica)
-            except:
-                raise RuntimeError('Inventory update failed')
+                    self._register_update(inventory, block_replica)
 
         try:
             counts['blockreplicas'] += num_blockreplicas
