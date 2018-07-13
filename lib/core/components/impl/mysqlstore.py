@@ -486,6 +486,14 @@ class MySQLInventoryStore(InventoryStore):
 
         num = self._mysql.insert_many('sites_tmp', fields, mapping, sites, do_update = False)
 
+        if self._mysql.table_exists('filename_mappings_tmp'):
+            self._mysql.query('DROP TABLE `filename_mappings_tmp`')
+
+        self._mysql.query('CREATE TABLE `filename_mappings_tmp` LIKE `filename_mappings`')
+
+        fields = ('site_id', 'protocol', 'chain_id', 'index', 'lfn_pattern', 'pfn_pattern')
+        mapping = lambda (l, p): 
+
         self._mysql.query('DROP TABLE `sites`')
         self._mysql.query('RENAME TABLE `sites_tmp` TO `sites`')
 

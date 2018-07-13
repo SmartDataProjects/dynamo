@@ -65,6 +65,16 @@ class SiteInfoSource(object):
         """
         raise NotImplementedError('get_site_status')
 
+    def get_filename_mapping(self, site_name):
+        """
+        Get the list of regular expression file name mapping rules for the given site.
+        @param site_name  Site name
+
+        @return [(lfn pattern, pfn pattern)] PFN pattern can contain positional placeholders {n} that
+                matches captured groups in the LFN pattern.
+        """
+        raise NotImplementedError('get_filename_mapping')
+
     def check_allowed_site(self, site_name):
         if self.include is not None:
             for pattern in self.include:
