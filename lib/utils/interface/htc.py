@@ -23,8 +23,10 @@ class HTCondor(object):
         if config is None:
             config = HTCondor._default_config
 
+        self._collector_name = config.collector
         self._collector = htcondor.Collector(config.collector)
 
+        self._schedd_constraint = config.schedd_constraint
         self._schedds = []
 
     def find_jobs(self, constraint = 'True', attributes = []):
@@ -33,12 +35,12 @@ class HTCondor(object):
         """
 
         if len(self._schedds) == 0:
-            LOG.info('Finding schedds reporting to collector %s', config.collector)
+            LOG.info('Finding schedds reporting to collector %s', self._collector_name)
     
             attempt = 0
             while True:
                 try:
-                    schedd_ads = self._collector.query(htcondor.AdTypes.Schedd, config.schedd_constraint, ['MyAddress', 'ScheddIpAddr'])
+                    schedd_ads = self._collector.query(htcondor.AdTypes.Schedd, self._schedd_constraint, ['MyAddress', 'ScheddIpAddr'])
                     break
                 except IOError:
                     attempt += 1
