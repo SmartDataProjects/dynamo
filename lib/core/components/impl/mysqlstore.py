@@ -492,10 +492,21 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query('CREATE TABLE `filename_mappings_tmp` LIKE `filename_mappings`')
 
         fields = ('site_id', 'protocol', 'chain_id', 'index', 'lfn_pattern', 'pfn_pattern')
-        mapping = lambda (l, p): 
+
+        def site_mappings():
+            for site in sites:
+                for protocol, mapping in site.filename_mapping.iteritems():
+                    for chain_id, chain in enumerate(mapping._chains):
+                        for idx, (lfn, pfn) in enumerate(chain):
+                            yield (site.id, protocol, chain_id, idx, lfn, pfn)
+
+        self._mysql.insert_many('filename_mappings_tmp', fields, None, site_mappings(), do_update = False)
 
         self._mysql.query('DROP TABLE `sites`')
         self._mysql.query('RENAME TABLE `sites_tmp` TO `sites`')
+
+        self._mysql.query('DROP TABLE `filename_mappings`')
+        self._mysql.query('RENAME TABLE `filename_mappings_tmp` TO `filename_mappings`')
 
         return num
 
@@ -685,7 +696,7 @@ class MySQLInventoryStore(InventoryStore):
     def _clone_from_common_class(self, source): #override
         # Do the closest thing to INSERT SELECT
 
-        tables = ['partitions', 'groups', 'sites', 'quotas', 'software_versions',
+        tables = ['partitions', 'groups', 'sites', 'quotas', 'software_versions', 'filename_mappings',
                   'datasets', 'blocks', 'files', 'dataset_replicas', 'block_replicas', 'block_replica_files', 'block_replica_sizes']
 
         for table in tables:
@@ -719,8 +730,10 @@ class MySQLInventoryStore(InventoryStore):
         if sites_tmp is not None:
             sql += ' INNER JOIN `%s`.`%s` AS t ON t.`id` = s.`id`' % (self._mysql.scratch_db, sites_tmp)
 
-        for site_id, name, host, storage_type, backend, status in self._mysql.xquery(sql):
-            yield Site(
+        mapping_sql = 'SELECT `protocol`, `chain_id`, `index`, `lfn_pattern`, `pfn_pattern` FROM `filename_mappings` WHERE `site_id` = %s'
+
+        for site_id, name, host, storage_type, backend, status in self._mysql.query(sql):
+            site = Site(
                 name,
                 host = host,
                 storage_type = int(storage_type),
@@ -728,6 +741,26 @@ class MySQLInventoryStore(InventoryStore):
                 status = int(status),
                 sid = site_id
             )
+
+            all_chains = {}
+            for protocol, chain_id, idx, lfn, pfn in self._mysql.xquery(mapping_sql, site_id):
+                try:
+                    chains = all_chains[protocol]
+                except KeyError:
+                    chains = all_chains[protocol] = []
+
+                while len(chains) <= chain_id:
+                    chains.append([])
+
+                while len(chains[chain_id]) <= idx:
+                    chains[chain_id].append(None) # placeholder
+
+                chains[chain_id][idx] = (lfn, pfn)
+
+            for protocol, chains in all_chains.iteritems():
+                site.filename_mapping[protocol] = Site.FileNameMapping(chains)
+
+            yield site
 
     def _yield_sitepartitions(self, sites_tmp = None): #override
         # Load site quotas
@@ -1198,12 +1231,25 @@ class MySQLInventoryStore(InventoryStore):
         if site_id != 0:
             site.id = site_id
 
+        self._mysql.query('DELETE FROM `filename_mappings` WHERE `site_id` = %s', site_id)
+
+        fields = ('site_id', 'protocol', 'chain_id', 'index', 'lfn_pattern', 'pfn_pattern')
+
+        def filename_mappings():
+            for protocol, mapping in site.filename_mapping.iteritems():
+                for chain_id, chain in enumerate(mapping._chains):
+                    for idx, (lfn, pfn) in enumerate(chain):
+                        yield (site.id, protocol, chain_id, idx, lfn, pfn)
+
+        self._mysql.insert_many('filename_mappings', fields, None, filename_mappings(), do_update = False)
+
         # For new sites, persistency requires saving site partition data with default parameters.
         # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
         # default parameters will be created.
 
     def delete_site(self, site): #override
-        sql = 'DELETE FROM s, dr, br, brf, brs, q USING `sites` AS s'
+        sql = 'DELETE FROM s, m, dr, br, brf, brs, q USING `sites` AS s'
+        sql += ' LEFT JOIN `filename_mappings` AS m ON m.`site_id` = s.`id`'
         sql += ' LEFT JOIN `dataset_replicas` AS dr ON dr.`site_id` = s.`id`'
         sql += ' LEFT JOIN `block_replicas` AS br ON br.`site_id` = s.`id`'
         sql += ' LEFT JOIN `block_replica_files` AS brf ON brf.`site_id` = s.`id`'
@@ -1233,7 +1279,7 @@ class MySQLInventoryStore(InventoryStore):
         Concatenate hex checksums of all tables and take the md5.
         """
         csstr = ''
-        for table in ['block_replica_files', 'block_replica_sizes', 'block_replicas', 'blocks', 'dataset_replicas', 'datasets', 'files', 'groups', 'partitions', 'quotas', 'sites', 'software_versions']:
+        for table in ['block_replica_files', 'block_replica_sizes', 'block_replicas', 'blocks', 'dataset_replicas', 'datasets', 'files', 'groups', 'partitions', 'quotas', 'sites', 'filename_mappings', 'software_versions']:
             cksum = hex(self._mysql.query('CHECKSUM TABLE `%s`' % table)[0][1])[2:] # remote 0x
             if len(cksum) < 8:
                 padding = '0' * (8 - len(cksum))

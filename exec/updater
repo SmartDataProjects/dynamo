@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 
-import os
 import sys
 import time
-import collections
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update subscriptions.')

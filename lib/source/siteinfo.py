@@ -70,8 +70,7 @@ class SiteInfoSource(object):
         Get the list of regular expression file name mapping rules for the given site.
         @param site_name  Site name
 
-        @return [(lfn pattern, pfn pattern)] PFN pattern can contain positional placeholders {n} that
-                matches captured groups in the LFN pattern.
+        @return {protocol: chains} where chains = [chain] and chain = [(match, dest), (match, dest)]
         """
         raise NotImplementedError('get_filename_mapping')
 

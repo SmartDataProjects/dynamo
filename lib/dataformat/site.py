@@ -58,9 +58,9 @@ class Site(object):
             self._chains = copy.deepcopy(chains)
             # compiled versions for actual use
             self._re_chains = []
-            for chain in self._chains:
+            for chain in chains:
                 re_chain = []
-                for lfnpat, pfnpat in re_chain:
+                for lfnpat, pfnpat in chain:
                     re_chain.append((re.compile(lfnpat), pfnpat))
 
                 self._re_chains.append(re_chain)
