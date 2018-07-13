@@ -53,7 +53,7 @@ class RegistryDatabase(object):
             if user == first_user and service == first_service:
                 depth += 1
                 
-        return user, first_service, lock_time, note, depth
+        return first_user, first_service, lock_time, note, depth
 
     def lock_app(self, app, user, service = None, note = None):
         if service is None:
