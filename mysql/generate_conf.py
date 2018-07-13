@@ -111,10 +111,6 @@ def generate_master_conf(conf_str, master = True):
 
     if master:
         master_conf['config']['applock'] = OD([
-            ('module', 'mysqlapplock:MySQLApplock'),
-            ('config', OD())
-        ])
-        master_conf['config']['applock']['config']['db_params'] = OD([
             ('host', host),
             ('db', 'dynamoregister'),
             ('user', user),

@@ -1,5 +1,5 @@
 from dynamo.utils.classutil import get_instance
-from dynamo.registry.applock import Applock
+from dynamo.registry.registry import RegistryDB
 
 class AppManager(object):
     """
@@ -50,7 +50,7 @@ class AppManager(object):
     def __init__(self, config):
         self.readonly_config = None
         if 'applock' in config:
-            self.applock = Applock.get_instance(config.applock.module, config.applock.config)
+            self.applock = RegistryDatabase(config.applock)
         else:
             self.applock = None
 
