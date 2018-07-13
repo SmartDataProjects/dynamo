@@ -20,14 +20,14 @@ class MySQLAppManager(AppManager):
         if count == 0:
             # Cannot insert with id = 0 (will be interpreted as next auto_increment id unless server-wide setting is changed)
             # Inesrt with an implicit id first and update later
-            columns = ('write_request', 'title', 'path', 'status', 'user_id', 'user_host')
-            values = (1, 'wsgi', '', 'done', 0, '')
+            columns = ('auth_level', 'title', 'path', 'status', 'user_id', 'user_host')
+            values = (AppManager.LV_WRITE, 'wsgi', '', 'done', 0, '')
             insert_id = self._mysql.insert_get_id('applications', columns = columns, values = values)
 
             self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', insert_id)
 
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None): #override
-        sql = 'SELECT `applications`.`id`, `applications`.`write_request`, `applications`.`title`, `applications`.`path`,'
+        sql = 'SELECT `applications`.`id`, 0+`applications`.`auth_level`, `applications`.`title`, `applications`.`path`,'
         sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`, `applications`.`user_host`'
         sql += ' FROM `applications` INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
 
@@ -52,9 +52,9 @@ class MySQLAppManager(AppManager):
         args = tuple(args)
 
         applications = []
-        for aid, write, title, path, args, status, server, exit_code, uname, uhost in self._mysql.xquery(sql, *args):
+        for aid, auth_level, title, path, args, status, server, exit_code, uname, uhost in self._mysql.xquery(sql, *args):
             applications.append({
-                'appid': aid, 'write_request': (write == 1), 'user_name': uname,
+                'appid': aid, 'auth_level': auth_level, 'user_name': uname,
                 'user_host': uhost, 'title': title, 'path': path, 'args': args,
                 'status': int(status), 'server': server, 'exit_code': exit_code
             })
@@ -62,42 +62,43 @@ class MySQLAppManager(AppManager):
         return applications
 
     def get_writing_process_id(self): #override
-        result = self._mysql.query('SELECT `id` FROM `applications` WHERE `write_request` = 1 AND `status` IN (\'assigned\', \'run\')')
+        result = self._mysql.query('SELECT `id` FROM `applications` WHERE `auth_level` = \'write\' AND `status` IN (\'assigned\', \'run\')')
         if len(result) == 0:
             return None
         else:
             return result[0]
 
     def get_writing_process_host(self): #override
-        result = self._mysql.query('SELECT `server` FROM `applications` WHERE `write_request` = 1 AND `status` IN (\'assigned\', \'run\')')
+        result = self._mysql.query('SELECT `server` FROM `applications` WHERE `auth_level` = \'write\' AND `status` IN (\'assigned\', \'run\')')
         if len(result) == 0:
             return None
         else:
             return result[0]
 
     def get_web_write_process_id(self): #override
+        # user_id is repurposed for web server suprocess PID
         return self._mysql.query('SELECT `user_id` FROM `applications` WHERE `id` = 0')[0]
 
     def get_running_processes(self): #override
-        sql = 'SELECT `title`, `write_request`, `server`, UNIX_TIMESTAMP(`timestamp`) FROM `applications` WHERE `status` = \'run\''
+        sql = 'SELECT `title`, 0+`auth_level`, `server`, UNIX_TIMESTAMP(`timestamp`) FROM `applications` WHERE `status` = \'run\''
 
         result = []
-        for title, write_request, server, timestamp in self._mysql.xquery(sql):
-            result.append((title, (write_request == 1), server, timestamp))
+        for title, auth_level, server, timestamp in self._mysql.xquery(sql):
+            result.append((title, auth_level, server, timestamp))
 
         return result
 
-    def schedule_application(self, title, path, args, user_id, host, write_request): #override
-        columns = ('write_request', 'title', 'path', 'args', 'user_id', 'user_host')
-        values = (write_request, title, path, args, user_id, host)
+    def schedule_application(self, title, path, args, user_id, host, auth_level): #override
+        columns = ('auth_level', 'title', 'path', 'args', 'user_id', 'user_host')
+        values = (auth_level, title, path, args, user_id, host)
         return self._mysql.insert_get_id('applications', columns = columns, values = values)
 
     def _do_get_next_application(self, read_only, blocked_apps): #override
-        sql = 'SELECT `applications`.`id`, `write_request`, `title`, `path`, `args`, `users`.`name`, `user_host` FROM `applications`'
+        sql = 'SELECT `applications`.`id`, 0+`auth_level`, `title`, `path`, `args`, `users`.`name`, `user_host` FROM `applications`'
         sql += ' INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
         sql += ' WHERE `status` = \'new\''
         if read_only:
-            sql += ' AND `write_request` = 0'
+            sql += ' AND `auth_level` != \'write\''
         if len(blocked_apps) != 0:
             sql += ' AND `title` NOT IN %s' % MySQL.stringify_sequence(blocked_apps)
         sql += ' ORDER BY `applications`.`id` LIMIT 1'
@@ -107,9 +108,9 @@ class MySQLAppManager(AppManager):
         if len(result) == 0:
             return None
         else:
-            appid, write_request, title, path, args, uname, uhost = result[0]
+            appid, auth_level, title, path, args, uname, uhost = result[0]
             return {
-                'appid': appid, 'write_request': (write_request == 1), 'user_name': uname,
+                'appid': appid, 'auth_level': auth_level, 'user_name': uname,
                 'user_host': uhost, 'title': title, 'path': path, 'args': args
             }
 

@@ -1,6 +1,6 @@
 CREATE TABLE `applications` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `write_request` tinyint(1) NOT NULL,
+  `auth_level` enum('noauth','auth','write') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `title` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `path` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `args` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,

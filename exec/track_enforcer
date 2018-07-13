@@ -27,7 +27,7 @@ args = parser.parse_args()
 sys.argv = []
 
 from dynamo.dataformat import Configuration
-from dynamo.core.executable import inventory, read_only, make_standard_logger
+from dynamo.core.executable import inventory, authorized, make_standard_logger
 from dynamo.enforcer.interface import EnforcerInterface
 
 ## Configuration for steering tracking (intervals, output directories, etc)
@@ -49,7 +49,7 @@ LOG = make_standard_logger(config.log_level)
 
 rrd_dir = config.rrd_path_base + '/track_enforcer'
 
-if not read_only:
+if authorized:
     try:
         os.makedirs(rrd_dir)
     except OSError:
@@ -60,7 +60,7 @@ if not read_only:
 interval = int(config.rrd_interval)
 
 def create_rrd(path):
-    if read_only:
+    if not authorized:
         return
 
     start = (int(time.time()) / interval - 1) * interval
@@ -98,7 +98,7 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
     
     rrd_file = '%s/%s.rrd' % (rrd_dir, rule_name)
 
-    if not read_only and not os.path.exists(rrd_file):
+    if authorized and not os.path.exists(rrd_file):
         # RRD does not exist yet                                                                                                                                                         
         create_rrd(rrd_file)
 
@@ -110,7 +110,7 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
     except:
         lasttime = 0
             
-    if not read_only and timestamp != lasttime:
+    if authorized and timestamp != lasttime:
         rrdtool.update(rrd_file, '%d:%i:%i:%i' % (timestamp, len(still_missing), len(en_route), len(already_there)))
 
         enroute_csv = rrd_dir + '/%s_enroute.csv' % rule_name 
@@ -136,7 +136,7 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
                 writer.writerow({'replica': key, 'size': value})
 
 
-if not read_only:
+if authorized:
     target_dir = config.rrd_publish_target + '/monitoring_enforcer'
     
     try:

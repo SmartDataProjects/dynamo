@@ -26,6 +26,10 @@ class ReceiveError(Exception):
     pass
 
 class DynamoServer(object):
+
+    # Request levels
+    LV_NOAUTH, LV_AUTH, LV_WRITE = range(1, 4)
+
     def __init__(self, addr, certfile, keyfile):
         try:
             open(certfile).close()
@@ -161,10 +165,10 @@ class DynamoServer(object):
         response = self.communicate(in_data)
         print 'Deleted sequence', sequence_name
 
-    def submit(self, cmd, title, write_request, workdir, asynch):
+    def submit(self, cmd, title, authlevel, workdir, asynch):
         executable, _, args = cmd.partition(' ') # yes this will fail if our executable name contains a space..
 
-        in_data = {'command': 'submit', 'title': title, 'args': args, 'write_request': write_request}
+        in_data = {'command': 'submit', 'title': title, 'args': args, 'auth_level': authlevel}
 
         if self._is_local:
             in_data['exec_path'] = os.path.realpath(executable)
@@ -248,10 +252,10 @@ class DynamoServer(object):
         sys.stderr.write('Dynamo executable completed with status %s (code %s).\n' % (status, return_code))
         sys.exit(return_code)
 
-    def interact(self, write_request, workdir):
+    def interact(self, authlevel, workdir):
         import readline
 
-        in_data = {'command': 'interact', 'write_request': write_request}
+        in_data = {'command': 'interact', 'auth_level': authlevel}
 
         if workdir is not None:
             in_data['path'] = workdir
@@ -411,7 +415,8 @@ if __name__ == '__main__':
     parser.add_argument('--asynchronous', '-A', action = 'store_true', dest = 'asynch', help = 'Do not wait for the executable to complete.')
     parser.add_argument('--server', '-s', metavar = 'HOST[:PORT]', dest = 'server', help = 'Server host.')
     parser.add_argument('--title', '-t', metavar = 'TITLE', dest = 'title', default = 'DynamoExecutable', help = 'Executable title.')
-    parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request write access.')
+    parser.add_argument('--auth-request', '-H', action = 'store_true', dest = 'auth_request', help = 'Request authorized access.')
+    parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request inventory write access.')
     parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
     parser.add_argument('--poll', '-p', metavar = 'ID', dest = 'poll_appid', type = int, help = 'Just poll an existing application.')
     parser.add_argument('--kill', '-x', metavar = 'ID', dest = 'kill_appid', type = int, help = 'Abort an existing application.')
@@ -454,6 +459,13 @@ if __name__ == '__main__':
     else:
         keyfile = certfile
 
+    if args.write_request:
+        authlevel = DynamoServer.LV_WRITE
+    elif args.auth_request:
+        authlevel = DynamoServer.LV_AUTH
+    else:
+        authlevel = DynamoServer.LV_NOAUTH
+
     server = None
     try:
         server = DynamoServer(server_addr, certfile, keyfile)
@@ -471,9 +483,9 @@ if __name__ == '__main__':
         elif args.delete_sequence is not None:
             server.delete_sequence(args.delete_sequence)
         elif args.cmd is None:
-            server.interact(args.write_request, args.workdir)
+            server.interact(authlevel, args.workdir)
         else:
-            server.submit(args.cmd, args.title, args.write_request, args.workdir, args.asynch)
+            server.submit(args.cmd, args.title, authlevel, args.workdir, args.asynch)
 
     except ssl.SSLError:
         sys.stderr.write('Failed to open an SSL connection to Dynamo server at %s:%d.\n' % server_addr)

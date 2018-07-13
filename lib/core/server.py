@@ -301,16 +301,16 @@ class DynamoServer(object):
                 do_sleep = False
 
                 if not os.path.exists(app['path'] + '/exec.py'):
-                    LOG.info('Application %s from %s@%s (write request: %s) not found.', app['title'], app['user_name'], app['user_host'], app['write_request'])
+                    LOG.info('Application %s from %s@%s (auth level: %s) not found.', app['title'], app['user_name'], app['user_host'], AppManager.auth_level_name(app['auth_level']))
                     self.manager.master.update_application(app['appid'], status = AppManager.STAT_NOTFOUND)
                     self.appserver.notify_synch_app(app['appid'], {'status': AppManager.STAT_NOTFOUND})
                     continue
     
-                LOG.info('Found application %s from %s (AID %s, write request: %s)', app['title'], app['user_name'], app['appid'], app['write_request'])
+                LOG.info('Found application %s from %s (AID %s, auth level: %s)', app['title'], app['user_name'], app['appid'], AppManager.auth_level_name(app['auth_level']))
 
                 is_local = (app['user_host'] == self.manager.hostname)
     
-                if app['write_request']:
+                if app['auth_level'] == AppManager.LV_WRITE:
                     # check authorization
                     with open(app['path'] + '/exec.py') as source:
                         checksum = hashlib.md5(source.read()).hexdigest()
@@ -635,7 +635,7 @@ class DynamoServer(object):
         return num_updates, num_deletes
 
     def _start_subprocess(self, app, is_local):
-        proc_args = (app['path'], app['args'], is_local, not app['write_request'])
+        proc_args = (app['path'], app['args'], is_local, app['auth_level'])
 
         proc = multiprocessing.Process(target = self.run_script, name = app['title'], args = proc_args)
         proc.daemon = True
@@ -643,14 +643,14 @@ class DynamoServer(object):
 
         return proc
 
-    def run_script(self, path, args, is_local, read_only):
+    def run_script(self, path, args, is_local, auth_level):
         """
         Main function for script execution.
         @param path            Path to the work area of the script. Will be the root directory in read-only processes.
         @param args            Script command-line arguments.
         @param is_local        True if script is requested from localhost.
         @param defaults_config A Configuration object specifying the global defaults for various tools
-        @param read_only       Boolean
+        @param auth_level      AppManager.LV_*
         """
     
         old_stdout = sys.stdout
@@ -663,7 +663,7 @@ class DynamoServer(object):
         # Create an inventory proxy object used as "the" inventory within the subprocess
         inventory = self.inventory.create_proxy()
 
-        path = self._pre_execution(path, is_local, read_only, inventory)
+        path = self._pre_execution(path, is_local, auth_level, inventory)
     
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -681,7 +681,7 @@ class DynamoServer(object):
             if exc_type is SystemExit:
                 # sys.exit used in the script
                 if exc.code == 0:
-                    if not read_only:
+                    if auth_level == AppManager.LV_WRITE:
                         self._send_updates(inventory)
                 else:
                     raise
@@ -701,7 +701,7 @@ class DynamoServer(object):
                 sys.exit(1)
     
         else:
-            if not read_only:
+            if auth_level == AppManager.LV_WRITE:
                 self._send_updates(inventory)
                 # Queue stays available on the other end even if we terminate the process
     
@@ -734,7 +734,7 @@ class DynamoServer(object):
         sys.stdout = stdout
         sys.stderr = stderr
     
-        self._pre_execution(path, is_local, True, inventory)
+        self._pre_execution(path, is_local, AppManager.LV_NOAUTH, inventory)
     
         # use receive of oconn as input
         mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': inventory}
@@ -747,14 +747,14 @@ class DynamoServer(object):
         sys.stdout = old_stdout
         sys.stderr = old_stderr
 
-    def _pre_execution(self, path, is_local, read_only, inventory):
+    def _pre_execution(self, path, is_local, auth_level, inventory):
         uid = os.geteuid()
         gid = os.getegid()
     
         # Set defaults
         for key, config in self.defaults_config.items():
             try:
-                if read_only:
+                if auth_level == AppManager.LV_NOAUTH:
                     myconf = config['readonly']
                 else:
                     myconf = config['fullauth']
@@ -829,10 +829,13 @@ class DynamoServer(object):
         executable.inventory = inventory
         executable.authorizer = self.manager.master.create_authorizer()
     
-        if not read_only:
-            executable.read_only = False
-            # create a list of updated and deleted objects the executable can fill
-            inventory._update_commands = []
+        if auth_level == AppManager.LV_NOAUTH:
+            pass
+        else:
+            executable.authorized = True
+            if auth_level == AppManager.LV_WRITE:
+                # create a list of updated and deleted objects the executable can fill
+                inventory._update_commands = []
     
         return path
 

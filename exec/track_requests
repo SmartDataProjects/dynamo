@@ -18,7 +18,7 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-from dynamo.core.executable import read_only, make_standard_logger
+from dynamo.core.executable import authorized, make_standard_logger
 
 LOG = make_standard_logger(config.get('log_level', 'info'))
 
@@ -42,7 +42,7 @@ if 'deletion' in config:
 else:
     deletion = DeletionInterface.get_instance()
 
-if read_only:
+if not authorized:
     deletion_manager.set_read_only()
     copy_manager.set_read_only()
     history.set_read_only()

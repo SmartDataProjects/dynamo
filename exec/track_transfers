@@ -29,7 +29,7 @@ sys.argv = []
 
 from dynamo.dataformat import Configuration, HistoryRecord, Block, ObjectError
 from dynamo.utils.parallel import Map
-from dynamo.core.executable import read_only, make_standard_logger
+from dynamo.core.executable import authorized, make_standard_logger
 
 ## Configuration
 
@@ -56,7 +56,7 @@ copy = CopyInterface.get_instance(dealer_config.copy_op.module, dealer_config.co
 
 rrd_dir = config.rrd_path_base + '/track_transfers'
 
-if not read_only:
+if authorized:
     try:
         os.makedirs(rrd_dir)
     except OSError:
@@ -146,7 +146,7 @@ for sitename, site_records in records.iteritems():
     # Create a directory for the site
     site_rrd_dir = rrd_dir + '/' + sitename
 
-    if not read_only:
+    if authorized:
         try:
             os.mkdir(site_rrd_dir)
         except OSError:
@@ -177,7 +177,7 @@ for sitename, site_records in records.iteritems():
             for replica in record.replicas:
                 replica.status = HistoryRecord.ST_COMPLETE
 
-            if not read_only:
+            if authorized:
                 history.update_copy_entry(record)
 
             continue
@@ -241,7 +241,7 @@ for sitename, site_records in records.iteritems():
                 replica_record.status = HistoryRecord.ST_COMPLETE
                 update_record = True
 
-                if not read_only:
+                if authorized:
                     # We don't need to keep the RRD file any more
                     try:
                         os.unlink(rrd_file)
@@ -253,7 +253,7 @@ for sitename, site_records in records.iteritems():
 
                 incomplete_replicas_rrd.add(rrd_file)
 
-                if not read_only and not os.path.exists(rrd_file):
+                if authorized and not os.path.exists(rrd_file):
                     # RRD does not exist yet
                     create_rrd(rrd_file)
 
@@ -268,7 +268,7 @@ for sitename, site_records in records.iteritems():
                 except:
                     lasttime = 0
 
-                if not read_only and timestamp != lasttime:
+                if authorized and timestamp != lasttime:
                     rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
                 
                 # Tally up this tranfsfer
@@ -288,13 +288,13 @@ for sitename, site_records in records.iteritems():
                 })
             
         # Update the history DB
-        if update_record and not read_only:
+        if update_record and authorized:
             LOG.info('Updating history record %d', record.operation_id)
             history.update_copy_entry(record)
 
     dataset_details.sort(key = lambda x: x['total'])
 
-    if not read_only:
+    if authorized:
         with open("%s/filelist.txt" % site_rrd_dir, "w") as csvfilelist:
             fieldnames = ["id", "name", "copied", "total", "stuck"]
     
@@ -306,7 +306,7 @@ for sitename, site_records in records.iteritems():
 
 ## Create overview files
 
-if not read_only:
+if authorized:
     with open("%s/overview.txt" % rrd_dir, "w") as overview:
         fieldnames = ["sitename", "ongoing", "total", "copied", "total_stuck", "copied_stuck"]
     
@@ -325,10 +325,10 @@ total_volume = sum(t['total_volume'] for s, t in totals.iteritems())
 copied_volume = sum(t['copied_volume'] for s, t in totals.iteritems())
 
 total_rrdfile = rrd_dir + '/total.rrd'
-if not read_only and not os.path.exists(total_rrdfile):
+if authorized and not os.path.exists(total_rrdfile):
     create_rrd(total_rrdfile)
 
-if not read_only:
+if authorized:
     timestamp = int(time.time()) / interval * interval
     try:
         rrdtool.update(total_rrdfile, '%d:%d:%d' % (timestamp, copied_volume, total_volume))
@@ -350,7 +350,7 @@ if not read_only:
         
         for existing_rrd in existing_rrds:
             filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
-            if not read_only and existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
+            if authorized and existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
                 # Delete pngs and rrd files
                 os.unlink(existing_rrd)
 

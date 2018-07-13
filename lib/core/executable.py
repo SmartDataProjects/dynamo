@@ -6,8 +6,8 @@ as standalone python scripts.
 
 from dynamo.core.inventory import ObjectRepository
 
-## Whether this is a read-only process
-read_only = True
+## Whether this process has elevated privileges
+authorized = False
 
 ## Handle to the inventory
 inventory = ObjectRepository()

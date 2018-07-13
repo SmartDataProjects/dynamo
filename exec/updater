@@ -18,7 +18,7 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout & stderr)
-from dynamo.core.executable import make_standard_logger, read_only, inventory
+from dynamo.core.executable import make_standard_logger, authorized, inventory
 
 LOG = make_standard_logger(config.get('log_level', 'info'))
 
@@ -27,7 +27,7 @@ from dynamo.fileop.rlfsm import RLFSM
 
 rlfsm = RLFSM(config.get('rlfsm', None))
 
-if read_only:
+if not authorized:
     rlfsm.set_read_only()
 
 ## Set up a handle to the registry
@@ -332,7 +332,7 @@ for site in inventory.sites.itervalues():
 # This is dangerous though - if inventory update fails on the server side for some reason,
 # we might not see the inconsistency for a while.
 
-if not read_only:
+if authorized:
     registry.db.lock_tables(write = ['data_injections'])
     registry.db.delete_many('data_injections', 'id', processed_injection_ids)
 
