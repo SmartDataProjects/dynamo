@@ -43,53 +43,71 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
 
     def start_transfers(self, batch_id, batch_tasks): #override
         if len(batch_tasks) == 0:
-            return True
+            return {}
+
+        result = {}
 
         # tasks should all have the same source and destination
         source = batch_tasks[0].source
         destination = batch_tasks[0].subscription.destination
 
         fields = ('id', 'source', 'destination')
-        def mapping(task):
-            lfn = task.subscription.file.lfn
-            return (
-                task.id,
-                source.to_pfn(lfn, 'gfal2'),
-                destination.to_pfn(lfn, 'gfal2')
-            )
+
+        def yield_task_entry():
+            for task in batch_tasks:
+                lfn = task.subscription.file.lfn
+                source_pfn = source.to_pfn(lfn, 'gfal2')
+                dest_pfn = destination.to_pfn(lfn, 'gfal2')
+
+                if source_pfn is None or dest_pfn is None:
+                    # either gfal2 is not supported or lfn could not be mapped
+                    result[task] = False
+                    continue
+
+                result[task] = True
+                yield (task.id, source_pfn, dest_pfn)
 
         if not self._read_only:
             sql = 'INSERT INTO `standalone_transfer_batches` (`batch_id`, `source_site`, `destination_site`) VALUES (%s, %s, %s)'
             self.db.query(sql, batch_id, source.name, destination.name)
-            self.db.insert_many('standalone_transfer_tasks', fields, mapping, batch_tasks)
+            self.db.insert_many('standalone_transfer_tasks', fields, None, yield_task_entry())
 
         LOG.debug('Inserted %d entries to standalone_transfer_tasks for batch %d.', len(batch_tasks), batch_id)
 
-        return True
+        return result
 
     def start_deletions(self, batch_id, batch_tasks): #override
         if len(batch_tasks) == 0:
-            return True
+            return {}
+
+        result = {}
 
         # tasks should all have the same target site
         site = batch_tasks[0].desubscription.site
 
         fields = ('id', 'file')
-        def mapping(task):
-            lfn = task.desubscription.file.lfn
-            return (
-                task.id,
-                site.to_pfn(lfn, 'gfal2')
-            )
+
+        def yield_task_entry():
+            for task in batch_tasks:
+                lfn = task.desubscription.file.lfn
+                pfn = site.to_pfn(lfn, 'gfal2')
+
+                if pfn is None:
+                    # either gfal2 is not supported or lfn could not be mapped
+                    result[task] = False
+                    continue
+
+                result[task] = True
+                yield (task.id, pfn)
 
         if not self._read_only:
             sql = 'INSERT INTO `standalone_deletion_batches` (`batch_id`, `site`) VALUES (%s, %s)'
             self.db.query(sql, batch_id, site.name)
-            self.db.insert_many('standalone_deletion_tasks', fields, mapping, batch_tasks)
+            self.db.insert_many('standalone_deletion_tasks', fields, None, yield_task_entry())
 
         LOG.debug('Inserted %d entries to standalone_deletion_tasks for batch %d.', len(batch_tasks), batch_id)
 
-        return True
+        return result
 
     def cancel_transfers(self, task_ids): #override
         return self._cancel(task_ids, 'transfer')

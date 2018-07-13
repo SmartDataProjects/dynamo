@@ -15,7 +15,7 @@ class FileDeletionOperation(FileOperation):
         @params batch_id     Integer
         @params batch_tasks  List of DeletionTask objects
 
-        @return  boolean indicating the operation success.
+        @return  {task: boolean} True if successfully submitted
         """
         raise NotImplementedError('start_deletions')
 

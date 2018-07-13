@@ -15,7 +15,7 @@ class FileTransferOperation(FileOperation):
         @params batch_id     Integer
         @params batch_tasks  List of TransferTask objects
 
-        @return  boolean indicating the operation success.
+        @return  {task: boolean} True for submission success
         """
         raise NotImplementedError('start_transfers')
 

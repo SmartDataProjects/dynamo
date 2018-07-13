@@ -185,18 +185,19 @@ class RLFSM(object):
             return
 
         LOG.debug('Issuing transfer tasks.')
-        num_batches, num_tasks = 0, 0
+        num_success = 0
+        num_failure = 0
         for batch_tasks in batches:
-            nb, nt = self._start_transfers(batch_tasks)
-            num_batches += nb
-            num_tasks += nt
+            s, f = self._start_transfers(batch_tasks)
+            num_success += s
+            num_failure += f
             if self.cycle_stop.is_set():
                 break
 
-        if num_tasks != 0:
-            LOG.info('Issued %d transfer tasks in %d batches.', num_tasks, num_batches)
+        if len(batches):
+            LOG.info('Issued transfer tasks: %d success, %d failure. %d batches.', num_success, num_failure, len(batches))
         else:
-            LOG.debug('Issued %d transfer tasks in %d batches.', num_tasks, num_batches)
+            LOG.debug('Issued transfer tasks: %d success, %d failure. %d batches.', num_success, num_failure, len(batches))
 
     def delete_files(self, inventory):
         """
@@ -242,18 +243,19 @@ class RLFSM(object):
             return
 
         LOG.debug('Issuing deletion tasks.')
-        num_batches, num_tasks = 0, 0
+        num_success = 0
+        num_failure = 0
         for batch_tasks in batches:
-            nb, nt = self._start_deletions(batch_tasks)
-            num_batches += nb
-            num_tasks += nt
+            s, f = self._start_deletions(batch_tasks)
+            num_success += s
+            num_failure += f
             if self.cycle_stop.is_set():
                 break
     
-        if num_tasks != 0:
-            LOG.info('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
+        if len(batches) != 0:
+            LOG.info('Issued deletion tasks: %d success, %d failure. %d batches.', num_success, num_failure, len(batches))
         else:
-            LOG.debug('Issued %d deletion tasks in %d batches.', num_tasks, num_batches)
+            LOG.debug('Issued deletion tasks: %d success, %d failure. %d batches.', num_success, num_failure, len(batches))
 
     def subscribe_file(self, site, lfile):
         """
@@ -749,46 +751,30 @@ class RLFSM(object):
         for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_tasks` WHERE `batch_id` = %s', batch_id):
             tasks_by_sub[subscription_id].id = task_id
 
-        success = self.transfer_operation.start_transfers(batch_id, tasks)
+        result = self.transfer_operation.start_transfers(batch_id, tasks)
 
-        if success:
-            if not self._read_only:
-                self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.subscription.id for t in tasks])
+        successful = [task for task, success in result.iteritems() if success]
 
-            return 1, len(tasks)
-        else:
-            if len(tasks) == 1:
-                task = tasks[0]
-                LOG.error('Cannot start transfer of %s from %s to %s',
-                    task.subscription.file.lfn, task.source.name, task.subscription.destination.name)
+        if not self._read_only:
+            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.subscription.id for t in successful])
 
-                if not self._read_only:
-                    sql = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
-                    sql += ' SELECT `id`, `subscription_id`, `source_id`, %s FROM `transfer_tasks` WHERE `id` = %s'
-                    self.db.query(sql, -1, task.id)
+            if len(successful) != len(result):
+                failed = [task for task, success in result.iteritems() if not success]
+                for task in failed:
+                    LOG.error('Cannot issue transfer of %s from %s to %s',
+                              task.subscription.file.lfn, task.source.name, task.subscription.destination.name)
 
-                    sql = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
-                    self.db.query(sql, 'retry', task.subscription.id)
+                failed_ids = [t.id for t in failed]
 
-            else:
-                LOG.error('Batch transfer of %d files failed. Retrying with smaller batches.', len(tasks))
+                sql = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
+                sql += ' SELECT `id`, `subscription_id`, `source_id`, -1 FROM `transfer_tasks`'
+                self.db.execute_many(sql, 'id', failed_ids)
 
-            if not self._read_only:
-                # roll back
-                self.db.query('DELETE FROM `transfer_tasks` WHERE `batch_id` = %s', batch_id)
-                self.db.query('DELETE FROM `transfer_batches` WHERE `id` = %s', batch_id)
+                self.db.delete_many('transfer_tasks', 'id', failed_ids)
 
-            num_batches, num_tasks = 0, 0
+                self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'retry\', `last_update` = NOW()', 'id', [t.subscription.id for t in failed])
 
-            if len(tasks) > 1:
-                nb, nt = self._start_transfers(tasks[:len(tasks) / 2])
-                num_batches += nb
-                num_tasks += nt
-                nb, nt = self._start_transfers(tasks[len(tasks) / 2:])
-                num_batches += nb
-                num_tasks += nt
-
-            return num_batches, num_tasks
+        return len(successful), len(result) - len(successful)
 
     def _start_deletions(self, tasks):
         if self._read_only:
@@ -808,45 +794,28 @@ class RLFSM(object):
 
         # set the task ids
         tasks_by_sub = dict((t.desubscription.id, t) for t in tasks)
-        for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_tasks` WHERE `batch_id` = %s', batch_id):
-            tasks_by_sub[subscription_id].id = task_id
+        for task_id, desubscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_tasks` WHERE `batch_id` = %s', batch_id):
+            tasks_by_sub[desubscription_id].id = task_id
         
-        success = self.deletion_operation.start_deletions(batch_id, tasks)
+        result = self.deletion_operation.start_deletions(batch_id, tasks)
 
-        if success:
-            if not self._read_only:
-                self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.desubscription.id for t in tasks])
+        successful = [task for task, success in result.iteritems() if success]
 
-            return 1, len(tasks)
+        if not self._read_only:
+            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'inbatch\', `last_update` = NOW()', 'id', [t.desubscription.id for t in successful])
 
-        else:
-            if len(tasks) == 1:
-                task = tasks[0]
-                LOG.error('Cannot delete %s at %s',
-                    task.desubscription.file.lfn, task.desubscription.site.name)
+            if len(successful) != len(result):
+                failed = [task for task, success in result.iteritems() if not success]
 
-                if not self._read_only:
-                    sql = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
-                    self.db.query(sql, 'held', task.desubscription.id)
+                for task in failed:
+                    LOG.error('Cannot delete %s at %s',
+                              task.desubscription.file.lfn, task.desubscription.site.name)
 
-            else:
-                LOG.error('Batch deletion of %d files failed. Retrying with smaller batches.', len(tasks))
+                self.db.delete_many('deletion_tasks', 'id', [t.id for t in failed])
 
-            if not self._read_only:
-                # roll back
-                self.db.query('DELETE FROM `deletion_tasks` WHERE `batch_id` = %s', batch_id)
-                self.db.query('DELETE FROM `deletion_batches` WHERE `id` = %s', batch_id)
+                self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', [t.desubcription.id for t in failed])
 
-            num_batches, num_tasks = 0, 0
-            if len(tasks) > 1:
-                nb, nt = self._start_deletions(tasks[:len(tasks) / 2])
-                num_batches += nb
-                num_tasks += nt
-                nb, nt = self._start_deletions(tasks[len(tasks) / 2:])
-                num_batches += nb
-                num_tasks += nt
-
-            return num_batches, num_tasks
+        return len(successful), len(result) - len(successful)
     
     def _set_dirclean_candidates(self, subscription_ids, inventory):
         site_dirs = {}

@@ -52,6 +52,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return batches
 
     def start_transfers(self, batch_id, batch_tasks): #override
+        result = {}
+
         stage_files = []
         transfers = []
 
@@ -60,13 +62,18 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         for task in batch_tasks:
             sub = task.subscription
             lfn = sub.file.lfn
+            dest_pfn = sub.destination.to_pfn(lfn, 'gfal2')
             source_pfn = task.source.to_pfn(lfn, 'gfal2')
+
+            if dest_pfn is None or source_pfn is None:
+                # either gfal2 is not supported or lfn could not be mapped
+                result[task] = False
+                continue
 
             if task.source.storage_type == Site.TYPE_MSS:
                 # need to stage first
                 stage_files.append((source_pfn, dest_pfn))
             else:
-                dest_pfn = sub.destination.to_pfn(lfn, 'gfal2')
                 transfers.append(fts3.new_transfer(source_pfn, dest_pfn))
 
             # there should be only one task per destination pfn
@@ -75,10 +82,11 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if len(stage_files) != 0:
             job = fts3.new_staging_job([ff[0] for ff in stage_files])
             success = self._submit_job(job, 'staging', batch_id, pfn_to_task)
-            if not success:
-                return False
 
-            if not self._read_only:
+            for _, dest_pfn in stage_files:
+                result[pfn_to_task[dest_pfn]] = success
+
+            if success and not self._read_only:
                 fields = ('id', 'source', 'destination')
                 mapping = lambda ff: (pfn_to_task[ff[1]], ff[0], ff[1])
                 if not self._read_only:
@@ -87,12 +95,16 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if len(transfers) != 0:
             job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = False)
             success = self._submit_job(job, 'transfer', batch_id, pfn_to_task)
-            if not success:
-                return False
 
-        return True
+            for transfer in transfers:
+                dest_pfn = transfer['destinations'][0]
+                result[pfn_to_task[dest_pfn]] = success
+
+        return result
 
     def start_deletions(self, batch_id, batch_tasks): #override
+        result = {}
+
         pfn_to_task = {}
 
         for task in batch_tasks:
@@ -100,12 +112,22 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             lfn = desub.file.lfn
             pfn = desub.site.to_pfn(lfn, 'gfal2')
 
+            if pfn is None:
+                # either gfal2 is not supported or lfn could not be mapped
+                result[task] = False
+                continue
+
             # there should be only one task per destination pfn
             pfn_to_task[pfn] = task
 
         job = fts3.new_delete_job(pfn_to_task.keys())
 
-        return self._submit_job(job, 'deletion', batch_id, pfn_to_task)
+        success = self._submit_job(job, 'deletion', batch_id, pfn_to_task)
+
+        for task in pfn_to_task.itervalues():
+            result[task] = success
+
+        return result
 
     def cancel_transfers(self, task_ids): #override
         return self._cancel(task_ids, 'transfer')

@@ -99,7 +99,7 @@ class Site(object):
 
         self.filename_mapping = {}
         for protocol, chains in filename_mapping.iteritems():
-            self.filename_mapping[protocol] = FileNameMapping(chains)
+            self.filename_mapping[protocol] = Site.FileNameMapping(chains)
 
         self.id = sid
 

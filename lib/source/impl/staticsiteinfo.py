@@ -1,5 +1,5 @@
 from dynamo.source.siteinfo import SiteInfoSource
-from dynamo.dataformat import Configuration
+from dynamo.dataformat import Configuration, Site
 
 class StaticSiteInfoSource(SiteInfoSource):
     """
@@ -32,7 +32,7 @@ class StaticSiteInfoSource(SiteInfoSource):
 
     def get_site_status(self, site_name): #override
         try:
-            site_config = self.config[name]
+            site_config = self.config[site_name]
         except KeyError:
             raise RuntimeError('Site %s not in configuration')
 
@@ -40,7 +40,7 @@ class StaticSiteInfoSource(SiteInfoSource):
 
     def get_filename_mapping(self, site_name): #override
         try:
-            site_config = self.config[name]
+            site_config = self.config[site_name]
         except KeyError:
             raise RuntimeError('Site %s not in configuration')
 
