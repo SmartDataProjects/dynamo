@@ -227,15 +227,17 @@ for sub in subscriptions:
     if type(sub) is RLFSM.Subscription:
         optype = 'transfer'
         LOG.debug('Subscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.destination.name)
+        site = sub.destination
     else:
         optype = 'deletion'
         LOG.debug('Desubscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.site.name)
+        site = sub.site
 
-    replica = sub.file.block.find_replica(sub.destination)
+    replica = sub.file.block.find_replica(site)
 
     if replica is None:
         # unexpected file! -> mark the subscription for deletion and move on
-        LOG.warning('Subscription %s to %s does not have a corresponding block replica', sub.file.lfn, sub.destination.name)
+        LOG.warning('Subscription %s to %s does not have a corresponding block replica', sub.file.lfn, site.name)
         if sub.status == 'done':
             done_ids.append(sub.id)
         continue
