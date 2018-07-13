@@ -71,6 +71,9 @@ class Site(object):
         def __ne__(self, other):
             return self._chains != other._chains
 
+        def __repr__(self):
+            return repr(self._chains)
+
         def map(self, lfn):
             source = lfn
             for chain in self._re_chains:
@@ -87,13 +90,16 @@ class Site(object):
             return None
 
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN, sid = 0):
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN, filename_mapping = {}, sid = 0):
         self._name = name
         self.host = host
         self.storage_type = Site.storage_type_val(storage_type)
         self.backend = backend
         self.status = Site.status_val(status)
+
         self.filename_mapping = {}
+        for protocol, chains in filename_mapping.iteritems():
+            self.filename_mapping[protocol] = FileNameMapping(chains)
 
         self.id = sid
 
@@ -106,8 +112,8 @@ class Site(object):
             (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status), self.id)
 
     def __repr__(self):
-        return 'Site(%s,%s,\'%s\',%s,\'%s\',%d)' % \
-            (repr(self._name), repr(self.host), Site.storage_type_name(self.storage_type), repr(self.backend), Site.status_name(self.status), self.id)
+        return 'Site(%s,%s,\'%s\',%s,\'%s\',%s,%d)' % \
+            (repr(self._name), repr(self.host), Site.storage_type_name(self.storage_type), repr(self.backend), Site.status_name(self.status), repr(self.filename_mapping), self.id)
 
     def __eq__(self, other):
         return self is other or \
