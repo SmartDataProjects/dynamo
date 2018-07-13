@@ -1,5 +1,5 @@
 from dynamo.utils.classutil import get_instance
-from dynamo.registry.registry import RegistryDB
+from dynamo.registry.registry import RegistryDatabase
 
 class AppManager(object):
     """
