@@ -708,10 +708,13 @@ class RLFSM(object):
                 source = subscription.disk_sources[0]
 
             else:
-                not_tried = set(subscription.disk_sources) - set(subscription.failed_sources.iterkeys())
-                if len(not_tried) != 0:
+                not_tried = set(subscription.disk_sources)
+                if subscription.failed_sources is not None:
+                    not_tried -= set(subscription.failed_sources.iterkeys())
+
+                if len(not_tried) != 0 or subscription.failed_sources is None:
                     # intelligently random again
-                    source = random.choice(not_tried)
+                    source = random.choice(list(not_tried))
                 else:
                     # select the least failed site
                     by_failure = sorted(subscription.disk_sources, key = lambda s: subscription.failed_sources[s])
