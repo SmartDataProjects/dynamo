@@ -23,7 +23,7 @@ class DealerHistoryBase(CopyHistoryDatabase):
         sql += ' FROM `copied_replicas` AS c'
         sql += ' INNER JOIN `copy_operations` AS h ON h.`id` = c.`copy_id`'
         sql += ' INNER JOIN `cycle_copy_operations` AS cc ON cc.`operation_id` = c.`id`'
-        sql += ' INNER JOIN `cycles` AS r ON r.`id` = cc.`cycle_id`'
+        sql += ' INNER JOIN `copy_cycles` AS r ON r.`id` = cc.`cycle_id`'
         sql += ' INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = h.`site_id`'
@@ -60,7 +60,7 @@ class DealerHistoryBase(CopyHistoryDatabase):
 
         partition_id = result[0]
 
-        sql = 'SELECT `id` FROM `cycles` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'copy\', \'copy_test\')' % partition_id
+        sql = 'SELECT `id` FROM `copy_cycles` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'copy\', \'copy_test\')' % partition_id
 
         if first >= 0:
             sql += ' AND `id` >= %d' % first
@@ -76,11 +76,10 @@ class DealerHistoryBase(CopyHistoryDatabase):
 
 
 class DealerHistory(DealerHistoryBase):
-    def new_cycle(self, partition, policy_version, comment = '', test = False):
+    def new_cycle(self, partition, comment = '', test = False):
         """
         Set up a new copy cycle for the partition.
         @param partition        partition name string
-        @param policy_version   string for policy version
         @param comment          comment string
         @param test             if True, create a copy_test cycle.
 
@@ -97,9 +96,9 @@ class DealerHistory(DealerHistoryBase):
         else:
             operation_str = 'copy'
 
-        columns = ('operation', 'partition_id', 'policy_version', 'comment', 'time_start')
-        values = (operation_str, part_id, policy_version, comment, MySQL.bare('NOW()'))
-        return self.db.insert_get_id('cycles', columns = columns, values = values)
+        columns = ('operation', 'partition_id', 'comment', 'time_start')
+        values = (operation_str, part_id, comment, MySQL.bare('NOW()'))
+        return self.db.insert_get_id('copy_cycles', columns = columns, values = values)
 
     def close_cycle(self, cycle_number):
         """
@@ -110,7 +109,7 @@ class DealerHistory(DealerHistoryBase):
         if self._read_only:
             return
 
-        self.db.query('UPDATE `cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)
+        self.db.query('UPDATE `copy_cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)
 
     def make_cycle_entry(self, cycle_number, site):
         history_record = self.make_entry(site.name)

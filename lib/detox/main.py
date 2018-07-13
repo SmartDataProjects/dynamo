@@ -49,7 +49,7 @@ class Detox(object):
 
         if create_cycle:
             # fetch the deletion cycle number
-            cycle_tag = self.history.new_cycle(self.policy.partition_name, self.policy.version, comment = comment, test = self.test_run)
+            cycle_tag = self.history.new_cycle(self.policy.partition_name, self.policy.policy_text, comment = comment, test = self.test_run)
             LOG.info('Detox cycle %d for %s starting', cycle_tag, self.policy.partition_name)
         else:
             cycle_tag = self.policy.partition_name

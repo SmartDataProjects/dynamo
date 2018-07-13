@@ -109,7 +109,9 @@ class DetoxPolicy(object):
         
         LOG.info('Reading the policy file.')
         with open(config.policy_file) as policy_def:
-            self.parse_lines(policy_def, config.attrs)
+            self.policy_text = policy_def.read().strip()
+
+        self.parse_lines(self.policy_text.split('\n'):, config.attrs)
         
         # Special config - shift time-based policies by config.time_shift days for simulation
         if config.get('time_shift', 0.) > 0.:
@@ -118,8 +120,6 @@ class DetoxPolicy(object):
                     if type(pred) is predicates.BinaryExpr and pred.variable.vtype == attrs.Attr.TIME_TYPE:
                         pred.rhs += config.time_shift * 24. * 3600.
 
-        self.version = config.policy_version
-
         # Check if the replicas can be deleted just before making the deletion requests.
         # Set to a function that takes a list of dataset replicas and removes from it
         # the replicas that should not be deleted.
@@ -127,16 +127,6 @@ class DetoxPolicy(object):
 
     def parse_lines(self, lines, attrs_config):
         LOG.info('Parsing policy stack.')
-
-        if type(lines) is file:
-            conf = lines
-            lines = map(str.strip, conf.read().split('\n'))
-            il = 0
-            while il != len(lines):
-                if lines[il] == '' or lines[il].startswith('#'):
-                    lines.pop(il)
-                else:
-                    il += 1
 
         self.partition_name = ''
         self.target_site_def = []
@@ -150,6 +140,10 @@ class DetoxPolicy(object):
             LINE_POLICY, LINE_ORDER, LINE_ALGO = range(7)
 
         for line in lines:
+            line = line.strip()
+            if line == '' or line.startswith('#'):
+                continue
+
             line_type = -1
 
             words = line.split()

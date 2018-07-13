@@ -35,7 +35,6 @@ from dynamo.detox.main import Detox
 from dynamo.core.executable import inventory
 
 config.detox.policy_file = args.policy
-config.detox.policy_version = 'unknown'
 
 config.detox.test_run = (args.snapshot_run or args.test_run)
 
