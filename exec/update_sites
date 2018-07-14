@@ -22,7 +22,13 @@ LOG = make_standard_logger(config.get('log_level', 'info'))
 ## Load and initialize sources
 from dynamo.source.siteinfo import SiteInfoSource
 
-source = SiteInfoSource.get_instance(config.get('module', None), config.get('config', None))
+source_config = config.get('config', Configuration())
+if 'include_sites' in config:
+    source_config.include = config.include_sites
+if 'exclude_sites' in config:
+    source_config.exclude = config.exclude_sites
+
+source = SiteInfoSource.get_instance(config.get('module', None), source_config)
 
 ## Start the update
 from dynamo.utils.parallel import Map
