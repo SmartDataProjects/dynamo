@@ -1,11 +1,14 @@
 from exceptions import ObjectError
 from block import Block
 from blockreplica import BlockReplica
+from _namespace import customize_file
 
 class File(object):
     """Represents a file. Atomic unit of data."""
 
-    __slots__ = ['_lfn', '_block', 'id', 'size']
+    __slots__ = ['_lfn', '_block', 'id', 'size', 'checksum']
+
+    checksum_algorithms = tuple() # redefined in _namespace
 
     @property
     def lfn(self):
@@ -15,23 +18,24 @@ class File(object):
     def block(self):
         return self._block
 
-    def __init__(self, lfn, block = None, size = 0, fid = 0):
+    def __init__(self, lfn, block = None, size = 0, checksum = tuple(), fid = 0):
         self._lfn = lfn
         self._block = block
         self.size = size
+        self.checksum = checksum
 
         self.id = fid
 
     def __str__(self):
-        return 'File %s (block=%s, size=%d, id=%d)' % (self._lfn, self._block_full_name(), self.size, self.id)
+        return 'File %s (block=%s, size=%d, checksum=%s, id=%d)' % (self._lfn, self._block_full_name(), self.size, str(self.checksum), self.id)
 
     def __repr__(self):
-        return 'File(%s,%s,%d,%d)' % (repr(self._lfn), repr(self._block_full_name()), self.size, self.id)
+        return 'File(%s,%s,%d,%s,%d)' % (repr(self._lfn), repr(self._block_full_name()), self.size, repr(self.checksum), self.id)
 
     def __eq__(self, other):
         return self is other or \
             (self._lfn == other._lfn and self._block_full_name() == other._block_full_name() and \
-            self.size == other.size)
+             self.size == other.size and self.checksum == other.checksum)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -64,7 +68,7 @@ class File(object):
         lfile = block.find_file(self._lfn)
         updated = False
         if lfile is None:
-            lfile = File(self._lfn, block, self.size, self.id)
+            lfile = File(self._lfn, block, self.size, self.checksum, self.id)
             block.add_file(lfile) # doesn't change the block attributes
 
             updated = True
@@ -157,3 +161,6 @@ class File(object):
 
     def _copy_no_check(self, other):
         self.size = other.size
+        self.checksum = other.checksum
+
+customize_file(File)

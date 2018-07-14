@@ -343,10 +343,16 @@ class InjectDataBase(WebModule):
                 raise MissingParameter('size', context = 'file ' + str(obj))
 
             try:
+                checksum = tuple(obj[algo] for algo in df.File.checksum_algorithms)
+            except KeyError:
+                raise MissingParameter(','.join(df.File.checksum_algorithms), context = 'file ' + str(obj))
+
+            try:
                 new_lfile = df.File(
                     lfn,
                     block = block,
-                    size = size
+                    size = size,
+                    checksum = checksum
                 )
 
             except TypeError as exc:

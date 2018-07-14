@@ -84,7 +84,8 @@ def transfer(task_id, src_pfn, dest_pfn, params_config):
         params.create_parent = True
         # Overwrite the destination if file already exists (otherwise throws an error)
         params.overwrite = params_config['overwrite']
-        params.set_checksum(*params_config['checksum'])
+        if 'checksum' in params_config:
+            params.set_checksum(*params_config['checksum'])
         params.timeout = params_config['transfer_timeout'] # we probably want this to be file size dependent
     
     except Exception as exc:
@@ -419,6 +420,11 @@ class DeletionPoolManager(QueueingPoolManager):
 
 
 if __name__ == '__main__':
+    ## Raise the process maximums to accommodate large number of subprocs and pipes
+    import resource
+    resource.setrlimit(resource.RLIMIT_NPROC, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (65536, 65536))
+
     ## Read server config (should be readable only to root)
     from dynamo.dataformat import Configuration
     from dynamo.core.serverutils import BANNER
@@ -460,7 +466,6 @@ if __name__ == '__main__':
     # We want to make these parameters dynamic in the future
     # (which means we'll have to create a new table that records the site names for each batch)
     max_concurrent = fileop_config.daemon.max_parallel_links
-    checksum_algo = fileop_config.daemon.get('checksum', '')
     transfer_timeout = fileop_config.daemon.transfer_timeout
     overwrite = fileop_config.daemon.get('overwrite', False)
     x509_proxy = fileop_config.daemon.get('x509_proxy', '')
@@ -474,12 +479,6 @@ if __name__ == '__main__':
         'transfer_timeout': transfer_timeout,
         'overwrite': overwrite
     }
-
-    if checksum_algo:
-        # Available checksum algorithms: crc32, adler32, md5
-        params_config['checksum'] = (gfal2.checksum_mode.both, checksum_algo, '')
-    else:
-        params_config['checksum'] = (gfal2.checksum_mode.none, '', '')
 
     ## Set up a handle to the DB
     db = MySQL(fileop_config.manager.db.db_params)
@@ -639,19 +638,25 @@ if __name__ == '__main__':
                 pool_manager.add_task(tid, src_pfn, token)
 
             # Finally start transfers for tasks in new and staged states
-            sql = 'SELECT q.`id`, a.`source`, a.`destination`, b.`source_site`, b.`destination_site` FROM `standalone_transfer_tasks` AS a'
+            sql = 'SELECT q.`id`, a.`source`, a.`destination`, a.`checksum_algo`, a.`checksum`, b.`source_site`, b.`destination_site`'
+            sql += ' FROM `standalone_transfer_tasks` AS a'
             sql += ' INNER JOIN `transfer_tasks` AS q ON q.`id` = a.`id`'
             sql += ' INNER JOIN `standalone_transfer_batches` AS b ON b.`batch_id` = q.`batch_id`'
             sql += ' WHERE (a.`status` = \'new\' AND b.`mss_source` = 0) OR a.`status` = \'staged\''
             sql += ' ORDER BY b.`source_site`, b.`destination_site`, q.`id`'
         
             _link = None
-            for tid, src_pfn, dest_pfn, ssite, dsite in db.query(sql):
+            for tid, src_pfn, dest_pfn, algo, checksum, ssite, dsite in db.query(sql):
                 if (ssite, dsite) != _link:
                     _link = (ssite, dsite)
                     pool_manager = get_transfer_manager(ssite, dsite, max_concurrent)
+
+                pconf = dict(params_config)
+                if algo:
+                    # Available checksum algorithms: crc32, adler32, md5
+                    pconf['checksum'] = (gfal2.checksum_mode.target, algo, checksum)
         
-                pool_manager.add_task(tid, src_pfn, dest_pfn, params_config)
+                pool_manager.add_task(tid, src_pfn, dest_pfn, pconf)
 
                 transfer_first_wait = True
 

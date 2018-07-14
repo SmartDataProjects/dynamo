@@ -18,7 +18,7 @@ class Dataset(object):
     class SoftwareVersion(object):
         __slots__ = ['id', 'value']
 
-        #field_names = ... defined in _namespace
+        field_names = tuple() # redefined in _namespace
 
         def __init__(self, value, vid = 0):
             self.id = vid

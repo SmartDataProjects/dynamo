@@ -6,6 +6,7 @@ from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery
 from dynamo.utils.interface.mysql import MySQL
+from dynamo.dataformat import File
 
 LOG = logging.getLogger(__name__)
 
@@ -51,11 +52,12 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         source = batch_tasks[0].source
         destination = batch_tasks[0].subscription.destination
 
-        fields = ('id', 'source', 'destination')
+        fields = ('id', 'source', 'destination', 'checksum_algo', 'checksum')
 
         def yield_task_entry():
             for task in batch_tasks:
-                lfn = task.subscription.file.lfn
+                lfile = task.subscription.file
+                lfn = lfile.lfn
                 source_pfn = source.to_pfn(lfn, 'gfal2')
                 dest_pfn = destination.to_pfn(lfn, 'gfal2')
 
@@ -64,8 +66,13 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
                     result[task] = False
                     continue
 
+                if self.checksum_algorithm:
+                    checksum = (self.checksum_algorithm, str(lfile.checksum[self.checksum_index]))
+                else:
+                    checksum = (None, None)
+
                 result[task] = True
-                yield (task.id, source_pfn, dest_pfn)
+                yield (task.id, source_pfn, dest_pfn) + checksum
 
         if not self._read_only:
             sql = 'INSERT INTO `standalone_transfer_batches` (`batch_id`, `source_site`, `destination_site`) VALUES (%s, %s, %s)'

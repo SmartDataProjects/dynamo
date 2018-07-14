@@ -1,5 +1,6 @@
 from dynamo.fileop.base import FileOperation, FileQuery
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import File, ConfigurationError
 
 class FileTransferOperation(FileOperation):
     @staticmethod
@@ -8,6 +9,14 @@ class FileTransferOperation(FileOperation):
     
     def __init__(self, config):
         FileOperation.__init__(self, config)
+
+        # Checksum algorithm to use (optional)
+        self.checksum_algorithm = config.get('checksum_algorithm', '')
+        if self.checksum_algorithm:
+            try:
+                self.checksum_index = File.checksum_algorithms.index(self.checksum_algorithm)
+            except ValueError:
+                raise ConfigurationError('Checksum algorithm %s not supported by File object.' % self.checksum_algorithm)
 
     def start_transfers(self, batch_id, batch_tasks):
         """

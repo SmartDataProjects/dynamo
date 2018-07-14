@@ -143,10 +143,14 @@ class MySQLInventoryStore(InventoryStore):
         if block.id == 0:
             return files
 
-        sql = 'SELECT `id`, `size`, `name` FROM `files` WHERE `block_id` = %s'
+        sql = 'SELECT `id`, `size`, `name`'
+        for algo in File.checksum_algorithms:
+            sql += ', `%s`' % algo
+        sql += ' FROM `files` WHERE `block_id` = %s'
 
-        for fid, size, name in self._mysql.xquery(sql, block.id):
-            files.add(File(name, block, size, fid))
+        for row in self._mysql.xquery(sql, block.id):
+            file_id, size, name = row[:3]
+            files.add(File(name, block = block, size = size, checksum = row[3:], fid = file_id))
 
         return files
 
@@ -592,8 +596,8 @@ class MySQLInventoryStore(InventoryStore):
 
         self._mysql.query('CREATE TABLE `files_tmp` LIKE `files`')
 
-        fields = ('id', 'block_id', 'size', 'name')
-        mapping = lambda lfile: (lfile.id, lfile.block.id, lfile.size, lfile.lfn)
+        fields = ('id', 'block_id', 'size', 'name') + File.checksum_algorithms
+        mapping = lambda lfile: (lfile.id, lfile.block.id, lfile.size, lfile.lfn) + lfile.checksum
 
         num = self._mysql.insert_many('files_tmp', fields, mapping, files, do_update = False)
 
@@ -848,7 +852,10 @@ class MySQLInventoryStore(InventoryStore):
             )
 
     def _yield_files(self): #override
-        sql = 'SELECT f.`id`, d.`name`, d.`id`, b.`name`, b.`id`, f.`name`, f.`size` FROM `files`'
+        sql = 'SELECT f.`id`, d.`name`, d.`id`, b.`name`, b.`id`, f.`name`, f.`size`'
+        for algo in File.checksum_algorithms:
+            sql += ', `%s`' % algo
+        sql += ' FROM `files`'
         sql += ' INNER JOIN `blocks` AS b ON b.`id` = f.`block_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = b.`dataset_id`'
         sql += ' ORDER BY d.`id`, b.`id`'
@@ -857,7 +864,8 @@ class MySQLInventoryStore(InventoryStore):
         _block_id = 0
         dataset = None
         block = None
-        for file_id, dataset_name, dataset_id, block_name, block_id, lfn, size in self._mysql.xquery(sql):
+        for row in self._mysql.xquery(sql):
+            file_id, dataset_name, dataset_id, block_name, block_id, lfn, size = row[:7]
             if dataset_id != _dataset_id:
                 _dataset_id = dataset_id
                 dataset = Dataset(dataset_name, did = dataset_id)
@@ -866,7 +874,7 @@ class MySQLInventoryStore(InventoryStore):
                 _block_id = block_id
                 block = Block(Block.to_internal_name(block_name), dataset, bid = block_id)
 
-            yield File(lfn, block = block, size = size, fid = file_id)
+            yield File(lfn, block = block, size = size, checksum = row[7:], fid = file_id)
 
     def _yield_dataset_replicas(self): #override
         sql = 'SELECT d.`id`, d.`name`, s.`id`, s.`name`, dr.`growing`, g.`id`, g.`name` FROM `dataset_replicas` AS dr'
@@ -1047,8 +1055,8 @@ class MySQLInventoryStore(InventoryStore):
         if block_id == 0:
             return
 
-        fields = ('block_id', 'size', 'name')
-        self._mysql.insert_update('files', fields, block_id, lfile.size, lfile.lfn)
+        fields = ('block_id', 'size', 'name') + File.checksum_algorithms
+        self._mysql.insert_update('files', fields, block_id, lfile.size, lfile.lfn, *lfile.checksum)
         file_id = self._mysql.last_insert_id
 
         if file_id != 0:

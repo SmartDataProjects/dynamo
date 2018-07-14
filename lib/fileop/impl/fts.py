@@ -70,11 +70,16 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 result[task] = False
                 continue
 
+            if self.checksum_algorithm:
+                checksum = '%s:%s' % (self.checksum_algorithm, str(sub.file.checksum[self.checksum_index]))
+            else:
+                checksum = None
+
             if task.source.storage_type == Site.TYPE_MSS:
                 # need to stage first
-                stage_files.append((source_pfn, dest_pfn))
+                stage_files.append((source_pfn, dest_pfn, checksum, sub.file.size))
             else:
-                transfers.append(fts3.new_transfer(source_pfn, dest_pfn))
+                transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = sub.file.size))
 
             # there should be only one task per destination pfn
             pfn_to_task[dest_pfn] = task
@@ -83,17 +88,17 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             job = fts3.new_staging_job([ff[0] for ff in stage_files])
             success = self._submit_job(job, 'staging', batch_id, pfn_to_task)
 
-            for _, dest_pfn in stage_files:
+            for _, dest_pfn, _, _ in stage_files:
                 result[pfn_to_task[dest_pfn]] = success
 
             if success and not self._read_only:
-                fields = ('id', 'source', 'destination')
-                mapping = lambda ff: (pfn_to_task[ff[1]], ff[0], ff[1])
+                fields = ('id', 'source', 'destination', 'checksum', 'size')
+                mapping = lambda ff: (pfn_to_task[ff[1]],) + ff
                 if not self._read_only:
                     self.db.insert_many('fts_staging_queue', fields, mapping, stage_files)
 
         if len(transfers) != 0:
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = False)
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target')
             success = self._submit_job(job, 'transfer', batch_id, pfn_to_task)
 
             for transfer in transfers:
@@ -143,24 +148,24 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         staged_tasks = []
 
-        for task in self._get_status(batch_id, 'staging'):
-            if task[1] == FileQuery.STAT_DONE:
-                staged_tasks.append(task[0])
-                results.append((task[0], FileQuery.STAT_QUEUED, None, None, None))
-            elif task[1] == FileQuery.STAT_FAILED or task[1] == FileQuery.STAT_CANCELLED:
+        for task_id, status, exitcode, start_time, finish_time in self._get_status(batch_id, 'staging'):
+            if status == FileQuery.STAT_DONE:
+                staged_tasks.append(task_id)
+                results.append((task_id, FileQuery.STAT_QUEUED, None, None, None))
+            elif status in (FileQuery.STAT_FAILED, FileQuery.STAT_CANCELLED):
                 # This is final
-                results.append(task)
+                results.append((task_id, status, exitcode, start_time, finish_time))
 
         results.extend(self._get_status(batch_id, 'transfer'))
 
         if len(staged_tasks) != 0:
             transfers = []
             pfn_to_task = {}
-            for task_id, source_pfn, dest_pfn in self.db.select_many('fts_staging_queue', ('id', 'source', 'destination', 'id', staged_tasks)):
-                transfers.append(fts3.new_transfer(source_pfn, dest_pfn))
+            for task_id, source_pfn, dest_pfn, checksum, filesize in self.db.select_many('fts_staging_queue', ('id', 'source', 'destination', 'checksum', 'size'), 'id', staged_tasks):
+                transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = filesize))
                 pfn_to_task[dest_pfn] = task_id
 
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = False)
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target')
             success = self._submit_job(job, 'transfer', batch_id, pfn_to_task)
             if success and not self._read_only:
                 self.db.delete_many('fts_staging_queue', 'id', pfn_to_task.values())

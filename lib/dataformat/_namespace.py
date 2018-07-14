@@ -43,5 +43,8 @@ def customize_block(Block):
     Block.to_full_name = staticmethod(Block_to_full_name)
     Block.from_full_name = staticmethod(Block_from_full_name)
 
+def customize_file(File):
+    pass
+
 def customize_blockreplica(BlockReplica):
     pass
