@@ -57,7 +57,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         stage_files = []
         transfers = []
 
-        pfn_to_task = {}
+        s_pfn_to_task = {}
+        t_pfn_to_task = {}
 
         for task in batch_tasks:
             sub = task.subscription
@@ -80,33 +81,33 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 stage_files.append((source_pfn, dest_pfn, checksum, sub.file.size))
 
                 # task identified by the source PFN
-                pfn_to_task[source_pfn] = task
+                s_pfn_to_task[source_pfn] = task
             else:
                 transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = sub.file.size))
 
                 # there should be only one task per destination pfn
-                pfn_to_task[dest_pfn] = task
+                t_pfn_to_task[dest_pfn] = task
 
         if len(stage_files) != 0:
             job = fts3.new_staging_job([ff[0] for ff in stage_files], bring_online = 36000)
-            success = self._submit_job(job, 'staging', batch_id, pfn_to_task)
+            success = self._submit_job(job, 'staging', batch_id, dict((pfn, task.id) for pfn, task in s_pfn_to_task.iteritems()))
 
-            for _, dest_pfn, _, _ in stage_files:
-                result[pfn_to_task[dest_pfn]] = success
+            for source_pfn, _, _, _ in stage_files:
+                result[s_pfn_to_task[source_pfn]] = success
 
             if success and not self._read_only:
                 fields = ('id', 'source', 'destination', 'checksum', 'size')
-                mapping = lambda ff: (pfn_to_task[ff[1]].id,) + ff
+                mapping = lambda ff: (s_pfn_to_task[ff[0]].id,) + ff
                 if not self._read_only:
                     self.db.insert_many('fts_staging_queue', fields, mapping, stage_files)
 
         if len(transfers) != 0:
             job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target')
-            success = self._submit_job(job, 'transfer', batch_id, pfn_to_task)
+            success = self._submit_job(job, 'transfer', batch_id, dict((pfn, task.id) for pfn, task in t_pfn_to_task.iteritems()))
 
             for transfer in transfers:
                 dest_pfn = transfer['destinations'][0]
-                result[pfn_to_task[dest_pfn]] = success
+                result[t_pfn_to_task[dest_pfn]] = success
 
         return result
 
@@ -130,7 +131,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         job = fts3.new_delete_job(pfn_to_task.keys())
 
-        success = self._submit_job(job, 'deletion', batch_id, pfn_to_task)
+        success = self._submit_job(job, 'deletion', batch_id, dict((pfn, task.id) for pfn, task in pfn_to_task.iteritems()))
 
         for task in pfn_to_task.itervalues():
             result[task] = success
@@ -175,15 +176,15 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         if len(staged_tasks) != 0:
             transfers = []
-            pfn_to_task = {}
+            pfn_to_tid = {}
             for task_id, source_pfn, dest_pfn, checksum, filesize in self.db.select_many('fts_staging_queue', ('id', 'source', 'destination', 'checksum', 'size'), 'id', staged_tasks):
                 transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = filesize))
-                pfn_to_task[dest_pfn] = task_id
+                pfn_to_tid[dest_pfn] = task_id
 
             job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target')
-            success = self._submit_job(job, 'transfer', batch_id, pfn_to_task)
+            success = self._submit_job(job, 'transfer', batch_id, pfn_to_tid)
             if success and not self._read_only:
-                self.db.delete_many('fts_staging_queue', 'id', pfn_to_task.values())
+                self.db.delete_many('fts_staging_queue', 'id', pfn_to_tid.values())
 
         return results
 
@@ -218,7 +219,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         return getattr(fts3, method)(context, *args, **kwd)
 
-    def _submit_job(self, job, optype, batch_id, pfn_to_task):
+    def _submit_job(self, job, optype, batch_id, pfn_to_tid):
         if self._read_only:
             job_id = 'test'
         else:
@@ -265,7 +266,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             pfn_key = 'source_surl'
 
         fields = ('id', 'fts_batch_id', 'fts_file_id')
-        mapping = lambda f: (pfn_to_task[f[pfn_key]].id, fts_batch_id, f['file_id'])
+        mapping = lambda f: (pfn_to_tid[f[pfn_key]], fts_batch_id, f['file_id'])
 
         if not self._read_only:
             self.db.insert_many(table_name, fields, mapping, fts_files, do_update = True, update_columns = ('fts_batch_id', 'fts_file_id'))
