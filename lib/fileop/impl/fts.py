@@ -78,11 +78,14 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             if task.source.storage_type == Site.TYPE_MSS:
                 # need to stage first
                 stage_files.append((source_pfn, dest_pfn, checksum, sub.file.size))
+
+                # task identified by the source PFN
+                pfn_to_task[source_pfn] = task
             else:
                 transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = sub.file.size))
 
-            # there should be only one task per destination pfn
-            pfn_to_task[dest_pfn] = task
+                # there should be only one task per destination pfn
+                pfn_to_task[dest_pfn] = task
 
         if len(stage_files) != 0:
             job = fts3.new_staging_job([ff[0] for ff in stage_files], bring_online = 36000)
@@ -93,7 +96,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
             if success and not self._read_only:
                 fields = ('id', 'source', 'destination', 'checksum', 'size')
-                mapping = lambda ff: (pfn_to_task[ff[1]],) + ff
+                mapping = lambda ff: (pfn_to_task[ff[1]].id,) + ff
                 if not self._read_only:
                     self.db.insert_many('fts_staging_queue', fields, mapping, stage_files)
 
