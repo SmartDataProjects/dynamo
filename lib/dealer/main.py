@@ -58,7 +58,7 @@ class Dealer(object):
         """
 
         # fetch the deletion cycle number
-        cycle_number = self.history.new_cycle(self.policy.partition_name, self.policy.version, comment = comment, test = self.test_run)
+        cycle_number = self.history.new_cycle(self.policy.partition_name, comment = comment, test = self.test_run)
 
         LOG.info('Dealer cycle %d for %s starting', cycle_number, self.policy.partition_name)
 

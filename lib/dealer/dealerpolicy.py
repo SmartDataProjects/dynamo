@@ -26,7 +26,7 @@ class DealerPolicy(object):
     Defined for each partition and implements the concrete conditions for copies.
     """
 
-    def __init__(self, config, version = ''):
+    def __init__(self, config):
         self.partition_name = config.partition_name
         self.group_name = config.group_name
 
@@ -39,7 +39,6 @@ class DealerPolicy(object):
         # The value is given in TB in the configuration file.
         self.max_total_cycle_volume = config.max_total_cycle_volume * 1.e+12
 
-        self.version = version
         self.placement_rules = []
 
         # To be set at runtime
