@@ -29,7 +29,7 @@ class Detox(object):
 
         self.policy = DetoxPolicy(config)
 
-        self.deletion_per_iteration = config.deletion_per_iteration
+        self.deletion_per_iteration = config.get('deletion_per_iteration', 0.01)
 
         self.test_run = config.get('test_run', False)
         if self.test_run:

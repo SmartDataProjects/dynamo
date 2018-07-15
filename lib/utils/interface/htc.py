@@ -4,7 +4,7 @@ import re
 import socket
 import htcondor
 
-from dynamo.dataformat import Configuration
+from dynamo.dataformat import Configuration, ConfigurationError
 
 LOG = logging.getLogger(__name__)
 
@@ -21,6 +21,9 @@ class HTCondor(object):
 
     def __init__(self, config = None):
         if config is None:
+            if HTCondor._default_config is None:
+                raise ConfigurationError('HTCondor default configuration is not set')
+
             config = HTCondor._default_config
 
         self._collector_name = config.collector

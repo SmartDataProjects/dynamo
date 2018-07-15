@@ -198,13 +198,14 @@ class WebServer(object):
         # Increment the active count so that the parent process won't be killed before this function returns
         with self.active_count.get_lock():
             self.active_count.value += 1
+
+            try:
+                agent = environ['HTTP_USER_AGENT']
+            except KeyError:
+                agent = 'Unknown'
+
             # Log file is a shared resource - write within the lock
             LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], agent)
-
-        try:
-            agent = environ['HTTP_USER_AGENT']
-        except KeyError:
-            agent = 'Unknown'
 
         # Then immediately switch to logging to a buffer
         root_logger = logging.getLogger()

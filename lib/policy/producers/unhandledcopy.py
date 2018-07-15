@@ -3,7 +3,7 @@ import collections
 import logging
 
 from dynamo.utils.interface.mysql import MySQL
-from dynamo.dataformat import Block, ObjectError
+from dynamo.dataformat import Configuration, Block, ObjectError, ConfigurationError
 
 LOG = logging.getLogger(__name__)
 
@@ -16,7 +16,19 @@ class UnhandledCopyExists(object):
 
     produces = ['unhandled_copy_exists']
 
-    def __init__(self, config):
+    _default_config = None
+
+    @staticmethod
+    def set_default(config):
+        UnhandledCopyExists._default_config = Configuration(config)
+
+    def __init__(self, config = None):
+        if config is None:
+            if UnhandledCopyExists._default_config is None:
+                raise ConfigurationError('UnhandledCopyExists default config is not set')
+
+            config = UnhandledCopyExists._default_config
+
         self._registry = MySQL(config.registry)
 
     def load(self, inventory):

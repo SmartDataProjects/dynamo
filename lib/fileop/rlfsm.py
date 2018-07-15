@@ -314,6 +314,9 @@ class RLFSM(object):
         @param status      If not None, set to list of status strings to limit the query.
         """
 
+        # First convert all pre-subscriptions
+        self.convert_pre_subscriptions(inventory)
+
         subscriptions = []
 
         get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'

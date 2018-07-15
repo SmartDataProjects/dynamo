@@ -209,10 +209,6 @@ for lfile in new_files:
 
 LOG.info('Injected %d objects, updated %d objects, and deleted %d objects.', n_injected, n_updated, n_deleted)
 
-LOG.info('Converting pre-subscriptions to subscriptions.')
-
-rlfsm.convert_pre_subscriptions(inventory)
-
 LOG.info('Updating the inventory from transfers and deletions.')
 
 subscriptions = rlfsm.get_subscriptions(inventory)
