@@ -16,6 +16,34 @@ from dynamo.dataformat import Site
 LOG = logging.getLogger(__name__)
 
 class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOperation, FileDeletionQuery):
+    error_codes = [
+        (0, 'Destination file exists and overwrite is not enabled'), # don't consider an error
+        (70, 'SRM_NO_FREE_SPACE'),
+        (70, 'SRM_AUTHORIZATION_FAILURE'),
+        (2, 'No such file'),
+        (70, 'gsiftp performance marker'),
+        (70, 'Could NOT load client credentials'),
+        (70, 'Error reading host credential'),
+        (2, 'File not found'),
+        (2, 'SRM_FILE_UNAVAILABLE'),
+        (70, 'Unable to connect'),
+        (70, 'user not authorized'),
+        (70, 'Operation timed out'),
+        (70, 'Internal server error'),
+        (70, 'could not open connection to'),
+        (70, 'end-of-file was reached'),
+        (70, 'Idle Timeout'),
+        (70, 'System error in write'),
+        (70, 'Broken pipe'),
+        (70, 'limit exceeded'),
+        (70, 'write denied'),
+        (70, 'Authentication Error'),
+        (70, 'error in reading'),
+        (70, 'over-load'),
+        (70, 'Connection timed out'),
+        (70, 'connection limit')
+    ]
+
     def __init__(self, config):
         FileTransferOperation.__init__(self, config)
         FileTransferQuery.__init__(self, config)
@@ -30,9 +58,6 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         # Bookkeeping device
         self.db = MySQL(config.db_params)
-
-        # Cache the error messages
-        self.error_messages = self.db.query('SELECT `code`, `message` FROM `fts_error_messages`')
 
         # Reuse the context object
         self.keep_context = config.get('keep_context', True)
@@ -318,36 +343,44 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     continue
     
                 state = fts_file['file_state']
+
+                exitcode = None
+                start_time = None
+                finish_time = None
+                get_time = False
     
                 if state == 'FINISHED':
                     status = FileQuery.STAT_DONE
                     exitcode = 0
-                    start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
-                    finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+                    get_time = True
+
                 elif state == 'FAILED':
-                    status = FileQuery.STAT_FAILED
                     exitcode = -1
-                    for code, msg in self.error_messages:
-                        if msg in reason:
+                    get_time = True
+
+                    for code, msg in FTSFileOperation.error_codes:
+                        if msg in fts_file['reason']:
                             exitcode = code
                             break
-                    start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
-                    finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+
+                    if exitcode == 0:
+                        status = FileQuery.STAT_DONE
+                    else:
+                        status = FileQuery.STAT_FAILED
+
                 elif state == 'CANCELED':
                     status = FileQuery.STAT_CANCELLED
                     exitcode = -1
-                    start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
-                    finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+                    get_time = True
+
                 elif state == 'SUBMITTED':
                     status = FileQuery.STAT_NEW
-                    exitcode = None
-                    start_time = None
-                    finish_time = None
                 else:
                     status = FileQuery.STAT_QUEUED
-                    exitcode = None
-                    start_time = None
-                    finish_time = None
+                    
+                if get_time:
+                    start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
+                    finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
     
                 results.append((task_id, status, exitcode, start_time, finish_time))
 

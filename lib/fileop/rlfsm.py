@@ -499,6 +499,9 @@ class RLFSM(object):
         sql = 'DELETE FROM t USING `deletion_tasks` AS t INNER JOIN `file_subscriptions` AS u ON u.`id` = t.`subscription_id` WHERE u.`status` IN (\'new\', \'retry\')'
         self.db.query(sql)
 
+        sql = 'UPDATE `file_subscriptions` SET `status` = \'new\' WHERE `status` = \'inbatch\' AND `id` NOT IN (SELECT `subscription_id` FROM `transfer_tasks`) AND `id` NOT IN (SELECT `subscription_id` FROM `deletion_tasks`)'
+        self.db.query(sql)
+
         # There should not be batches with no tasks
         sql = 'DELETE FROM b USING `transfer_batches` AS b LEFT JOIN `transfer_tasks` AS t ON t.`batch_id` = b.`id` WHERE t.`batch_id` IS NULL'
         self.db.query(sql)
