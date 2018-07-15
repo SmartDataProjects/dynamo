@@ -471,6 +471,8 @@ class RLFSM(object):
             self.db.delete_many('file_subscriptions', 'id', done_ids)
 
     def _run_cycle(self, inventory):
+        self._cleanup()
+
         while True:
             if self.cycle_stop.is_set():
                 break
@@ -487,6 +489,26 @@ class RLFSM(object):
             is_set = self.cycle_stop.wait(30)
             if is_set: # is true if in Python 2.7 and the flag is set
                 break
+
+    def _cleanup(self):
+        # Make the tables consistent in case the previous cycles was terminated prematurely
+
+        # There should not be tasks with subscription status new
+        sql = 'DELETE FROM t USING `transfer_tasks` AS t INNER JOIN `file_subscriptions` AS u ON u.`id` = t.`subscription_id` WHERE u.`status` IN (\'new\', \'retry\')'
+        self.db.query(sql)
+        sql = 'DELETE FROM t USING `deletion_tasks` AS t INNER JOIN `file_subscriptions` AS u ON u.`id` = t.`subscription_id` WHERE u.`status` IN (\'new\', \'retry\')'
+        self.db.query(sql)
+
+        # There should not be batches with no tasks
+        sql = 'DELETE FROM b USING `transfer_batches` AS b LEFT JOIN `transfer_tasks` AS t ON t.`batch_id` = b.`id` WHERE t.`batch_id` IS NULL'
+        self.db.query(sql)
+        sql = 'DELETE FROM b USING `deletion_batches` AS b LEFT JOIN `deletion_tasks` AS t ON t.`batch_id` = b.`id` WHERE t.`batch_id` IS NULL'
+        self.db.query(sql)
+
+        # Cleanup the plugins
+        self.transfer_operation.cleanup()
+        if self.deletion_operation is not self.transfer_operation:
+            self.deletion_operation.cleanup()
 
     def _subscribe(self, site, lfile, delete, created = None):
         opp_op = 0 if delete == 1 else 1

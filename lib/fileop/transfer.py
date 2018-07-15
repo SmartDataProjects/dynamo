@@ -35,6 +35,12 @@ class FileTransferOperation(FileOperation):
         """
         raise NotImplementedError('cancel_transfers')
 
+    def cleanup(self):
+        """
+        Clear the inner state in case of crash recovery.
+        """
+        raise NotImplementedError('cleanup')
+
 class FileTransferQuery(FileQuery):
     @staticmethod
     def get_instance(module, config):

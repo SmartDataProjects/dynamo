@@ -26,6 +26,12 @@ class FileDeletionOperation(FileOperation):
         """
         raise NotImplementedError('cancel_deletions')
 
+    def cleanup(self):
+        """
+        Clear the inner state in case of crash recovery.
+        """
+        raise NotImplementedError('cleanup')
+
 class DirDeletionOperation(object):
     @staticmethod
     def get_instance(module, config):

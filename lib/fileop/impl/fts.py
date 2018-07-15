@@ -85,7 +85,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             pfn_to_task[dest_pfn] = task
 
         if len(stage_files) != 0:
-            job = fts3.new_staging_job([ff[0] for ff in stage_files])
+            job = fts3.new_staging_job([ff[0] for ff in stage_files], bring_online = 36000)
             success = self._submit_job(job, 'staging', batch_id, pfn_to_task)
 
             for _, dest_pfn, _, _ in stage_files:
@@ -139,6 +139,18 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
     def cancel_deletions(self, task_ids): #override
         return self._cancel(task_ids, 'deletion')
+
+    def cleanup(self): #override
+        sql = 'DELETE FROM f USING `fts_transfer_tasks` AS f LEFT JOIN `transfer_tasks` AS t ON t.`id` = f.`id` WHERE t.`id` IS NULL'
+        self.db.query(sql)
+        sql = 'DELETE FROM f USING `fts_staging_queue` AS f LEFT JOIN `fts_transfer_tasks` AS t ON t.`id` = f.`id` WHERE t.`id` IS NULL'
+        self.db.query(sql)
+        sql = 'DELETE FROM f USING `fts_deletion_tasks` AS f LEFT JOIN `deletion_tasks` AS t ON t.`id` = f.`id` WHERE t.`id` IS NULL'
+        self.db.query(sql)
+        sql = 'DELETE FROM f USING `fts_transfer_batches` AS f LEFT JOIN `transfer_batches` AS t ON t.`id` = f.`batch_id` WHERE t.`id` IS NULL'
+        self.db.query(sql)
+        sql = 'DELETE FROM f USING `fts_deletion_batches` AS f LEFT JOIN `deletion_batches` AS t ON t.`id` = f.`batch_id` WHERE t.`id` IS NULL'
+        self.db.query(sql)
 
     def get_transfer_status(self, batch_id): #override
         if self.server_id == 0:
