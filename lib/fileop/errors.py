@@ -67,6 +67,7 @@ def find_msg_code(msg):
 
 # from FTS3 heuristics.cpp + some originals
 irrecoverable_errors = set([
+    -1,                    # Job was not even submitted
     errno.ENOENT,          # No such file or directory
     errno.EPERM,           # Operation not permitted
     errno.EACCES,          # Permission denied

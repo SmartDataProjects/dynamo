@@ -320,7 +320,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     continue
     
                 state = fts_file['file_state']
-                exitcode = None
+                exitcode = -1
                 start_time = None
                 finish_time = None
                 get_time = False
@@ -351,7 +351,6 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
                 elif state == 'CANCELED':
                     status = FileQuery.STAT_CANCELLED
-                    exitcode = -1
                     get_time = True
 
                 elif state == 'SUBMITTED':
