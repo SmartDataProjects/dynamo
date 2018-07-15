@@ -155,12 +155,12 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         self.db.execute_many(sql, 'id', task_ids, ['`status` IN (\'new\', \'queued\')'])
 
     def _get_status(self, batch_id, optype):
-        sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, UNIX_TIMESTAMP(a.`start_time`), UNIX_TIMESTAMP(a.`finish_time`) FROM `standalone_{op}_tasks` AS a'
+        sql = 'SELECT q.`id`, a.`status`, a.`exitcode`, a.`message`, UNIX_TIMESTAMP(a.`start_time`), UNIX_TIMESTAMP(a.`finish_time`) FROM `standalone_{op}_tasks` AS a'
         sql += ' INNER JOIN `{op}_tasks` AS q ON q.`id` = a.`id`'
         sql += ' WHERE q.`batch_id` = %s'
         sql = sql.format(op = optype)
 
-        return [(i, FileQuery.status_val(s), c, t, f) for (i, s, c, t, f) in self.db.xquery(sql, batch_id)]
+        return [(i, FileQuery.status_val(s), c, m, t, f) for (i, s, c, m, t, f) in self.db.xquery(sql, batch_id)]
 
     def _forget_status(self, task_id, optype):
         if self._read_only:

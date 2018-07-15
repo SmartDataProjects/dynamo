@@ -40,15 +40,16 @@ from dynamo.utils.signaling import SignalConverter
 signal_converter = SignalConverter()
 
 ## Specify error codes that should not be considered as errors
+import errno
+from dynamo.fileop.errors import find_msg_code, irrecoverable_errors
 
 transfer_nonerrors = {
-    17: 'Destination file exists.' # for a transfer task, 17 means that file exists at the destination
-                                   # - should check file size and checksum with context.stat(dest_pfn)
+    errno.EEXIST: 'Destination file exists.' # for a transfer task, 17 means that file exists at the destination
+                                             # - should check file size and checksum with context.stat(dest_pfn)
 }
 
 deletion_nonerrors = {
-    2: 'Target file does not exist.',
-    70: 'Target file does not exist.'
+    errno.ENOENT: 'Target file does not exist.'
 }
 
 def transfer(task_id, src_pfn, dest_pfn, params_config):
@@ -165,14 +166,15 @@ def gfal_exec(method, args, nonerrors = {}, return_value = False):
                 raise
 
             exitcode, msg = err.code, str(err)
+            c = find_msg_code(msg)
+            if c is not None:
+                exitcode = c
 
-            if err.code in nonerrors:
-                return 0, start_time, int(time.time()), nonerrors[err.code], ''
+            if exitcode in nonerrors:
+                return 0, start_time, int(time.time()), nonerrors[exitcode], ''
 
-            if err.code == 70:
-                # port bind failure - seems to be an artefact of using multiple gfal-copy in parallel
-                # usually it finds a good port after a retry
-                continue
+            elif exitcode in irrecoverable_errors:
+                break
 
         except Exception as exc:
             if return_value:
@@ -181,7 +183,7 @@ def gfal_exec(method, args, nonerrors = {}, return_value = False):
             exitcode, msg = -1, str(exc)
     
         else:
-            exitcode, msg = 0, ''
+            exitcode, msg = 0, None
     
         finally:
             log_tmp = stream.getvalue().strip()
@@ -277,9 +279,9 @@ class PoolManager(object):
             LOG.info('%s: failed %s (%s s, %d: %s) %s\n%s\n%s%s', self.name, self.optype, optime, exitcode, msg, opstring, delim, log, delim)
             status = 'failed'
 
-        sql = 'UPDATE `standalone_{op}_tasks` SET `status` = %s, `exitcode` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = self.optype)
+        sql = 'UPDATE `standalone_{op}_tasks` SET `status` = %s, `exitcode` = %s, `message` = %s, `start_time` = FROM_UNIXTIME(%s), `finish_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'.format(op = self.optype)
 
-        PoolManager.db.query(sql, status, exitcode, start_time, finish_time, tid)
+        PoolManager.db.query(sql, status, exitcode, msg, start_time, finish_time, tid)
 
     def ready_for_recycle(self):
         """

@@ -8,6 +8,7 @@ import logging
 from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery, DirDeletionOperation
+from dynamo.fileop.errors import irrecoverable_errors
 from dynamo.dataformat import Configuration, Block, Site, BlockReplica
 from dynamo.utils.interface.mysql import MySQL
 
@@ -54,9 +55,6 @@ class RLFSM(object):
         def __init__(self, desubscription):
             self.id = None
             self.desubscription = desubscription
-
-    # exit codes
-    TR_NO_FILE = 2
 
     # default config
     _config = ''
@@ -422,7 +420,8 @@ class RLFSM(object):
                     if len(failed_sources) == len(disk_sources) + len(tape_sources):
                         # transfers from all sites failed at least once
                         for codes in failed_sources.itervalues():
-                            if codes[-1] != RLFSM.TR_NO_FILE:
+                            if codes[-1] not in irrecoverable_errors:
+                                # This site failed for a recoverable reason
                                 break
                         else:
                             # last failure from all sites due to missing file at source
@@ -587,8 +586,8 @@ class RLFSM(object):
             site_joins += ' INNER JOIN `{history}`.`sites` AS hs ON hs.`name` = s.`name`'
 
         insert_history = 'INSERT INTO `{history}`.`{table}`'
-        insert_history += ' (`file_id`, ' + site_fields + ', `exitcode`, `batch_id`, `created`, `started`, `finished`, `completed`)'
-        insert_history += ' SELECT hf.`id`, ' + site_values + ', %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
+        insert_history += ' (`file_id`, ' + site_fields + ', `exitcode`, `message`, `batch_id`, `created`, `started`, `finished`, `completed`)'
+        insert_history += ' SELECT hf.`id`, ' + site_values + ', %s, %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
         insert_history += ' FROM `{op}_tasks` AS q'
         insert_history += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
         insert_history += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
@@ -636,7 +635,7 @@ class RLFSM(object):
 
             batch_complete = True
 
-            for task_id, status, exitcode, start_time, finish_time in results:
+            for task_id, status, exitcode, message, start_time, finish_time in results:
                 # start_time and finish_time can be None
                 LOG.debug('%s results: %d %s %d %s %s', optype, task_id, status, exitcode, start_time, finish_time)
 
@@ -652,7 +651,7 @@ class RLFSM(object):
 
                 if not self._read_only:
                     self.db.query(insert_file, task_id)
-                    self.db.query(insert_history, exitcode, start_time, finish_time, task_id)
+                    self.db.query(insert_history, exitcode, message, start_time, finish_time, task_id)
 
                 # We check the subscription status and update accordingly. Need to lock the tables.
                 if not self._read_only:

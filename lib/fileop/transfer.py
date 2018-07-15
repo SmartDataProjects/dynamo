@@ -54,7 +54,7 @@ class FileTransferQuery(FileQuery):
         Query the external agent about tasks in the given batch id.
         @param batch_id   Integer id of the transfer task batch.
 
-        @return  [(task_id, status, exit code, start time (UNIX), finish time (UNIX))]
+        @return  [(task_id, status, exit code, message, start time (UNIX), finish time (UNIX))]
         """
         raise NotImplementedError('get_transfer_status')
 

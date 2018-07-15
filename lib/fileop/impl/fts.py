@@ -1,8 +1,10 @@
 import sys
+import re
 import time
 import calendar
 import collections
 import logging
+import errno
 
 import fts3.rest.client.easy as fts3
 from fts3.rest.client.request import Request
@@ -10,40 +12,13 @@ from fts3.rest.client.request import Request
 from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery
+from dynamo.fileop.errors import find_msg_code
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Site
 
 LOG = logging.getLogger(__name__)
 
 class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOperation, FileDeletionQuery):
-    error_codes = [
-        (0, 'Destination file exists and overwrite is not enabled'), # don't consider an error
-        (70, 'SRM_NO_FREE_SPACE'),
-        (70, 'SRM_AUTHORIZATION_FAILURE'),
-        (2, 'No such file'),
-        (70, 'gsiftp performance marker'),
-        (70, 'Could NOT load client credentials'),
-        (70, 'Error reading host credential'),
-        (2, 'File not found'),
-        (2, 'SRM_FILE_UNAVAILABLE'),
-        (70, 'Unable to connect'),
-        (70, 'user not authorized'),
-        (70, 'Operation timed out'),
-        (70, 'Internal server error'),
-        (70, 'could not open connection to'),
-        (70, 'end-of-file was reached'),
-        (70, 'Idle Timeout'),
-        (70, 'System error in write'),
-        (70, 'Broken pipe'),
-        (70, 'limit exceeded'),
-        (70, 'write denied'),
-        (70, 'Authentication Error'),
-        (70, 'error in reading'),
-        (70, 'over-load'),
-        (70, 'Connection timed out'),
-        (70, 'connection limit')
-    ]
-
     def __init__(self, config):
         FileTransferOperation.__init__(self, config)
         FileTransferQuery.__init__(self, config)
@@ -323,6 +298,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             batch_data = self.db.query(sql, self.server_id, batch_id)
             task_table_name = 'fts_deletion_tasks'
 
+        message_pattern = re.compile('(?:DESTINATION|SOURCE|TRANSFER) \[([0-9]+)\] (.*)')
+
         results = []
 
         for fts_batch_id, job_id in batch_data:
@@ -343,11 +320,25 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     continue
     
                 state = fts_file['file_state']
-
                 exitcode = None
                 start_time = None
                 finish_time = None
                 get_time = False
+
+                try:
+                    message = fts_file['reason']
+                    # Check if reason follows a known format (from which we can get the exit code)
+                    matches = message_pattern.match(message)
+                    if matches is not None:
+                        exitcode = int(matches.group(1))
+                        message = matches.group(2)
+                    # Additionally, if the message is a known one, convert the exit code
+                    c = find_msg_code(message)
+                    if c is not None:
+                        exitcode = c
+
+                except KeyError:
+                    message = None
     
                 if state == 'FINISHED':
                     status = FileQuery.STAT_DONE
@@ -355,18 +346,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     get_time = True
 
                 elif state == 'FAILED':
-                    exitcode = -1
+                    status = FileQuery.STAT_FAILED
                     get_time = True
-
-                    for code, msg in FTSFileOperation.error_codes:
-                        if msg in fts_file['reason']:
-                            exitcode = code
-                            break
-
-                    if exitcode == 0:
-                        status = FileQuery.STAT_DONE
-                    else:
-                        status = FileQuery.STAT_FAILED
 
                 elif state == 'CANCELED':
                     status = FileQuery.STAT_CANCELLED
@@ -375,14 +356,24 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
                 elif state == 'SUBMITTED':
                     status = FileQuery.STAT_NEW
+
                 else:
                     status = FileQuery.STAT_QUEUED
+
+                if optype == 'transfer' and exitcode == errno.EEXIST:
+                    # Transfer + destination exists -> not an error
+                    status = FileQuery.STAT_DONE
+                    exitcode = 0
+                elif optype == 'deletion' and exitcode == errno.ENOENT:
+                    # Deletion + destination does not exist -> not an error
+                    status = FileQuery.STAT_DONE
+                    exitcode = 0
                     
                 if get_time:
                     start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
                     finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
     
-                results.append((task_id, status, exitcode, start_time, finish_time))
+                results.append((task_id, status, exitcode, message, start_time, finish_time))
 
         return results
 
