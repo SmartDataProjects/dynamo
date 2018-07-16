@@ -18,6 +18,17 @@ from dynamo.dataformat import Site
 
 LOG = logging.getLogger(__name__)
 
+# Turn off info "Resetting dropped connection:" messages
+class ResetDroppedConnectionFilter(object):
+    def filter(self, record):
+        if 'Resetting dropped connection' in record.msg:
+            return 0
+        else:
+            return 1
+
+fts_connection_logger = logging.getLogger('requests.packages.urllib3.connectionpool')
+fts_connection_logger.addFilter(ResetDroppedConnectionFilter())
+
 class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOperation, FileDeletionQuery):
     def __init__(self, config):
         FileTransferOperation.__init__(self, config)

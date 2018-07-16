@@ -689,7 +689,7 @@ class RLFSM(object):
                     self.db.lock_tables(write = ['file_subscriptions'])
 
                 try:
-                    subscription_status = self.db.query(get_subscription_status, subscription_id)
+                    subscription_status = self.db.query(get_subscription_status, subscription_id)[0]
 
                     if subscription_status == 'inbatch':
                         if status == FileQuery.STAT_DONE:
