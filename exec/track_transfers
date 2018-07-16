@@ -177,7 +177,7 @@ for sitename, site_records in records.iteritems():
     status_list = parallelizer.execute(get_copy_status, site_records)
 
     for record, status in status_list:
-        LOG.info('Transfer request ID: %d', record.operation_id)
+        LOG.info('Copy operation ID: %d', record.operation_id)
    
         if len(status) == 0:
             # old transfer. seems to not exist anymore. Call it complete and just update the history DB.
@@ -185,7 +185,7 @@ for sitename, site_records in records.iteritems():
                 replica.status = HistoryRecord.ST_COMPLETE
 
             if authorized:
-                history.update_copy_entry(record)
+                history.update_entry(record)
 
             continue
 
@@ -297,7 +297,7 @@ for sitename, site_records in records.iteritems():
         # Update the history DB
         if update_record and authorized:
             LOG.info('Updating history record %d', record.operation_id)
-            history.update_copy_entry(record)
+            history.update_entry(record)
 
     dataset_details.sort(key = lambda x: x['total'])
 
