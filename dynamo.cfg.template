@@ -105,7 +105,7 @@ enabled=true
 backend=standalone
 
 # Configuration JSON for the File Operations Manager
-fom_conf={"db": {"user": "dynamofod"}, "history": {"db_params": {"db": "dynamohistory"}}, "transfer": {}}
+fom_conf={"db": {"user": "dynamofod"}, "transfer": {}}
 
 # Configuration JSON for the File Operations Daemon (empty if backend=fts)
 #  max_parallel_links: Maximum number of concurrent operations within each batch

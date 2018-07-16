@@ -190,7 +190,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self.server_id == 0:
             self._set_server_id()
 
-        results = []
+        results = self._get_status(batch_id, 'transfer')
 
         staged_tasks = []
 
@@ -198,11 +198,10 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             if status == FileQuery.STAT_DONE:
                 staged_tasks.append(task_id)
                 results.append((task_id, FileQuery.STAT_QUEUED, None, None, None))
-            elif status in (FileQuery.STAT_FAILED, FileQuery.STAT_CANCELLED):
-                # This is final
+            else:
+                # these tasks won't appear in results from _get_status('transfer')
+                # because no transfer jobs have been submitted yet
                 results.append((task_id, status, exitcode, start_time, finish_time))
-
-        results.extend(self._get_status(batch_id, 'transfer'))
 
         if len(staged_tasks) != 0:
             transfers = []

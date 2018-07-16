@@ -636,7 +636,7 @@ class RLFSM(object):
 
             for task_id, status, exitcode, message, start_time, finish_time in results:
                 # start_time and finish_time can be None
-                LOG.debug('%s results: %d %s %d %s %s', optype, task_id, status, exitcode, start_time, finish_time)
+                LOG.debug('%s results: %d %s %d %s %s', optype, task_id, FileQuery.status_name(status), exitcode, start_time, finish_time)
 
                 if status == FileQuery.STAT_DONE:
                     num_success += 1
@@ -656,16 +656,16 @@ class RLFSM(object):
                     self.db.query(delete_task, task_id)
                     continue
 
-                subscription_id, lfn, size, create_time = task_data[:5]
+                subscription_id, lfn, size, create_time = task_data[:4]
 
                 if optype == 'transfer':
-                    source_name, dest_name = task_data[5:]
+                    source_name, dest_name = task_data[4:]
                     history_site_ids = (
                         self.history_db.save_sites([source_name], get_ids = True)[0],
                         self.history_db.save_sites([dest_name], get_ids = True)[0]
                     )
                 else:
-                    site_name = task_data[5]
+                    site_name = task_data[4]
                     history_site_ids = (self.history_db.save_sites([site_name], get_ids = True)[0],)
 
                 if not self._read_only:
