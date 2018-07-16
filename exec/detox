@@ -26,7 +26,7 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-from dynamo.core.executable import make_standard_logger, read_only
+from dynamo.core.executable import make_standard_logger, authorized
 
 LOG = make_standard_logger(config.log_level)
 
@@ -35,7 +35,6 @@ from dynamo.detox.main import Detox
 from dynamo.core.executable import inventory
 
 config.detox.policy_file = args.policy
-config.detox.policy_version = 'unknown'
 
 config.detox.test_run = (args.snapshot_run or args.test_run)
 
@@ -44,7 +43,7 @@ LOG.info('Starting Detox.')
 
 detox = Detox(config.detox)
 
-if read_only:
+if not authorized:
     detox.set_read_only()
 
 detox.run(inventory, comment = args.comment, create_cycle = not args.snapshot_run)

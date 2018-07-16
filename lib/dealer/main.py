@@ -58,7 +58,7 @@ class Dealer(object):
         """
 
         # fetch the deletion cycle number
-        cycle_number = self.history.new_cycle(self.policy.partition_name, self.policy.version, comment = comment, test = self.test_run)
+        cycle_number = self.history.new_cycle(self.policy.partition_name, comment = comment, test = self.test_run)
 
         LOG.info('Dealer cycle %d for %s starting', cycle_number, self.policy.partition_name)
 
@@ -154,7 +154,7 @@ class Dealer(object):
         for plugin in self._plugin_priorities.keys():
             attr_names.update(plugin.required_attrs)
 
-        self.attr_producers = get_producers(attr_names, config.attrs).values()
+        self.attr_producers = list(set(get_producers(attr_names, config.attrs).itervalues()))
 
     def _collect_requests(self, inventory):
         """

@@ -19,30 +19,6 @@ class ApplockBase(WebModule):
             if key not in required and key not in allowed:
                 raise ExtraParameter(key)
 
-    def _get_lock(self, app):
-        # this function can be called within a table lock, so we need to lock what we use
-        self.registry.db.lock_tables(read = [('activity_lock', 'l'), ('user_services', 's')])
-
-        sql = 'SELECT l.`user`, s.`name`, UNIX_TIMESTAMP(l.`timestamp`), l.`note` FROM `activity_lock` AS l'
-        sql += ' LEFT JOIN `user_services` AS s ON s.`id` = l.`service_id`'
-        sql += ' WHERE l.`application` = %s ORDER BY l.`timestamp` ASC';
-
-        lock_data = self.registry.db.query(sql, app)
-
-        self.registry.db.unlock_tables()
-
-        if len(lock_data) == 0:
-            return None, None, None, None, 0
-
-        first_user, first_service, lock_time, note = lock_data[0]
-
-        depth = 1
-        
-        for user, service, _, _ in lock_data[1:]:
-            if user == first_user and service == first_service:
-                depth += 1
-                
-        return user, first_service, lock_time, note, depth
 
 class ApplockCheck(ApplockBase):
     """
@@ -51,7 +27,7 @@ class ApplockCheck(ApplockBase):
 
     def run(self, caller, request, inventory):
         self._validate_request(request, ['app'])
-        user, service, timestamp, note, depth = self._get_lock(request['app'])
+        user, service, timestamp, note, depth = self.registry.get_app_lock(request['app'])
 
         if user is None:
             self.message = 'Not locked'
@@ -76,27 +52,19 @@ class ApplockLock(ApplockBase):
     def run(self, caller, request, inventory):
         self._validate_request(request, ['app'], ['service', 'note'])
 
-        request_service = None
-        service_id = 0
         if 'service' in request:
-            try:
-                sql = 'SELECT `id` FROM `user_services` WHERE `name` = %s'
-                service_id = self.registry.db.query(sql, request['service'])[0]
-                request_service = request['service']
-            except IndexError:
-                pass
+            request_service = request['service']
+        else:
+            request_service = None
 
         if 'note' in request:
             note = request['note']
         else:
             note = None
-    
-        sql = 'INSERT INTO `activity_lock` (`user`, `service_id`, `application`, `timestamp`, `note`)'
-        sql += ' VALUES (%s, %s, %s, NOW(), %s)'
 
-        self.registry.db.query(sql, caller.name, service_id, request['app'], note)
+        self.registry.lock_app(request['app'], caller.name, request_service, note)
 
-        user, service, timestamp, note, depth = self._get_lock(request['app'])
+        user, service, timestamp, note, depth = self.registry.get_app_lock(request['app'])
 
         if user is None:
             # cannot happen but for safety
@@ -126,31 +94,14 @@ class ApplockUnlock(ApplockBase):
     def run(self, caller, request, inventory):
         self._validate_request(request, ['app'], ['service'])
 
-        service_id = 0
         if 'service' in request:
-            try:
-                sql = 'SELECT `id` FROM `user_services` WHERE `name` = %s'
-                service_id = self.registry.db.query(sql, request['service'])[0]
-            except IndexError:
-                pass
+            service = request['service']
+        else:
+            service = None
 
-        self.registry.db.lock_tables(write = ['activity_lock', ('activity_lock', 'l')])
+        self.registry.unlock_app(request['app'], caller.name, service)
 
-        sql = 'DELETE FROM `activity_lock` WHERE `id` = ('
-        sql += ' SELECT m FROM ('
-        sql += '  SELECT MAX(`id`) m FROM `activity_lock` AS l'
-        sql += '  WHERE `user` = %s AND `service_id` = %s AND `application` = %s'
-        sql += ' ) AS tmp'
-        sql += ')'
-        self.registry.db.query(sql, caller.name, service_id, request['app'])
-
-        user, service, timestamp, note, depth = self._get_lock(request['app'])
-
-        # a little cleanup
-        if self.registry.db.query('SELECT COUNT(*) FROM `activity_lock`')[0] == 0:
-            self.registry.db.query('ALTER TABLE `activity_lock` AUTO_INCREMENT = 1')
-
-        self.registry.db.unlock_tables()
+        user, service, timestamp, note, depth = self.registry.get_app_lock(request['app'])
 
         if user is None:
             self.message = 'Unlocked'

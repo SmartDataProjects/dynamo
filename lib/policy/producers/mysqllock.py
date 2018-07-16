@@ -3,7 +3,7 @@ import fnmatch
 import re
 
 from dynamo.utils.interface.mysql import MySQL
-from dynamo.dataformat import Block, ObjectError
+from dynamo.dataformat import Configuration, Block, ObjectError, ConfigurationError
 
 LOG = logging.getLogger(__name__)
 
@@ -16,11 +16,23 @@ class MySQLReplicaLock(object):
 
     produces = ['locked_blocks']
 
-    def __init__(self, config):
+    _default_config = None
+
+    @staticmethod
+    def set_default(config):
+        MySQLReplicaLock._default_config = Configuration(config)
+
+    def __init__(self, config = None):
+        if config is None:
+            if MySQLReplicaLock._default_config is None:
+                raise ConfigurationError('MySQLReplicaLock default config is not set')
+
+            config = MySQLReplicaLock._default_config
+
         self._mysql = MySQL(config.get('db_params', None))
 
         self.users = []
-        for user_id, role_id in config.users:
+        for user_id, role_id in config.get('users', []):
             self.users.append((user_id, role_id))
 
     def load(self, inventory):

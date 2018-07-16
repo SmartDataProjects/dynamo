@@ -77,8 +77,13 @@
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_batches"],
       ["SELECT, LOCK TABLES", "dynamohistory"],
       ["INSERT, UPDATE", "dynamohistory", "files"],
+      ["INSERT, UPDATE", "dynamohistory", "sites"],
       ["INSERT, UPDATE", "dynamohistory", "file_transfers"],
-      ["INSERT, UPDATE", "dynamohistory", "file_deletions"]
+      ["INSERT, UPDATE", "dynamohistory", "file_deletions"],
+      ["INSERT, UPDATE", "dynamohistory", "fts_file_transfers"],
+      ["INSERT, UPDATE", "dynamohistory", "fts_file_deletions"],
+      ["INSERT, UPDATE", "dynamohistory", "fts_servers"],
+      ["INSERT, UPDATE", "dynamohistory", "fts_batches"]
     ]
   }
 }

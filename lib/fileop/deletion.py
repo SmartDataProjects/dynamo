@@ -15,7 +15,7 @@ class FileDeletionOperation(FileOperation):
         @params batch_id     Integer
         @params batch_tasks  List of DeletionTask objects
 
-        @return  boolean indicating the operation success.
+        @return  {task: boolean} True if successfully submitted
         """
         raise NotImplementedError('start_deletions')
 
@@ -25,6 +25,12 @@ class FileDeletionOperation(FileOperation):
         @params task_ids    List of DeletionTask ids
         """
         raise NotImplementedError('cancel_deletions')
+
+    def cleanup(self):
+        """
+        Clear the inner state in case of crash recovery.
+        """
+        raise NotImplementedError('cleanup')
 
 class DirDeletionOperation(object):
     @staticmethod
@@ -55,9 +61,18 @@ class FileDeletionQuery(FileQuery):
         Query the external agent about tasks in the given batch id.
         @param batch_id   Integer id of the deletion task batch.
 
-        @return  [(task_id, status, exit code, start time (UNIX), finish time (UNIX))]
+        @return  [(task_id, status, exit code, message, start time (UNIX), finish time (UNIX))]
         """
         raise NotImplementedError('get_transfer_status')
+
+    def write_deletion_history(self, history_db, task_id, history_id):
+        """
+        Enter whatever specific information this plugin has to the history DB.
+        @param history_db  HistoryDatabase instance
+        @param task_id     Transfer task id
+        @param history_id  ID in the history file_deletions table
+        """
+        raise NotImplementedError('write_deletion_history')
 
     def forget_deletion_status(self, task_id):
         """

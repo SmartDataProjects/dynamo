@@ -26,7 +26,7 @@ class DealerPolicy(object):
     Defined for each partition and implements the concrete conditions for copies.
     """
 
-    def __init__(self, config, version = ''):
+    def __init__(self, config):
         self.partition_name = config.partition_name
         self.group_name = config.group_name
 
@@ -39,7 +39,6 @@ class DealerPolicy(object):
         # The value is given in TB in the configuration file.
         self.max_total_cycle_volume = config.max_total_cycle_volume * 1.e+12
 
-        self.version = version
         self.placement_rules = []
 
         # To be set at runtime
@@ -134,14 +133,6 @@ class DealerPolicy(object):
         for site in candidates:
             site_partition = site.partitions[partition]
 
-            if site_partition.quota > 0.:
-                projected_occupancy = site_partition.occupancy_fraction(physical = False)
-                projected_occupancy += float(item_size) / site_partition.quota
-    
-                # total projected volume must not exceed the quota
-                if projected_occupancy > 1.:
-                    continue
-
             # replica must not be at the site already
             if request.item_already_exists(site) != 0:
                 continue
@@ -150,7 +141,18 @@ class DealerPolicy(object):
             if not self.is_allowed_destination(request, site):
                 continue
 
-            p = 1. - projected_occupancy
+            p = 1.
+
+            if site_partition.quota > 0.:
+                projected_occupancy = site_partition.occupancy_fraction(physical = False)
+                projected_occupancy += float(item_size) / site_partition.quota
+    
+                # total projected volume must not exceed the quota
+                if projected_occupancy > 1.:
+                    continue
+
+                p -= projected_occupancy
+
             if len(site_array) != 0:
                 p += site_array[-1][1]
 

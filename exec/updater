@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 
-import os
 import sys
 import time
-import collections
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update subscriptions.')
@@ -18,7 +16,7 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout & stderr)
-from dynamo.core.executable import make_standard_logger, read_only, inventory
+from dynamo.core.executable import make_standard_logger, authorized, inventory
 
 LOG = make_standard_logger(config.get('log_level', 'info'))
 
@@ -27,7 +25,7 @@ from dynamo.fileop.rlfsm import RLFSM
 
 rlfsm = RLFSM(config.get('rlfsm', None))
 
-if read_only:
+if not authorized:
     rlfsm.set_read_only()
 
 ## Set up a handle to the registry
@@ -107,13 +105,15 @@ for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data
                     # If there was a new file injected, file_ids will not be None
                     # We are not going to encounter a brand new file id here, so everything must be included already
                     continue
+
+                updated = False
                 
                 if obj.file_ids is None:
                     replica.file_ids = None
                     replica.size = block.size
+                    updated = True
                 else:
                     file_ids = list(replica.file_ids)
-                    updated = False
 
                     # replace obj.block so that we can use obj.files()
                     obj._block = block
@@ -132,8 +132,9 @@ for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data
                         else:
                             replica.file_ids = tuple(file_ids)
 
-                        inventory.register_update(replica)
-                        n_updated += 1
+                if updated:
+                    inventory.register_update(replica)
+                    n_updated += 1
 
         elif type(obj) is File:
             # Update the block properties when injecting files
@@ -206,11 +207,7 @@ for lfile in new_files:
         if not replica.has_file(lfile):
             rlfsm.subscribe_file(replica.site, lfile)
 
-LOG.info('Injected %d objects and deleted %d objects.', n_injected, n_deleted)
-
-LOG.info('Converting pre-subscriptions to subscriptions.')
-
-rlfsm.convert_pre_subscriptions(inventory)
+LOG.info('Injected %d objects, updated %d objects, and deleted %d objects.', n_injected, n_updated, n_deleted)
 
 LOG.info('Updating the inventory from transfers and deletions.')
 
@@ -223,15 +220,18 @@ done_ids = []
 for sub in subscriptions:
     if type(sub) is RLFSM.Subscription:
         optype = 'transfer'
+        LOG.debug('Subscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.destination.name)
+        site = sub.destination
     else:
         optype = 'deletion'
+        LOG.debug('Desubscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.site.name)
+        site = sub.site
 
-    LOG.debug('Subscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.destination.name)
-
-    replica = sub.file.block.find_replica(sub.destination)
+    replica = sub.file.block.find_replica(site)
 
     if replica is None:
         # unexpected file! -> mark the subscription for deletion and move on
+        LOG.warning('Subscription %s to %s does not have a corresponding block replica', sub.file.lfn, site.name)
         if sub.status == 'done':
             done_ids.append(sub.id)
         continue
@@ -243,25 +243,26 @@ for sub in subscriptions:
 
         if replica.file_ids is None:
             # this replica is already full
-            file_ids = set(f.id for f in replica.block.files)
+            file_ids.update(f.id for f in replica.block.files)
         else:
-            file_ids = set(replica.file_ids)
-        
+            file_ids.update(replica.file_ids)
+
     if type(sub) is RLFSM.Subscription:
         if sub.status == 'done':
             file_ids.add(sub.file.id)
         elif sub.status != 'cancelled':
-            projected.add(sub.file.id)
+            projected.add(sub.file)
 
     else:
         if sub.status != 'cancelled':
             try:
-                projected.remove(sub.file.id)
+                projected.remove(sub.file)
             except KeyError:
                 pass
 
         if sub.status == 'done':
             try:
+                LOG.info('Done deletion %d', sub.file.id)
                 file_ids.remove(sub.file.id)
             except KeyError:
                 pass
@@ -273,10 +274,11 @@ for sub in subscriptions:
 # collect all subscribed files and check against incomplete block replicas
 subscribed_files = set()
 
-for replica in replicas_to_update:
-    file_ids, projected = by_replica[replica]
+for replica, (file_ids, projected) in by_replica.iteritems():
+    subscribed_files.update((lfile, replica.site) for lfile in projected)
 
-    subscribed_files.extend(projected)
+    if replica not in replicas_to_update:
+        continue
 
     n_projected = len(projected)
 
@@ -315,16 +317,16 @@ for site in inventory.sites.itervalues():
             if block_replica.is_complete():
                 continue
 
-            for lfile in block_replica.block.files - block_replica.files():
-                if lfile not in subscribed_files:
-                    LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, site.name)
+            for lfile in (block_replica.block.files - block_replica.files()):
+                if (lfile, site) not in subscribed_files:
+                    #LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, site.name)
                     rlfsm.subscribe_file(site, lfile)
 
 # Remove injections and subscriptions
 # This is dangerous though - if inventory update fails on the server side for some reason,
 # we might not see the inconsistency for a while.
 
-if not read_only:
+if authorized:
     registry.db.lock_tables(write = ['data_injections'])
     registry.db.delete_many('data_injections', 'id', processed_injection_ids)
 

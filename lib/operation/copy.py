@@ -40,10 +40,31 @@ class CopyInterface(object):
         """
         raise NotImplementedError('schedule_copies')
 
-    def copy_status(self, operation_id):
-        """
-        Returns the completion status specified by the operation id as a
-        {(site_name, item_name): (total_bytes, copied_bytes, last_update)} dictionary.
-        """
+    def copy_status(self, history_record, inventory): #override
+        try:
+            site = inventory.sites[history_record.site_name]
+        except KeyError:
+            site = None
 
-        raise NotImplementedError('copy_status')
+        result = {}
+        for replica in history_record.replicas:
+            if site is None:
+                result[replica.dataset_name] = (replica.size, 0, history_record.timestamp)
+                continue
+
+            try:
+                dataset = inventory.datasets[replica.dataset_name]
+            except KeyError:
+                result[replica.dataset_name] = (replica.size, 0, history_record.timestamp)
+                continue
+
+            dataset_replica = site.find_dataset_replica(dataset)
+            if dataset_replica is None:
+                result[replica.dataset_name] = (replica.size, 0, history_record.timestamp)
+                continue
+
+            # We don't know the history at block level - if the recorded operation was not for the full dataset, full size can be != dataset size
+
+            result[replica.dataset_name] = (replica.size, replica.size(), replica.last_block_created())
+
+        return result

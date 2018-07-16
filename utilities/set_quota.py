@@ -68,6 +68,10 @@ the other partitions are adjusted only if --adjust-other option is used.'''
         if args.site is None:
             sys.stderr.write('--site option is required if not dumping.\n')
             sys.exit(2)
+
+        if args.partition is None:
+            sys.stderr.write('--partition option is required if not dumping.\n')
+            sys.exit(2)
     
         if args.volume is None and args.scale is None:
             sys.stderr.write('--volume or --scale must be set.\n')

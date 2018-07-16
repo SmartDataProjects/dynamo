@@ -59,6 +59,7 @@ def get_producers(attr_names, producers_config):
     """
 
     producer_objects = {}
+    instantiated = {}
 
     for attr_name in attr_names:
         # Find the provider of each dataset attribute
@@ -89,7 +90,12 @@ def get_producers(attr_names, producers_config):
             raise ConfigurationError('Invalid attribute name')
 
         # Finally instantiate the selected class
-        config = producers_config[selected_cls.__name__]
-        producer_objects[attr_name] = selected_cls(config)
+        if selected_cls.__name__ in instantiated:
+            producer_objects[attr_name] = instantiated[selected_cls.__name__]
+        else:
+            config = producers_config[selected_cls.__name__]
+            producer = selected_cls(config)
+            producer_objects[attr_name] = producer
+            instantiated[selected_cls.__name__] = producer
 
     return producer_objects

@@ -24,7 +24,6 @@ class WebDetoxHistory(WebModule):
 
         self.partition_id = 0
         self.cycle = 0
-        self.policy_version = ''
         self.comment = ''
         self.timestamp = ''
 
@@ -38,7 +37,7 @@ class WebDetoxHistory(WebModule):
             raise exceptions.InvalidRequest('Unknown partition %s' % name)
 
     def get_cycle(self, cycle):
-        sql = 'SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `cycles`'
+        sql = 'SELECT `id`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `deletion_cycles`'
         sql += ' WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s AND `id` = %s'
         result = self.detox_history.db.query(sql, self.partition_id, self.operation, cycle)
 
@@ -46,12 +45,11 @@ class WebDetoxHistory(WebModule):
             return
 
         self.cycle = result[0][0]
-        self.policy_version = result[0][1]
-        self.comment = result[0][2]
-        self.timestamp = result[0][3]
+        self.comment = result[0][1]
+        self.timestamp = result[0][2]
 
     def get_latest_cycle(self):
-        sql = 'SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `cycles`'
+        sql = 'SELECT `id`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `deletion_cycles`'
         sql += ' WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s ORDER BY `id` DESC LIMIT 1'
         result = self.detox_history.db.query(sql, self.partition_id, self.operation)
 
@@ -60,9 +58,8 @@ class WebDetoxHistory(WebModule):
             return
 
         self.cycle = result[0][0]
-        self.policy_version = result[0][1]
-        self.comment = result[0][2]
-        self.timestamp = result[0][3]
+        self.comment = result[0][1]
+        self.timestamp = result[0][2]
 
     def get_partition_and_cycle(self, request):
         if 'partition_id' in request:
@@ -85,9 +82,9 @@ class DetoxPartitions(WebDetoxHistory):
         self.excluded_partitions = config.detox.get('excluded_partitions', [])
 
     def run(self, caller, request, inventory):
-        sql = 'SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `cycles`'
-        sql += ' INNER JOIN `partitions` ON `partitions`.`id` = `cycles`.`partition_id`'
-        sql += ' WHERE `cycles`.`operation` = %s ORDER BY `partitions`.`id`'
+        sql = 'SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `deletion_cycles`'
+        sql += ' INNER JOIN `partitions` ON `partitions`.`id` = `deletion_cycles`.`partition_id`'
+        sql += ' WHERE `deletion_cycles`.`operation` = %s ORDER BY `partitions`.`id`'
 
         data = []
 
@@ -113,7 +110,7 @@ class DetoxCycles(WebDetoxHistory):
 
         if ('cycle' in request and request['cycle'] == '0') or ('latest' in request and yesno(request, 'latest')):
             self.get_latest_cycle()
-            return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'policy_version': self.policy_version, 'comment': self.comment, 'timestamp': self.timestamp}]
+            return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'comment': self.comment, 'timestamp': self.timestamp}]
 
         elif 'cycle' in request:
             cycle = int(request['cycle'])
@@ -123,15 +120,15 @@ class DetoxCycles(WebDetoxHistory):
             if self.cycle != cycle:
                 self.get_latest_cycle()
 
-            return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'policy_version': self.policy_version, 'comment': self.comment, 'timestamp': self.timestamp}]
+            return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'comment': self.comment, 'timestamp': self.timestamp}]
 
         else:
-            sql = 'SELECT `id`, `policy_version`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `cycles`'
+            sql = 'SELECT `id`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `deletion_cycles`'
             sql += ' WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s ORDER BY `id`'
 
             data = []
-            for cycle, policy_version, comment, timestamp in self.detox_history.db.xquery(sql, self.partition_id, self.operation):
-                data.append({'cycle': cycle, 'partition_id': self.partition_id, 'policy_version': policy_version, 'comment': comment, 'timestamp': timestamp})
+            for cycle, comment, timestamp in self.detox_history.db.xquery(sql, self.partition_id, self.operation):
+                data.append({'cycle': cycle, 'partition_id': self.partition_id, 'comment': comment, 'timestamp': timestamp})
 
             return data
 
@@ -143,21 +140,20 @@ class DetoxCycleSummary(WebDetoxHistory):
         data = {
             'operation': self.operation,
             'cycle': self.cycle,
-            'cycle_policy': self.policy_version,
             'comment': self.comment,
             'cycle_timestamp': self.timestamp,
             'partition': self.partition_id,
             'site_data': []
         }
 
-        sql = 'SELECT `id` FROM `cycles` WHERE `id` < %s AND `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\''
+        sql = 'SELECT `id` FROM `deletion_cycles` WHERE `id` < %s AND `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\''
         sql += ' AND `operation` = %s ORDER BY `id` DESC LIMIT 1'
         try:
             data['previous_cycle'] = self.detox_history.db.query(sql, self.cycle, self.partition_id, self.operation)[0]
         except IndexError:
             data['previous_cycle'] = 0
 
-        sql = 'SELECT `id` FROM `cycles` WHERE `id` > %s AND `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\''
+        sql = 'SELECT `id` FROM `deletion_cycles` WHERE `id` > %s AND `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\''
         sql += ' AND `operation` = %s ORDER BY `id` ASC LIMIT 1'
         try:
             data['next_cycle'] = self.detox_history.db.query(sql, self.cycle, self.partition_id, self.operation)[0]
@@ -226,6 +222,25 @@ class DetoxCycleDump(WebDetoxHistory, FileDownloadMixin):
                 dump += '%s\t%s\t%.2f\n' % (site_name, dataset_name, replica_size * 1.e-9)
 
         return self.export_content(dump, 'deletions_%d.txt' % self.cycle)
+
+
+class DetoxCyclePolicy(WebDetoxHistory):
+    def __init__(self, config):
+        WebDetoxHistory.__init__(self, config)
+
+        self.content_type = 'text/plain'
+
+    def run(self, caller, request, inventory):
+        if 'cycle' not in request:
+            raise exceptions.MissingParameter('cycle')
+
+        sql = 'SELECT `text` FROM `deletion_policies` WHERE `id` = (SELECT `policy_id` FROM `deletion_cycles` WHERE `id` = %s)'
+        try:
+            text = self.detox_history.db.query(sql, int(request['cycle']))[0]
+        except:
+            raise exceptions.InvalidRequest('Could not find policy text for cycle %s' % request['cycle'])
+
+        return text
 
 
 class DetoxSiteDetail(WebDetoxHistory):
@@ -336,7 +351,8 @@ export_data = {
     'summary': DetoxCycleSummary,
     'sitedetail': DetoxSiteDetail,
     'datasets': DetoxDatasetSearch,
-    'dump': DetoxCycleDump
+    'dump': DetoxCycleDump,
+    'policy': DetoxCyclePolicy
 }
 
 def test(cls):

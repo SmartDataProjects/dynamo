@@ -27,29 +27,28 @@ args = parser.parse_args()
 sys.argv = []
 
 from dynamo.dataformat import Configuration
-from dynamo.core.executable import inventory, read_only, make_standard_logger
+from dynamo.core.executable import inventory, authorized, make_standard_logger
 from dynamo.enforcer.interface import EnforcerInterface
 
 ## Configuration for steering tracking (intervals, output directories, etc)
 
 config = Configuration(args.config)
-dealer_config = Configuration(config.dealer_config).dealer
 
 ## Create an enforcer instance
 
-enforcer_config = Configuration(dealer_config.plugins.enforcer.config.enforcer)
+enforcer_config = Configuration(config.enforcer_config)
 enforcer_config['write_rrds'] = True
 enforcer = EnforcerInterface(enforcer_config)
 
 ## Logger
 
-LOG = make_standard_logger(config.log_level)
+LOG = make_standard_logger(config.get('log_level', 'info'))
 
 ## Paths
 
 rrd_dir = config.rrd_path_base + '/track_enforcer'
 
-if not read_only:
+if authorized:
     try:
         os.makedirs(rrd_dir)
     except OSError:
@@ -60,7 +59,7 @@ if not read_only:
 interval = int(config.rrd_interval)
 
 def create_rrd(path):
-    if read_only:
+    if not authorized:
         return
 
     start = (int(time.time()) / interval - 1) * interval
@@ -98,8 +97,9 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
     
     rrd_file = '%s/%s.rrd' % (rrd_dir, rule_name)
 
-    if not read_only and not os.path.exists(rrd_file):
-        # RRD does not exist yet                                                                                                                                                         
+    if authorized and not os.path.exists(rrd_file):
+        # RRD does not exist yet
+        LOG.info('Creating RRD file %s', rrd_file)
         create_rrd(rrd_file)
 
     # Update the RRD file
@@ -110,7 +110,7 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
     except:
         lasttime = 0
             
-    if not read_only and timestamp != lasttime:
+    if authorized and timestamp > lasttime:
         rrdtool.update(rrd_file, '%d:%i:%i:%i' % (timestamp, len(still_missing), len(en_route), len(already_there)))
 
         enroute_csv = rrd_dir + '/%s_enroute.csv' % rule_name 
@@ -118,7 +118,12 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
             fieldnames = ['replica', 'site', 'there', 'total']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
-            writer.writeheader()
+            try:
+                writer.writeheader()
+            except AttributeError:
+                # Python 2.6
+                csvfile.write('replica,site,there,total\n')
+                
             for key, value in en_route.items():
                 replica = key.split('__')[0]
                 site = key.split('__')[1]
@@ -131,12 +136,16 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
             fieldnames = ['replica', 'size']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
-            writer.writeheader()
+            try:
+                writer.writeheader()
+            except AttributeError:
+                csvfile.write('replica,size\n')
+
             for key, value in still_missing.items():
                 writer.writerow({'replica': key, 'size': value})
 
 
-if not read_only:
+if authorized:
     target_dir = config.rrd_publish_target + '/monitoring_enforcer'
     
     try:

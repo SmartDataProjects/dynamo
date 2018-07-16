@@ -1,5 +1,6 @@
 from dynamo.fileop.base import FileOperation, FileQuery
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import File, ConfigurationError
 
 class FileTransferOperation(FileOperation):
     @staticmethod
@@ -9,13 +10,21 @@ class FileTransferOperation(FileOperation):
     def __init__(self, config):
         FileOperation.__init__(self, config)
 
+        # Checksum algorithm to use (optional)
+        self.checksum_algorithm = config.get('checksum_algorithm', '')
+        if self.checksum_algorithm:
+            try:
+                self.checksum_index = File.checksum_algorithms.index(self.checksum_algorithm)
+            except ValueError:
+                raise ConfigurationError('Checksum algorithm %s not supported by File object.' % self.checksum_algorithm)
+
     def start_transfers(self, batch_id, batch_tasks):
         """
         Do the transfer operation on the batch of tasks.
         @params batch_id     Integer
         @params batch_tasks  List of TransferTask objects
 
-        @return  boolean indicating the operation success.
+        @return  {task: boolean} True for submission success
         """
         raise NotImplementedError('start_transfers')
 
@@ -25,6 +34,12 @@ class FileTransferOperation(FileOperation):
         @params task_ids    List of TransferTask ids
         """
         raise NotImplementedError('cancel_transfers')
+
+    def cleanup(self):
+        """
+        Clear the inner state in case of crash recovery.
+        """
+        raise NotImplementedError('cleanup')
 
 class FileTransferQuery(FileQuery):
     @staticmethod
@@ -39,9 +54,18 @@ class FileTransferQuery(FileQuery):
         Query the external agent about tasks in the given batch id.
         @param batch_id   Integer id of the transfer task batch.
 
-        @return  [(task_id, status, exit code, start time (UNIX), finish time (UNIX))]
+        @return  [(task_id, status, exit code, message, start time (UNIX), finish time (UNIX))]
         """
         raise NotImplementedError('get_transfer_status')
+
+    def write_transfer_history(self, history_db, task_id, history_id):
+        """
+        Enter whatever specific information this plugin has to the history DB.
+        @param history_db  HistoryDatabase instance
+        @param task_id     Transfer task id
+        @param history_id  ID in the history file_transfers table
+        """
+        raise NotImplementedError('write_transfer_history')
 
     def forget_transfer_status(self, task_id):
         """

@@ -4,6 +4,7 @@ CREATE TABLE `file_transfers` (
   `source_id` int(10) unsigned NOT NULL,
   `destination_id` int(10) unsigned NOT NULL,
   `exitcode` smallint(5) NOT NULL,
+  `message` varchar(512) COLLATE latin1_general_cs DEFAULT NULL,
   `batch_id` bigint(20) unsigned NOT NULL,
   `created` datetime NOT NULL,
   `started` datetime DEFAULT NULL,

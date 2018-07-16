@@ -21,7 +21,7 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-from dynamo.core.executable import make_standard_logger, read_only
+from dynamo.core.executable import make_standard_logger, authorized
 
 LOG = make_standard_logger(config.log_level)
 
@@ -39,7 +39,7 @@ dealer = Dealer(dealer_config)
 
 LOG.info('Dealer instance using %s for copy', type(dealer.copy_op).__name__)
 
-if read_only:
+if not authorized:
     dealer.set_read_only()
 
 dealer.run(inventory, comment = args.comment)

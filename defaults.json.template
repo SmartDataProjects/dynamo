@@ -79,6 +79,14 @@
       }
     }
   },
+  "utils.interface.webservice:HTTPSCertKeyHandler": {
+    "fullauth": {
+      "certfile": ""
+    },
+    "readonly": {
+      "certfile": ""
+    }
+  },
   "history.history:HistoryDatabase": {
     "fullauth": {
       "db_params": {
@@ -108,8 +116,7 @@
     }
   },
   "request.common:RequestManager": {
-    "fullauth": {},
-    "readonly": {}
+    "all": {}
   },
   "detox.history:DetoxHistoryBase": {
     "all": {
@@ -117,13 +124,18 @@
       "snapshots_spool_dir": "/var/spool/dynamo/detox_snapshots",
       "snapshots_archive_dir": "/local/data/dynamo/detox_snapshots"
     }
+  }
+  "policy.producers.mysqllock:MySQLReplicaLock": {
+    "all": {
+      "users": [],
+      "db_params": {
+        "db": "dynamoregister"
+      }
+    }
   },
-  "utils.interface.webservice:HTTPSCertKeyHandler": {
-    "fullauth": {
-      "certfile": ""
-    },
-    "readonly": {
-      "certfile": ""
+  "policy.producers.protectedsite:ProtectedSiteTagger": {
+    "all": {
+      "sites": []
     }
   }
 }

@@ -34,7 +34,7 @@ class DeletionHistoryDatabase(HistoryDatabase):
 
     def get_site_name(self, operation_id):
         sql = 'SELECT s.name FROM `sites` AS s INNER JOIN `deletion_operations` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s'
-        result = self._mysql.query(sql, operation_id)
+        result = self.db.query(sql, operation_id)
         if len(result) != 0:
             return result[0]
 
@@ -71,7 +71,7 @@ class CopyHistoryDatabase(HistoryDatabase):
 
     def get_site_name(self, operation_id):
         sql = 'SELECT s.name FROM `sites` AS s INNER JOIN `copy_operations` AS h ON h.`site_id` = s.`id` WHERE h.`id` = %s'
-        result = self._mysql.query(sql, operation_id)
+        result = self.db.query(sql, operation_id)
         if len(result) != 0:
             return result[0]
 

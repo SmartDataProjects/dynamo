@@ -1,5 +1,5 @@
 from dynamo.utils.classutil import get_instance
-from dynamo.registry.applock import Applock
+from dynamo.registry.registry import RegistryDatabase
 
 class AppManager(object):
     """
@@ -11,6 +11,9 @@ class AppManager(object):
 
     _statuses = ['new', 'assigned', 'run', 'done', 'notfound', 'authfailed', 'failed', 'killed']
     STAT_NEW, STAT_ASSIGNED, STAT_RUN, STAT_DONE, STAT_NOTFOUND, STAT_AUTHFAILED, STAT_FAILED, STAT_KILLED = range(1, 9)
+
+    _auth_levels = ['read', 'auth', 'write']
+    LV_NOAUTH, LV_AUTH, LV_WRITE = range(1, 4)
 
     @staticmethod
     def status_name(arg):
@@ -27,13 +30,27 @@ class AppManager(object):
             return arg
 
     @staticmethod
+    def auth_level_name(arg):
+        try:
+            return AppManager._auth_levels[arg - 1]
+        except:
+            return arg
+
+    @staticmethod
+    def auth_level_val(arg):
+        try:
+            return eval('AppManager.LV_' + arg.upper())
+        except:
+            return arg
+
+    @staticmethod
     def get_instance(module, config):
         return get_instance(AppManager, module, config)
 
     def __init__(self, config):
         self.readonly_config = None
         if 'applock' in config:
-            self.applock = Applock.get_instance(config.applock.module, config.applock.config)
+            self.applock = RegistryDatabase(config.applock)
         else:
             self.applock = None
 
@@ -61,7 +78,7 @@ class AppManager(object):
         """
         raise NotImplementedError('get_running_processes')
 
-    def schedule_application(self, title, path, args, user_id, host, write_request):
+    def schedule_application(self, title, path, args, user_id, host, auth_level):
         """
         Schedule an application to the master server.
         @param title          Application title.
@@ -69,7 +86,7 @@ class AppManager(object):
         @param args           Arguments to the application
         @param user_id        User id of the requester
         @param host           Host name of the requester
-        @param write_request  Boolean
+        @param auth_level     Authorization level (LV_*)
 
         @return application id
         """
@@ -127,11 +144,18 @@ class AppManager(object):
         raise NotImplementedError('stop_write_web')
 
     def check_application_auth(self, title, user, checksum):
+        """
+        @param title      Title of the application
+        @param user       User of the application
+        @param checksum   Checksum of the application file
+        
+        @return True if the application is authorized to write to the inventory.
+        """
         raise NotImplementedError('check_application_auth')
 
     def list_authorized_applications(self, titles = None, users = None, checksums = None):
         """
-        Return the list of authorized applications.
+        Return the list of write-authorized applications.
         @param title      If given as a list of strings, limit to applications with given titles.
         @param users      If given as a list of strings, limit to applications authorized under given users.
         @param checksums  If given as a list of strings, limit to applications with given checksums.
@@ -140,7 +164,7 @@ class AppManager(object):
 
     def authorize_application(self, title, checksum, user = None):
         """
-        Authorize an application. If user = None, authorize for everyone.
+        Authorize an application to write to inventory. If user = None, authorize for everyone.
         @return True if success, False if not.
         """
         raise NotImplementedError('authorize_application')

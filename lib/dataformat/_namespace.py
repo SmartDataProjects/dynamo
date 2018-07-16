@@ -25,12 +25,6 @@ def Block_from_full_name(full_name):
 
     return full_name[:delim], Block_to_internal_name(full_name[delim + 1:])
 
-def Site_to_pfn(self, lfn, protocol):
-    return self.backend + lfn
-
-def Site_to_lfn(self, lfn, protocol):
-    return pfn.replace(self.backend, '')
-
 def customize_dataset(Dataset):
     # Enumerator for dataset type.
     # Starting from 1 to play better with MySQL enums
@@ -49,9 +43,8 @@ def customize_block(Block):
     Block.to_full_name = staticmethod(Block_to_full_name)
     Block.from_full_name = staticmethod(Block_from_full_name)
 
-def customize_blockreplica(BlockReplica):
+def customize_file(File):
     pass
 
-def customize_site(Site):
-    Site.to_pfn = Site_to_pfn
-    Site.to_lfn = Site_to_lfn
+def customize_blockreplica(BlockReplica):
+    pass
