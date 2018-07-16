@@ -636,7 +636,7 @@ class RLFSM(object):
 
             for task_id, status, exitcode, message, start_time, finish_time in results:
                 # start_time and finish_time can be None
-                LOG.debug('%s results: %d %s %d %s %s', optype, task_id, FileQuery.status_name(status), exitcode, start_time, finish_time)
+                LOG.debug('%s result: %d %s %d %s %s', optype, task_id, FileQuery.status_name(status), exitcode, start_time, finish_time)
 
                 if status == FileQuery.STAT_DONE:
                     num_success += 1
