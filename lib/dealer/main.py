@@ -154,7 +154,7 @@ class Dealer(object):
         for plugin in self._plugin_priorities.keys():
             attr_names.update(plugin.required_attrs)
 
-        self.attr_producers = get_producers(attr_names, config.attrs).values()
+        self.attr_producers = list(set(get_producers(attr_names, config.attrs).itervalues()))
 
     def _collect_requests(self, inventory):
         """

@@ -111,7 +111,7 @@ class DetoxPolicy(object):
         with open(config.policy_file) as policy_def:
             self.policy_text = policy_def.read().strip()
 
-        self.parse_lines(self.policy_text.split('\n'):, config.attrs)
+        self.parse_lines(self.policy_text.split('\n'), config.attrs)
         
         # Special config - shift time-based policies by config.time_shift days for simulation
         if config.get('time_shift', 0.) > 0.:
@@ -214,10 +214,10 @@ class DetoxPolicy(object):
 
         attr_names.update(self.candidate_sort_key.required_attrs)
 
-        self.attr_producers = get_producers(attr_names, attrs_config).values()
+        self.attr_producers = list(set(get_producers(attr_names, attrs_config).itervalues()))
 
         LOG.info('Policy stack for %s: %d lines using dataset attr producers [%s]', \
-            self.partition_name, len(self.policy_lines), ' '.join(type(p).__name__ for p in self.attr_producers))
+                 self.partition_name, len(self.policy_lines), ' '.join(type(p).__name__ for p in self.attr_producers))
 
     def evaluate(self, replica):
         actions = []

@@ -2,7 +2,7 @@ import re
 import collections
 import logging
 
-from dynamo.utils.interface.mysql import MySQL
+from dynamo.registry.registry import RegistryDatabase
 from dynamo.dataformat import Configuration, Block, ObjectError, ConfigurationError
 
 LOG = logging.getLogger(__name__)
@@ -16,27 +16,17 @@ class UnhandledCopyExists(object):
 
     produces = ['unhandled_copy_exists']
 
-    _default_config = None
-
-    @staticmethod
-    def set_default(config):
-        UnhandledCopyExists._default_config = Configuration(config)
-
     def __init__(self, config = None):
-        if config is None:
-            if UnhandledCopyExists._default_config is None:
-                raise ConfigurationError('UnhandledCopyExists default config is not set')
+        config = Configuration(config)
 
-            config = UnhandledCopyExists._default_config
-
-        self._registry = MySQL(config.registry)
+        self.registry = RegistryDatabase(config.get('registry', None))
 
     def load(self, inventory):
         # collect the name of items that are not yet activated or are activated but not queued
         sql = 'SELECT i.`item` FROM `copy_request_items` AS i INNER JOIN `copy_requests` AS r ON r.`id` = i.`request_id`'
         sql += ' WHERE r.`status` = \'new\''
-        items = self._registry.query(sql)
-        items += self._registry.query('SELECT `item` FROM `active_copies` WHERE `status` = \'new\'')
+        items = self.registry.db.query(sql)
+        items += self.registry.db.query('SELECT `item` FROM `active_copies` WHERE `status` = \'new\'')
 
         for item_name in items:
             try:
