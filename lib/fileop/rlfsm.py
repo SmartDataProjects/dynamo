@@ -10,6 +10,7 @@ from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
 from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery, DirDeletionOperation
 from dynamo.fileop.errors import irrecoverable_errors
 from dynamo.dataformat import Configuration, Block, Site, BlockReplica
+from dynamo.history.history import HistoryDatabase
 from dynamo.utils.interface.mysql import MySQL
 
 LOG = logging.getLogger(__name__)
@@ -70,8 +71,8 @@ class RLFSM(object):
         # Handle to the inventory DB
         self.db = MySQL(config.db.db_params)
 
-        # History DB name
-        self.history_db = config.db.history
+        # Handle to the history DB
+        self.history_db = HistoryDatabase()
 
         # FileTransferOperation backend (can make it a map from (source, dest) to operator)
         if 'transfer' in config:
@@ -106,6 +107,7 @@ class RLFSM(object):
 
     def set_read_only(self, value = True):
         self._read_only = value
+        self.history_db.set_read_only(value)
         if self.transfer_operation:
             self.transfer_operation.set_read_only(value)
         if self.deletion_operation:
@@ -569,43 +571,30 @@ class RLFSM(object):
         return self.db.query(sql)
 
     def _update_status(self, optype):
-        # insert queries all have ON DUPLICATE key to make sure we can restart in case of a crash
+        if optype == 'transfer':
+            site_columns = 'ss.`name`, sd.`name`'
+            site_joins = ' INNER JOIN `sites` AS ss ON ss.`id` = q.`source_id`'
+            site_joins += ' INNER JOIN `sites` AS sd ON sd.`id` = u.`site_id`'
+        else:
+            site_columns = 's.`name`'
+            site_joins = ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
 
-        insert_file = 'INSERT INTO `{history}`.`files` (`name`, `size`)'
-        insert_file += ' SELECT f.`name`, f.`size` FROM `transfer_tasks` AS q'
-        insert_file += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-        insert_file += ' INNER JOIN .`files` AS f ON f.`id` = u.`file_id`'
-        insert_file += ' WHERE u.`delete` = 0 AND q.`id` = %s'
-        insert_file += ' ON DUPLICATE KEY UPDATE `size`=VALUES(`size`)'
+        get_task_data = 'SELECT u.`id`, f.`name`, f.`size`, UNIX_TIMESTAMP(q.`created`), ' + site_columns + ' FROM `{op}_tasks` AS q'
+        get_task_data += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
+        get_task_data += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
+        get_task_data += site_joins
+        get_task_data += ' WHERE q.`id` = %s'
 
-        insert_file = insert_file.format(history = self.history_db)
-
-        # sites have to be inserted to history already
+        get_task_data = get_task_data.format(op = optype)
 
         if optype == 'transfer':
-            table_name = 'file_transfers'
-            site_fields = '`source_id`, `destination_id`'
-            site_values = 'hss.`id`, hsd.`id`'
-            site_joins = ' INNER JOIN `sites` AS sd ON sd.`id` = u.`site_id` INNER JOIN `sites` AS ss ON ss.`id` = q.`source_id`'
-            site_joins += ' INNER JOIN `{history}`.`sites` AS hsd ON hsd.`name` = sd.`name` INNER JOIN `{history}`.`sites` AS hss ON hss.`name` = ss.`name`'
+            history_table_name = 'file_transfers'
+            history_site_fields = ('source_id', 'destination_id')
         else:
-            table_name = 'file_deletions'
-            site_fields = '`site_id`'
-            site_values = 'hs.`id`'
-            site_joins = ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
-            site_joins += ' INNER JOIN `{history}`.`sites` AS hs ON hs.`name` = s.`name`'
+            history_table_name = 'file_deletions'
+            history_site_fields = ('site_id',)
 
-        insert_history = 'INSERT INTO `{history}`.`{table}`'
-        insert_history += ' (`file_id`, ' + site_fields + ', `exitcode`, `message`, `batch_id`, `created`, `started`, `finished`, `completed`)'
-        insert_history += ' SELECT hf.`id`, ' + site_values + ', %s, %s, q.`batch_id`, q.`created`, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s), NOW()'
-        insert_history += ' FROM `{op}_tasks` AS q'
-        insert_history += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-        insert_history += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
-        insert_history += ' INNER JOIN `{history}`.`files` AS hf ON hf.`name` = f.`name`'
-        insert_history += site_joins
-        insert_history += ' WHERE q.`id` = %s'
-
-        insert_history = insert_history.format(history = self.history_db, table = table_name, op = optype)
+        history_fields = ('file_id', 'exitcode', 'message', 'batch_id', 'created', 'started', 'finished', 'completed') + history_site_fields
 
         if optype == 'transfer':
             insert_failure = 'INSERT INTO `failed_transfers` (`id`, `subscription_id`, `source_id`, `exitcode`)'
@@ -613,9 +602,7 @@ class RLFSM(object):
             insert_failure += ' ON DUPLICATE KEY UPDATE `id`=VALUES(`id`)'
             delete_failures = 'DELETE FROM `failed_transfers` WHERE `subscription_id` = %s'
 
-        get_subscription = 'SELECT u.`id`, u.`status` FROM `{op}_tasks` AS q'.format(op = optype)
-        get_subscription += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = q.`subscription_id`'
-        get_subscription += ' WHERE q.`id` = %s'
+        get_subscription_status = 'SELECT `status` FROM `file_subscriptions` WHERE `id` = %s'
 
         update_subscription = 'UPDATE `file_subscriptions` SET `status` = %s, `last_update` = NOW() WHERE `id` = %s'
         delete_subscription = 'DELETE FROM `file_subscriptions` WHERE `id` = %s'
@@ -631,10 +618,12 @@ class RLFSM(object):
 
         if optype == 'transfer':
             get_results = self.transfer_query.get_transfer_status
+            write_history = self.transfer_query.write_transfer_history
             acknowledge_result = self.transfer_query.forget_transfer_status
             close_batch = self.transfer_query.forget_transfer_batch
         else:
             get_results = self.deletion_query.get_deletion_status
+            write_history = self.transfer_query.write_deletion_history
             acknowledge_result = self.deletion_query.forget_deletion_status
             close_batch = self.deletion_query.forget_deletion_batch
 
@@ -659,24 +648,43 @@ class RLFSM(object):
                     batch_complete = False
                     continue
 
+                try:
+                    task_data = self.db.query(get_task_data, task_id)[0]
+                except IndexError:
+                    acknowledge_result(task_id)
+                    self.db.query(delete_task, task_id)
+                    continue
+
+                subscription_id, lfn, size, create_time = task_data[:5]
+
+                if optype == 'transfer':
+                    source_name, dest_name = task_data[5:]
+                    history_site_ids = (
+                        self.history_db.save_sites([source_name], get_ids = True)[0],
+                        self.history_db.save_sites([dest_name], get_ids = True)[0]
+                    )
+                else:
+                    site_name = task_data[5]
+                    history_site_ids = (self.history_db.save_sites([site_name], get_ids = True)[0],)
+
                 if not self._read_only:
-                    self.db.query(insert_file, task_id)
-                    self.db.query(insert_history, exitcode, message, start_time, finish_time, task_id)
+                    file_id = self.history_db.save_files([(lfn, size)], get_ids = True)[0]
+
+                    values = (file_id, exitcode, message, batch_id, MySQL.bare('FROM_UNIXTIME(%d)' % create_time),
+                        MySQL.bare('FROM_UNIXTIME(%d)' % start_time), MySQL.bare('FROM_UNIXTIME(%d)' % finish_time),
+                        MySQL.bare('NOW()')) + history_site_ids
+
+                    history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
+
+                    write_history(self.history_db, task_id, history_id)
 
                 # We check the subscription status and update accordingly. Need to lock the tables.
                 if not self._read_only:
-                    self.db.lock_tables(write = ['file_subscriptions', ('file_subscriptions', 'u'), optype + '_tasks', (optype + '_tasks', 'q')])
+                    self.db.lock_tables(write = ['file_subscriptions'])
 
                 try:
-                    subscription = self.db.query(get_subscription, task_id)
-                    if len(subscription) == 0:
-                        # A task without subscription - some sort of state corruption. Just ignore
-                        if not self._read_only:
-                            self.db.query(delete_task, task_id)
-                        continue
+                    subscription_status = self.db.query(get_subscription_status, subscription_id)
 
-                    subscription_id, subscription_status = subscription[0]
-    
                     if subscription_status == 'inbatch':
                         if status == FileQuery.STAT_DONE:
                             LOG.debug('Subscription %d done.', subscription_id)

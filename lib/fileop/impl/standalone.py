@@ -148,6 +148,12 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
     def get_deletion_status(self, batch_id): #override
         return self._get_status(batch_id, 'deletion')
 
+    def write_transfer_history(self, history_db, task_id, history_id): #override
+        pass
+
+    def write_deletion_history(self, history_db, task_id, history_id): #override
+        pass
+
     def forget_transfer_status(self, task_id): #override
         return self._forget_status(task_id, 'transfer')
 

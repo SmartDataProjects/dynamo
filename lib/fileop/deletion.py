@@ -65,6 +65,15 @@ class FileDeletionQuery(FileQuery):
         """
         raise NotImplementedError('get_transfer_status')
 
+    def write_deletion_history(self, history_db, task_id, history_id):
+        """
+        Enter whatever specific information this plugin has to the history DB.
+        @param history_db  HistoryDatabase instance
+        @param task_id     Transfer task id
+        @param history_id  ID in the history file_deletions table
+        """
+        raise NotImplementedError('write_deletion_history')
+
     def forget_deletion_status(self, task_id):
         """
         Delete the internal record (if there is any) of the specific task.

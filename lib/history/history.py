@@ -132,3 +132,15 @@ class HistoryDatabase(object):
 
         if get_ids:
             return ids
+
+    def save_files(self, file_data, get_ids = False):
+        if self._read_only:
+            if get_ids:
+                return [0] * len(file_data)
+            else:
+                return
+
+        self.db.insert_many('files', ('name', 'size'), None, file_data, do_update = True)
+
+        if get_ids:
+            return self.db.select_many('files', ('id',), 'name', [f[0] for f in file_data])

@@ -216,6 +216,12 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         return self._get_status(batch_id, 'deletion')
 
+    def write_transfer_history(self, history_db, task_id, history_id): #override
+        self._write_history(history_db, task_id, history_id, 'transfer')
+
+    def write_deletion_history(self, history_db, task_id, history_id): #override
+        self._write_history(history_db, task_id, history_id, 'deletion')
+
     def forget_transfer_status(self, task_id): #override
         return self._forget_status(task_id, 'transfer')
 
@@ -399,6 +405,30 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         return results
 
+    def _write_history(self, history_db, task_id, history_id, optype):
+        if not self._read_only:
+            history_db.db.insert_update('fts_servers', ('url',), self.server_url)
+
+        try:
+            server_id = history_db.db.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.server_url)[0]
+        except IndexError:
+            server_id = 0
+
+        sql = 'SELECT b.`job_id`, t.`fts_file_id` FROM `fts_{op}_tasks` AS t'
+        sql += ' INNER JOIN `fts_{op}_batches` AS b ON b.`id` = t.`fts_batch_id`'
+        sql += ' WHERE t.`id` = %s'
+
+        try:
+            fts_job_id, fts_file_id = self.db.query(sql.format(op = optype), task_id)[0]
+        except IndexError:
+            return
+
+        if not self._read_only:
+            history_db.db.insert_update('fts_batches', ('fts_server_id', 'job_id'), server_id, fts_job_id)
+            batch_id = history_db.db.query('SELECT `id` FROM `fts_batches` WHERE `fts_server_id` = %s AND `job_id` = %s', server_id, fts_job_id)[0]
+
+            history_db.db.insert_update('fts_file_{op}s'.format(op = optype), ('id', 'fts_batch_id', 'fts_file_id'), history_id, batch_id, fts_file_id)
+
     def _forget_status(self, task_id, optype):
         if self._read_only:
             return
@@ -414,10 +444,11 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         self.db.query(sql, batch_id)
 
     def _set_server_id(self):
+        if not self._read_only:
+            self.db.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.server_url)
+
         result = self.db.query('SELECT `id` FROM `fts_servers` WHERE `url` = %s', self.server_url)
         if len(result) == 0:
-            if not self._read_only:
-                self.db.query('INSERT INTO `fts_servers` (`url`) VALUES (%s) ON DUPLICATE KEY UPDATE `url`=VALUES(`url`)', self.server_url)
-                self.server_id = self.db.last_insert_id
+            self.server_id = 0
         else:
             self.server_id = result[0]
