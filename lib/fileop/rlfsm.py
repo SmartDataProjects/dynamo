@@ -72,7 +72,7 @@ class RLFSM(object):
         self.db = MySQL(config.db.db_params)
 
         # Handle to the history DB
-        self.history_db = HistoryDatabase()
+        self.history_db = HistoryDatabase(config.get('history', None))
 
         # FileTransferOperation backend (can make it a map from (source, dest) to operator)
         if 'transfer' in config:
@@ -651,6 +651,7 @@ class RLFSM(object):
                 try:
                     task_data = self.db.query(get_task_data, task_id)[0]
                 except IndexError:
+                    LOG.warning('%s task %d got lost.', optype, task_id)
                     acknowledge_result(task_id)
                     self.db.query(delete_task, task_id)
                     continue
@@ -673,6 +674,11 @@ class RLFSM(object):
                     values = (file_id, exitcode, message, batch_id, MySQL.bare('FROM_UNIXTIME(%d)' % create_time),
                         MySQL.bare('FROM_UNIXTIME(%d)' % start_time), MySQL.bare('FROM_UNIXTIME(%d)' % finish_time),
                         MySQL.bare('NOW()')) + history_site_ids
+
+                    if optype == 'transfer':
+                        LOG.debug('Archiving transfer of %s from %s to %s (exitcode %d)', lfn, source_name, dest_name, exitcode)
+                    else:
+                        LOG.debug('Archiving deletion of %s at %s (exitcode %d)', lfn, site_name, exitcode)
 
                     history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
 

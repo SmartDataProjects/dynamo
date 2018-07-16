@@ -154,7 +154,7 @@ def generate_fom_conf(conf_str):
     except KeyError:
         passwd = grants_conf[user]['passwd']
 
-    fom_conf = OD({'db': OD()})
+    fom_conf = OD([('db', OD()), ('history', OD())])
 
     fom_conf['db']['db_params'] = OD([
         ('host', host),
@@ -163,7 +163,14 @@ def generate_fom_conf(conf_str):
         ('db', 'dynamo'),
         ('scratch_db', 'dynamo_tmp')
     ])
-    fom_conf['db']['history'] = 'dynamohistory'
+
+    fom_conf['history']['db_params'] = OD([
+        ('host', host),
+        ('user', user),
+        ('passwd', passwd),
+        ('db', 'dynamohistory'),
+        ('scratch_db', 'dynamo_tmp')
+    ])
 
     fom_conf['transfer'] = OD({'config': OD(conf['transfer'])})
     fom_conf['transfer']['config']['db_params'] = OD([

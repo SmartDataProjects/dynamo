@@ -68,6 +68,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
             if dest_pfn is None or source_pfn is None:
                 # either gfal2 is not supported or lfn could not be mapped
+                LOG.warning('Could not obtain PFN for %s at %s or %s', lfn, sub.destination.name, task.source.name)
                 result[task] = False
                 continue
 
@@ -77,18 +78,23 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 checksum = None
 
             if task.source.storage_type == Site.TYPE_MSS:
+                LOG.debug('Staging %s at %s', lfn, task.source.name)
+
                 # need to stage first
                 stage_files.append((source_pfn, dest_pfn, checksum, sub.file.size))
 
                 # task identified by the source PFN
                 s_pfn_to_task[source_pfn] = task
             else:
+                LOG.debug('Submitting transfer of %s from %s to %s to FTS', lfn, task.source.name, sub.destination.name)
+
                 transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = sub.file.size))
 
                 # there should be only one task per destination pfn
                 t_pfn_to_task[dest_pfn] = task
 
         if len(stage_files) != 0:
+            LOG.debug('Submit new staging job for %d files', len(stage_files))
             job = fts3.new_staging_job([ff[0] for ff in stage_files], bring_online = 36000)
             success = self._submit_job(job, 'staging', batch_id, dict((pfn, task.id) for pfn, task in s_pfn_to_task.iteritems()))
 
@@ -96,12 +102,14 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 result[s_pfn_to_task[source_pfn]] = success
 
             if success and not self._read_only:
+                LOG.debug('Recording staging queue')
                 fields = ('id', 'source', 'destination', 'checksum', 'size')
                 mapping = lambda ff: (s_pfn_to_task[ff[0]].id,) + ff
                 if not self._read_only:
                     self.db.insert_many('fts_staging_queue', fields, mapping, stage_files)
 
         if len(transfers) != 0:
+            LOG.debug('Submit new transfer job for %d files', len(transfers))
             job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target')
             success = self._submit_job(job, 'transfer', batch_id, dict((pfn, task.id) for pfn, task in t_pfn_to_task.iteritems()))
 
@@ -245,6 +253,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         else:
             context = self._context
 
+        LOG.debug('FTS: %s', method)
+
         return getattr(fts3, method)(context, *args, **kwd)
 
     def _submit_job(self, job, optype, batch_id, pfn_to_tid):
@@ -257,6 +267,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 exc_type, exc, tb = sys.exc_info()
                 LOG.error('Failed to submit %s to FTS: Exception %s (%s)', optype, exc_type.__name__, str(exc))
                 return False
+
+        LOG.debug('FTS job id: %s', job_id)
 
         # list of file-level operations (one-to-one with pfn)
         try:
@@ -331,6 +343,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         results = []
 
         for fts_batch_id, job_id in batch_data:
+            LOG.debug('Checking status of FTS %s batch %s', optype, job_id)
+
             sql = 'SELECT `fts_file_id`, `id` FROM `{table}` WHERE `fts_batch_id` = %s'.format(table = task_table_name)
             fts_to_task = dict(self.db.xquery(sql, fts_batch_id))
 
@@ -368,7 +382,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     c = find_msg_code(message)
                     if c is not None:
                         exitcode = c
-    
+
                 if state == 'FINISHED':
                     status = FileQuery.STAT_DONE
                     exitcode = 0
@@ -400,6 +414,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 if get_time:
                     start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
                     finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+
+                LOG.debug('%s %d: %s, %d, %s, %s, %s', optype, task_id, FileQuery.status_name(status), exitcode, message, start_time, finish_time)
     
                 results.append((task_id, status, exitcode, message, start_time, finish_time))
 
