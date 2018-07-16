@@ -98,7 +98,8 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
     rrd_file = '%s/%s.rrd' % (rrd_dir, rule_name)
 
     if authorized and not os.path.exists(rrd_file):
-        # RRD does not exist yet                                                                                                                                                         
+        # RRD does not exist yet
+        LOG.info('Creating RRD file %s', rrd_file)
         create_rrd(rrd_file)
 
     # Update the RRD file
@@ -109,7 +110,7 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
     except:
         lasttime = 0
             
-    if authorized and timestamp != lasttime:
+    if authorized and timestamp > lasttime:
         rrdtool.update(rrd_file, '%d:%i:%i:%i' % (timestamp, len(still_missing), len(en_route), len(already_there)))
 
         enroute_csv = rrd_dir + '/%s_enroute.csv' % rule_name 
@@ -117,7 +118,12 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
             fieldnames = ['replica', 'site', 'there', 'total']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
-            writer.writeheader()
+            try:
+                writer.writeheader()
+            except AttributeError:
+                # Python 2.6
+                csvfile.write('replica,site,there,total\n')
+                
             for key, value in en_route.items():
                 replica = key.split('__')[0]
                 site = key.split('__')[1]
@@ -130,7 +136,11 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
             fieldnames = ['replica', 'size']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
-            writer.writeheader()
+            try:
+                writer.writeheader()
+            except AttributeError:
+                csvfile.write('replica,size\n')
+
             for key, value in still_missing.items():
                 writer.writerow({'replica': key, 'size': value})
 
