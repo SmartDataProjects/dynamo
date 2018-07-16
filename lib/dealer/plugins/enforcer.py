@@ -14,8 +14,14 @@ class EnforcerHandler(BaseHandler):
 
     def __init__(self, config):
         BaseHandler.__init__(self, 'Enforcer')
+        
+        if type(config.enforcer) is str:
+            # A path to the common enforcer configuration
+            enforcer_config = Configuration(config.enforcer)
+        else:
+            enforcer_config = config.enforcer
 
-        self.interface = EnforcerInterface(config.enforcer)
+        self.interface = EnforcerInterface(enforcer_config)
 
     def get_requests(self, inventory, policy): # override
         requests = []
