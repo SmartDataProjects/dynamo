@@ -29,7 +29,7 @@ sys.argv = []
 
 from dynamo.dataformat import Configuration, HistoryRecord, Block, ObjectError
 from dynamo.utils.parallel import Map
-from dynamo.core.executable import authorized, make_standard_logger
+from dynamo.core.executable import authorized, inventory, make_standard_logger
 
 ## Configuration
 
@@ -49,7 +49,15 @@ from dynamo.dealer.history import DealerHistoryBase
 from dynamo.operation.copy import CopyInterface
 
 history = DealerHistoryBase(config.get('history', None))
-copy = CopyInterface.get_instance()
+if 'copy' in config:
+    copy = CopyInterface.get_instance(config['copy'].module, config['copy'].config)
+else:
+    copy = CopyInterface.get_instance()
+
+if not authorized:
+    # not that we'll do any write operations
+    history.set_read_only()
+    copy.set_read_only()
 
 ## Paths
 
@@ -111,7 +119,7 @@ totals = {} # {site: tallies}
 ongoing_totals = {} # {site: tallies}
 
 def get_copy_status(record):
-    return record, copy.copy_status(record.operation_id)
+    return record, copy.copy_status(record, inventory)
 
 def is_transfer_stuck(rrd_file):
     try:
