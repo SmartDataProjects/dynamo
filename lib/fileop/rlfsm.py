@@ -493,12 +493,13 @@ class RLFSM(object):
         # Make the tables consistent in case the previous cycles was terminated prematurely
 
         # There should not be tasks with subscription status new
-        sql = 'DELETE FROM t USING `transfer_tasks` AS t INNER JOIN `file_subscriptions` AS u ON u.`id` = t.`subscription_id` WHERE u.`status` IN (\'new\', \'retry\')'
+        sql = 'DELETE FROM t USING `transfer_tasks` AS t'
+        sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = t.`subscription_id`'
+        sql += ' WHERE u.`status` IN (\'new\', \'retry\')'
         self.db.query(sql)
-        sql = 'DELETE FROM t USING `deletion_tasks` AS t INNER JOIN `file_subscriptions` AS u ON u.`id` = t.`subscription_id` WHERE u.`status` IN (\'new\', \'retry\')'
-        self.db.query(sql)
-
-        sql = 'UPDATE `file_subscriptions` SET `status` = \'new\' WHERE `status` = \'inbatch\' AND `id` NOT IN (SELECT `subscription_id` FROM `transfer_tasks`) AND `id` NOT IN (SELECT `subscription_id` FROM `deletion_tasks`)'
+        sql = 'DELETE FROM t USING `deletion_tasks` AS t'
+        sql += ' INNER JOIN `file_subscriptions` AS u ON u.`id` = t.`subscription_id`'
+        sql += ' WHERE u.`status` IN (\'new\', \'retry\')'
         self.db.query(sql)
 
         # There should not be batches with no tasks
@@ -507,10 +508,19 @@ class RLFSM(object):
         sql = 'DELETE FROM b USING `deletion_batches` AS b LEFT JOIN `deletion_tasks` AS t ON t.`batch_id` = b.`id` WHERE t.`batch_id` IS NULL'
         self.db.query(sql)
 
-        # Cleanup the plugins
+        # and tasks with no batches
+        sql = 'DELETE FROM t USING `transfer_tasks` AS t LEFT JOIN `transfer_batches` AS b ON b.`id` = t.`batch_id` WHERE b.`id` IS NULL'
+        self.db.query(sql)
+        sql = 'DELETE FROM t USING `deletion_tasks` AS t LEFT JOIN `deletion_batches` AS b ON b.`id` = t.`batch_id` WHERE b.`id` IS NULL'
+        self.db.query(sql)
+
+        # Cleanup the plugins (might delete tasks)
         self.transfer_operation.cleanup()
         if self.deletion_operation is not self.transfer_operation:
             self.deletion_operation.cleanup()
+
+        sql = 'UPDATE `file_subscriptions` SET `status` = \'new\' WHERE `status` = \'inbatch\' AND `id` NOT IN (SELECT `subscription_id` FROM `transfer_tasks`) AND `id` NOT IN (SELECT `subscription_id` FROM `deletion_tasks`)'
+        self.db.query(sql)
 
     def _subscribe(self, site, lfile, delete, created = None):
         opp_op = 0 if delete == 1 else 1

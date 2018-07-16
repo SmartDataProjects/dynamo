@@ -145,15 +145,37 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return self._cancel(task_ids, 'deletion')
 
     def cleanup(self): #override
-        sql = 'DELETE FROM f USING `fts_transfer_tasks` AS f LEFT JOIN `transfer_tasks` AS t ON t.`id` = f.`id` WHERE t.`id` IS NULL'
+        sql = 'DELETE FROM f USING `fts_transfer_tasks` AS f'
+        sql += ' LEFT JOIN `transfer_tasks` AS t ON t.`id` = f.`id`'
+        sql += ' LEFT JOIN `fts_transfer_batches` AS b ON b.`id` = f.`fts_batch_id`'
+        sql += ' WHERE t.`id` IS NULL OR b.`id` IS NULL'
         self.db.query(sql)
-        sql = 'DELETE FROM f USING `fts_staging_queue` AS f LEFT JOIN `fts_transfer_tasks` AS t ON t.`id` = f.`id` WHERE t.`id` IS NULL'
+        sql = 'DELETE FROM f USING `fts_staging_queue` AS f'
+        sql += ' LEFT JOIN `fts_transfer_tasks` AS t ON t.`id` = f.`id`'
+        sql += ' WHERE t.`id` IS NULL'
         self.db.query(sql)
-        sql = 'DELETE FROM f USING `fts_deletion_tasks` AS f LEFT JOIN `deletion_tasks` AS t ON t.`id` = f.`id` WHERE t.`id` IS NULL'
+        sql = 'DELETE FROM f USING `fts_deletion_tasks` AS f'
+        sql += ' LEFT JOIN `deletion_tasks` AS t ON t.`id` = f.`id`'
+        sql += ' LEFT JOIN `fts_deletion_batches` AS b ON b.`id` = f.`fts_batch_id`'
+        sql += ' WHERE t.`id` IS NULL OR b.`id` IS NULL'
         self.db.query(sql)
-        sql = 'DELETE FROM f USING `fts_transfer_batches` AS f LEFT JOIN `transfer_batches` AS t ON t.`id` = f.`batch_id` WHERE t.`id` IS NULL'
+        sql = 'DELETE FROM f USING `fts_transfer_batches` AS f'
+        sql += ' LEFT JOIN `transfer_batches` AS t ON t.`id` = f.`batch_id`'
+        sql += ' WHERE t.`id` IS NULL'
         self.db.query(sql)
-        sql = 'DELETE FROM f USING `fts_deletion_batches` AS f LEFT JOIN `deletion_batches` AS t ON t.`id` = f.`batch_id` WHERE t.`id` IS NULL'
+        sql = 'DELETE FROM f USING `fts_deletion_batches` AS f'
+        sql += ' LEFT JOIN `deletion_batches` AS t ON t.`id` = f.`batch_id`'
+        sql += ' WHERE t.`id` IS NULL'
+        self.db.query(sql)
+
+        # Delete the source tasks - caution: wipes out all tasks when switching the operation backend
+        sql = 'DELETE FROM t USING `transfer_tasks` AS t'
+        sql += ' LEFT JOIN `fts_transfer_tasks` AS f ON f.`id` = t.`id`'
+        sql += ' WHERE f.`id` IS NULL'
+        self.db.query(sql)
+        sql = 'DELETE FROM t USING `deletion_tasks` AS t'
+        sql += ' LEFT JOIN `fts_deletion_tasks` AS f ON f.`id` = t.`id`'
+        sql += ' WHERE f.`id` IS NULL'
         self.db.query(sql)
 
     def get_transfer_status(self, batch_id): #override

@@ -132,6 +132,16 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
         sql = 'DELETE FROM f USING `standalone_deletion_batches` AS f LEFT JOIN `deletion_batches` AS t ON t.`id` = f.`batch_id` WHERE t.`id` IS NULL'
         self.db.query(sql)
 
+        # Delete the source tasks - caution: wipes out all tasks when switching the operation backend
+        sql = 'DELETE FROM t USING `transfer_tasks` AS t'
+        sql += ' LEFT JOIN `standalone_transfer_tasks` AS f ON f.`id` = t.`id`'
+        sql += ' WHERE f.`id` IS NULL'
+        self.db.query(sql)
+        sql = 'DELETE FROM t USING `deletion_tasks` AS t'
+        sql += ' LEFT JOIN `standalone_deletion_tasks` AS f ON f.`id` = t.`id`'
+        sql += ' WHERE f.`id` IS NULL'
+        self.db.query(sql)
+
     def get_transfer_status(self, batch_id): #override
         return self._get_status(batch_id, 'transfer')
 
