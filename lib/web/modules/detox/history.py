@@ -45,8 +45,8 @@ class WebDetoxHistory(WebModule):
             return
 
         self.cycle = result[0][0]
-        self.comment = result[0][2]
-        self.timestamp = result[0][3]
+        self.comment = result[0][1]
+        self.timestamp = result[0][2]
 
     def get_latest_cycle(self):
         sql = 'SELECT `id`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `deletion_cycles`'
@@ -58,8 +58,8 @@ class WebDetoxHistory(WebModule):
             return
 
         self.cycle = result[0][0]
-        self.comment = result[0][2]
-        self.timestamp = result[0][3]
+        self.comment = result[0][1]
+        self.timestamp = result[0][2]
 
     def get_partition_and_cycle(self, request):
         if 'partition_id' in request:

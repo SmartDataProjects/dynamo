@@ -336,7 +336,7 @@ class DetoxHistory(DetoxHistoryBase):
 
         columns = ('operation', 'partition_id', 'policy_id', 'comment', 'time_start')
         values = (operation_str, part_id, policy_id, comment, MySQL.bare('NOW()'))
-        return self.db.insert_get_id('cycles', columns = columns, values = values)
+        return self.db.insert_get_id('deletion_cycles', columns = columns, values = values)
 
     def close_cycle(self, cycle_number):
         """
@@ -360,7 +360,7 @@ class DetoxHistory(DetoxHistoryBase):
         # no row with matching hash or no row with matching text although hash matches (basically impossible)
         # new policy
         columns = ('hash', 'text')
-        return self.db.insert_get_id('deletion_policies', columns = columns, values = (md5, policy_text))
+        return self.db.insert_get_id('deletion_policies', columns = columns, values = (MySQL.bare('UNHEX(\'%s\')' % md5), policy_text))
 
     def save_conditions(self, policy_lines):
         """
@@ -612,6 +612,6 @@ class DetoxHistory(DetoxHistoryBase):
         history_record = self.make_entry(site.name)
 
         if not self._read_only:
-            self.db.query('INSERT INTO `cycle_copy_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, history_record.operation_id)
+            self.db.query('INSERT INTO `cycle_deletion_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, history_record.operation_id)
 
         return history_record
