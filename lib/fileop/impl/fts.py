@@ -186,7 +186,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         staged_tasks = []
 
-        for task_id, status, exitcode, start_time, finish_time in self._get_status(batch_id, 'staging'):
+        for task_id, status, exitcode, msg, start_time, finish_time in self._get_status(batch_id, 'staging'):
             if status == FileQuery.STAT_DONE:
                 staged_tasks.append(task_id)
                 results.append((task_id, FileQuery.STAT_QUEUED, None, None, None))
@@ -349,6 +349,10 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
                 try:
                     message = fts_file['reason']
+                except KeyError:
+                    message = None
+
+                if message is not None:
                     # Check if reason follows a known format (from which we can get the exit code)
                     matches = message_pattern.match(message)
                     if matches is not None:
@@ -358,9 +362,6 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     c = find_msg_code(message)
                     if c is not None:
                         exitcode = c
-
-                except KeyError:
-                    message = None
     
                 if state == 'FINISHED':
                     status = FileQuery.STAT_DONE
