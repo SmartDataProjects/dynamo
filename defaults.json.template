@@ -124,7 +124,7 @@
       "snapshots_spool_dir": "/var/spool/dynamo/detox_snapshots",
       "snapshots_archive_dir": "/local/data/dynamo/detox_snapshots"
     }
-  }
+  },
   "policy.producers.mysqllock:MySQLReplicaLock": {
     "all": {
       "users": [],
