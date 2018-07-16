@@ -477,6 +477,10 @@ class WebServer(object):
             self.code = 400
             self.message = str(ex)
             return
+        except exceptions.TryAgain as ex:
+            self.code = 503
+            self.message = str(ex)
+            return
         except:
             return self._internal_server_error()
 

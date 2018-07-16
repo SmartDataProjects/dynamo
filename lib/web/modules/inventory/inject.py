@@ -1,7 +1,7 @@
 import time
 import logging
 
-from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError
+from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError, TryAgain
 from dynamo.web.modules._base import WebModule
 import dynamo.dataformat as df
 from dynamo.registry.registry import RegistryDatabase
@@ -330,7 +330,16 @@ class InjectDataBase(WebModule):
             except KeyError:
                 raise MissingParameter('name', context = 'file ' + str(obj))
 
-            lfile = block.find_file(lfn)
+            try:
+                lfile = block.find_file(lfn)
+            except df.IntegrityError:
+                # If we are in the middle of an inventory update which involves adding files to this specific block,
+                # the files may already be in the inventory store while the inventory image that the web server has
+                # is from pre-update. When the block loads the files, it sees more files than it knows about, and
+                # raises an IntegrityError.
+                # The only solutions here are 1. Block web access while there is an update to File; 2. Raise a 503.
+                # We choose 2.
+                raise TryAgain('Inventory update is ongoing. Please retry after a minute.')
 
             if lfile is not None:
                 continue

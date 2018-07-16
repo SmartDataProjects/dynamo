@@ -68,3 +68,11 @@ class ResponseDenied(Exception):
     """Raise when there is nothing technically wrong but response is denied (e.g. return string too long)"""
     def __str__(self):
         return 'Server denied response due to: %s\n' % str(self)
+
+class TryAgain(Exception):
+    """Raise when the request cannot be served temporarily."""
+    def __str__(self, message = None):
+        if message is None:
+            return 'Server temporarily not available. Please try again in a few moments.'
+        else:
+            return 'Server temporarily not available: ' + message
