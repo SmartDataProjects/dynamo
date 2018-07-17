@@ -232,7 +232,7 @@ class Map(object):
     """
 
     def __init__(self, config = Configuration()):
-        self.start_sem = threading.Semaphore(min(config.get('num_threads', multiprocessing.cpu_count() - 1), 1))
+        self.start_sem = threading.Semaphore(max(config.get('num_threads', multiprocessing.cpu_count() - 1), 1))
         self.task_per_thread = config.get('task_per_thread', 1)
 
         self.print_progress = config.get('print_progress', False)
