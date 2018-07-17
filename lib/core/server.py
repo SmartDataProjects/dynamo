@@ -334,7 +334,7 @@ class DynamoServer(object):
     
                 LOG.info('Started application %s (%s) from %s@%s (AID %d PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], app['appid'], proc.pid)
     
-                child_processes.append((app['appid'], proc, app['user_name'], app['user_host'], app['path'], time.time()))
+                child_processes.append((app['appid'], proc, time.time()))
 
         except KeyboardInterrupt:
             if len(child_processes) != 0:
@@ -363,8 +363,19 @@ class DynamoServer(object):
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
 
-            for app_id, proc, user_name, user_host, path, time_start in child_processes:
-                LOG.warning('Terminating %s (%s) from %s@%s (AID %d PID %d)', proc.name, path, user_name, user_host, app_id, proc.pid)
+            for app_id, proc, time_start in child_processes:
+                try:
+                    apps = self.manager.master.get_applications(app_id = app_id)
+                except:
+                    apps = []
+
+                if len(apps) == 0:
+                    id_str = '%s from unknown (AID %d PID %d)' % (proc.name, app_id, proc.pid)
+                else:
+                    id_str = '%s (%s) from %s@%s (AID %d PID %d)' % (proc.name, apps[0]['path'], \
+                        apps[0]['user_name'], apps[0]['user_host'], app_id, proc.pid)
+
+                LOG.warning('Terminating %s', id_str)
 
                 serverutils.killproc(proc, LOG)
 
@@ -436,18 +447,22 @@ class DynamoServer(object):
 
         ichild = 0
         while ichild != len(child_processes):
-            app_id, proc, user_name, user_host, path, time_start = child_processes[ichild]
-
-            id_str = '%s (%s) from %s@%s (AID %d PID %d)' % (proc.name, path, user_name, user_host, app_id, proc.pid)
+            app_id, proc, time_start = child_processes[ichild]
 
             apps = self.manager.master.get_applications(app_id = app_id)
             if len(apps) == 0:
                 status = AppManager.STAT_KILLED
+                id_str = '%s from unknown (AID %d PID %d)' % (proc.name, app_id, proc.pid)
+
+                timeout = 0
             else:
                 status = apps[0]['status']
+                id_str = '%s (%s) from %s@%s (AID %d PID %d)' % (proc.name, apps[0]['path'], \
+                    apps[0]['user_name'], apps[0]['user_host'], app_id, proc.pid)
+
+                timeout = apps[0]['timeout']
 
             # Kill processes running for too long (server default timeout given in seconds)
-            timeout = apps[0]['timeout']
             if timeout == 0:
                 min_start_time = time.time() - self.applications_config.timeout
             elif timeout < 0:
