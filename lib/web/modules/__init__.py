@@ -19,6 +19,7 @@ def load_modules():
         modules['web'][module] = imp.export_web
 
         if hasattr(imp, 'registry_alias'):
-            modules['registry'][imp.registry_alias] = imp.export_data
+            for alias, mappings in imp.registry_alias.itervalues():
+                modules['registry'][alias] = mappings
 
 load_modules()

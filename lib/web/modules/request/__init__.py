@@ -8,4 +8,6 @@ export_data.update(deletion.export_data)
 export_web = {}
 
 # backward compatibility
-registry_alias = 'request'
+registry_alias = {
+    'request': export_data
+}

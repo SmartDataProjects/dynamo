@@ -156,4 +156,6 @@ export_web = {
 }
 
 # backward compatibility
-registry_alias = 'applock'
+registry_alias = {
+    'applock': export_data
+}
