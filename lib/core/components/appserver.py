@@ -177,7 +177,7 @@ class AppServer(object):
 
         with self.notify_lock:
             keys = set(app_data.keys())
-            args = set(['title', 'path', 'args', 'user_id', 'host', 'auth_level'])
+            args = set(['title', 'path', 'args', 'user_id', 'host', 'auth_level', 'timeout'])
             if len(keys - args) != 0:
                 return False, 'Extra parameter(s): %s' % (str(list(keys - args)))
             if len(args - keys) != 0:
@@ -194,9 +194,9 @@ class AppServer(object):
                 # this app is not going to run
                 return False, 'Application status: %s.' % AppManager.status_name(msg['status'])
 
-            return True, {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']} # msg['path'] should be == workarea
+            return True, {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']} # msg['path'] should be == app_data['path']
         else:
-            return True, {'appid': app_id, 'path': msg['path']}
+            return True, {'appid': app_id, 'path': app_data['path']}
 
     def _add_sequences(self, path, user):
         """

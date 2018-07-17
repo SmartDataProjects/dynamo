@@ -4,6 +4,7 @@ CREATE TABLE `applications` (
   `title` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `path` varchar(64) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `args` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
+  `timeout` smallint(5) NOT NULL DEFAULT '0',
   `status` enum('new','assigned','run','done','notfound','authfailed','failed','killed') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `server` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_cs DEFAULT NULL,
   `exit_code` int(10) DEFAULT NULL,

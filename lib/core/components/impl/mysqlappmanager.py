@@ -27,8 +27,8 @@ class MySQLAppManager(AppManager):
             self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', insert_id)
 
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None): #override
-        sql = 'SELECT `applications`.`id`, 0+`applications`.`auth_level`, `applications`.`title`, `applications`.`path`,'
-        sql += ' `applications`.`args`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`, `applications`.`user_host`'
+        sql = 'SELECT `applications`.`id`, 0+`applications`.`auth_level`, `applications`.`title`, `applications`.`path`, `applications`.`args`,'
+        sql += ' `applications`.`timeout`, 0+`applications`.`status`, `applications`.`server`, `applications`.`exit_code`, `users`.`name`, `applications`.`user_host`'
         sql += ' FROM `applications` INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
 
         constraints = []
@@ -52,10 +52,10 @@ class MySQLAppManager(AppManager):
         args = tuple(args)
 
         applications = []
-        for aid, auth_level, title, path, args, status, server, exit_code, uname, uhost in self._mysql.xquery(sql, *args):
+        for aid, auth_level, title, path, args, timeout, status, server, exit_code, uname, uhost in self._mysql.xquery(sql, *args):
             applications.append({
                 'appid': aid, 'auth_level': auth_level, 'user_name': uname,
-                'user_host': uhost, 'title': title, 'path': path, 'args': args,
+                'user_host': uhost, 'title': title, 'path': path, 'args': args, 'timeout': timeout,
                 'status': int(status), 'server': server, 'exit_code': exit_code
             })
 
@@ -88,13 +88,13 @@ class MySQLAppManager(AppManager):
 
         return result
 
-    def schedule_application(self, title, path, args, user_id, host, auth_level): #override
-        columns = ('auth_level', 'title', 'path', 'args', 'user_id', 'user_host')
-        values = (auth_level, title, path, args, user_id, host)
+    def schedule_application(self, title, path, args, user_id, host, auth_level, timeout): #override
+        columns = ('auth_level', 'title', 'path', 'args', 'timeout', 'user_id', 'user_host')
+        values = (auth_level, title, path, args, timeout, user_id, host)
         return self._mysql.insert_get_id('applications', columns = columns, values = values)
 
     def _do_get_next_application(self, read_only, blocked_apps): #override
-        sql = 'SELECT `applications`.`id`, 0+`auth_level`, `title`, `path`, `args`, `users`.`name`, `user_host` FROM `applications`'
+        sql = 'SELECT `applications`.`id`, 0+`auth_level`, `title`, `path`, `args`, `timeout`, `users`.`name`, `user_host` FROM `applications`'
         sql += ' INNER JOIN `users` ON `users`.`id` = `applications`.`user_id`'
         sql += ' WHERE `status` = \'new\''
         if read_only:
@@ -108,10 +108,10 @@ class MySQLAppManager(AppManager):
         if len(result) == 0:
             return None
         else:
-            appid, auth_level, title, path, args, uname, uhost = result[0]
+            appid, auth_level, title, path, args, timeout, uname, uhost = result[0]
             return {
                 'appid': appid, 'auth_level': auth_level, 'user_name': uname,
-                'user_host': uhost, 'title': title, 'path': path, 'args': args
+                'user_host': uhost, 'title': title, 'path': path, 'args': args, 'timeout': timeout
             }
 
     def update_application(self, app_id, **kwd): #override

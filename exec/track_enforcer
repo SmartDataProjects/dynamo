@@ -143,16 +143,3 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
 
             for key, value in still_missing.items():
                 writer.writerow({'replica': key, 'size': value})
-
-
-if authorized:
-    target_dir = config.rrd_publish_target + '/monitoring_enforcer'
-    
-    try:
-        os.makedirs(target_dir)
-    except OSError:
-        pass
-    
-    for entry in os.listdir(rrd_dir):
-        if entry.endswith('.rrd') or entry.endswith('.csv'):
-            shutil.copy(rrd_dir + '/' + entry, target_dir + '/' + entry)

@@ -1,6 +1,6 @@
 import os
 
-modules = {'data': {}, 'web': {}}
+modules = {'data': {}, 'web': {}, 'registry': {}} # registry for backward compatibility
 
 def load_modules():
     # Import all .py files and subdirectories in this package
@@ -17,5 +17,9 @@ def load_modules():
         imp = __import__('dynamo.web.modules.' + module, globals(), locals(), ['export_data', 'export_web'])
         modules['data'][module] = imp.export_data
         modules['web'][module] = imp.export_web
+
+        if hasattr(imp, 'registry_alias'):
+            for alias, mappings in imp.registry_alias.iteritems():
+                modules['registry'][alias] = mappings
 
 load_modules()
