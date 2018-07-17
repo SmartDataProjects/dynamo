@@ -17,4 +17,5 @@ registry_alias = {
         'unlock': locks.export_data['lock/unlock'],
         'list': locks.export_data['lock/list'],
         'set': locks.export_data['lock/set']
+    }
 }
