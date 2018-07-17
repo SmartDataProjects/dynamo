@@ -387,3 +387,6 @@ export_data = {
 export_web = {
     'lock/help': DetoxLockHelp
 }
+
+# backward compatibility
+registry_alias = 'detoxlock'

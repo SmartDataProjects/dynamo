@@ -154,3 +154,6 @@ export_data = {
 export_web = {
     'help': ApplockHelp
 }
+
+# backward compatibility
+registry_alias = 'applock'

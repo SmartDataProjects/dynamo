@@ -346,7 +346,7 @@ class WebServer(object):
                 return content
 
         ## Step 3
-        if mode != 'data' and mode != 'web':
+        if mode != 'data' and mode != 'web' and mode != 'registry': # registry for backward compatibility
             self.code = 404
             self.message = 'Invalid request %s.' % mode
             return
