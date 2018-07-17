@@ -360,38 +360,3 @@ if authorized:
             if authorized and existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
                 # Delete pngs and rrd files
                 os.unlink(existing_rrd)
-
-    ## Copy rrds to the /var/www location
-
-    target_dir = config.rrd_publish_target + '/monitoring'
-    try:
-        os.makedirs(target_dir)
-    except OSError:
-        pass
-    
-    for entry in os.listdir(target_dir):
-        if entry.startswith('T'):
-            target = target_dir + '/' + entry
-            try:
-                shutil.rmtree(target)
-            except OSError:
-                pass
-    
-    try:
-        os.unlink(target_dir + '/total.rrd')
-    except OSError:
-        pass
-    
-    try:
-        os.unlink(target_dir + '/overview.txt')
-    except OSError:
-        pass
-    
-    for entry in os.listdir(rrd_dir):
-        if entry.startswith('T'):
-            source = rrd_dir + '/' + entry
-            target = target_dir + '/' + entry
-            shutil.copytree(source, target)
-    
-    shutil.copy(rrd_dir + '/total.rrd', target_dir)
-    shutil.copy(rrd_dir + '/overview.txt', target_dir)
