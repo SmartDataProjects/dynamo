@@ -106,7 +106,7 @@ class CopyRequestManager(RequestManager):
 
         return all_requests
 
-    def create_request(self, caller, items, sites, group, ncopies):
+    def create_request(self, caller, items, sites, sites_original, group, ncopies):
         now = int(time.time())
 
         if self._read_only:
@@ -124,7 +124,7 @@ class CopyRequestManager(RequestManager):
 
         # Make an entry in history
         history_user_ids = self.history.save_users([(caller.name, caller.dn)], get_ids = True)
-        history_site_ids = self.history.save_sites(sites, get_ids = True)
+        history_site_ids = self.history.save_sites(sites_original, get_ids = True)
         history_group_ids = self.history.save_groups([group], get_ids = True)
         history_dataset_ids, history_block_ids = self._save_items(items)
 

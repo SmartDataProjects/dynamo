@@ -80,7 +80,11 @@ class ParseInputMixin(object):
                     raise InvalidRequest('Invalid block name %s' % item)
 
         if 'site' in self.params:
+            self.params['site_orig'] = []
+
             for site in list(self.params['site']):
+                self.params['site_orig'].append(site)
+
                 # Wildcard allowed
                 if '*' in site or '?' in site or '[' in site:
                     self.params['site'].remove(site)
