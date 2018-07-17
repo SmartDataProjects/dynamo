@@ -165,10 +165,10 @@ class DynamoServer(object):
         response = self.communicate(in_data)
         print 'Deleted sequence', sequence_name
 
-    def submit(self, cmd, title, authlevel, workdir, asynch):
+    def submit(self, cmd, title, authlevel, workdir, asynch, timeout):
         executable, _, args = cmd.partition(' ') # yes this will fail if our executable name contains a space..
 
-        in_data = {'command': 'submit', 'title': title, 'args': args, 'auth_level': authlevel}
+        in_data = {'command': 'submit', 'title': title, 'args': args, 'auth_level': authlevel, 'timeout': timeout}
 
         if self._is_local:
             in_data['exec_path'] = os.path.realpath(executable)
@@ -418,6 +418,7 @@ if __name__ == '__main__':
     parser.add_argument('--auth-request', '-H', action = 'store_true', dest = 'auth_request', help = 'Request authorized access.')
     parser.add_argument('--write-request', '-W', action = 'store_true', dest = 'write_request', help = 'Request inventory write access.')
     parser.add_argument('--work-dir', '-d', metavar = 'PATH', dest = 'workdir', help = 'Working directory. If not set, use a temporary directory.')
+    parser.add_argument('--timeout', '-m', metavar = 'TIMEOUT', dest = 'timeout', type = int, default = 0, help = 'Timeout time in hours. If set to a nonzero value, replaces the server default timeout. When < 0, the application will be allowed to run indefinitely.')
     parser.add_argument('--poll', '-p', metavar = 'ID', dest = 'poll_appid', type = int, help = 'Just poll an existing application.')
     parser.add_argument('--kill', '-x', metavar = 'ID', dest = 'kill_appid', type = int, help = 'Abort an existing application.')
     parser.add_argument('--add-sequence', '-a', metavar = 'PATH', dest = 'add_sequence', help = 'Create and start new scheduled sequences.')
@@ -485,7 +486,7 @@ if __name__ == '__main__':
         elif args.cmd is None:
             server.interact(authlevel, args.workdir)
         else:
-            server.submit(args.cmd, args.title, authlevel, args.workdir, args.asynch)
+            server.submit(args.cmd, args.title, authlevel, args.workdir, args.asynch, args.timeout)
 
     except ssl.SSLError:
         sys.stderr.write('Failed to open an SSL connection to Dynamo server at %s:%d.\n' % server_addr)

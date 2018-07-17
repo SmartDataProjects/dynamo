@@ -446,8 +446,16 @@ class DynamoServer(object):
             else:
                 status = apps[0]['status']
 
-            # Kill processes running for too long (timeout given in seconds)
-            if time_start < time.time() - self.applications_config.timeout:
+            # Kill processes running for too long (server default timeout given in seconds)
+            timeout = apps[0]['timeout']
+            if timeout == 0:
+                min_start_time = time.time() - self.applications_config.timeout
+            elif timeout < 0:
+                min_start_time = 0
+            else:
+                min_start_time = time.time() - timeout * 3600
+
+            if time_start < min_start_time:
                 LOG.warning('Application %s timed out.', id_str)
                 status = AppManager.STAT_KILLED
 

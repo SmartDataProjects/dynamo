@@ -78,7 +78,7 @@ class AppManager(object):
         """
         raise NotImplementedError('get_running_processes')
 
-    def schedule_application(self, title, path, args, user_id, host, auth_level):
+    def schedule_application(self, title, path, args, user_id, host, auth_level, timeout):
         """
         Schedule an application to the master server.
         @param title          Application title.
@@ -87,6 +87,7 @@ class AppManager(object):
         @param user_id        User id of the requester
         @param host           Host name of the requester
         @param auth_level     Authorization level (LV_*)
+        @param timeout        Maximum allowed execution time in hours. If 0, server default is used. If < 0, application will run indefinitely.
 
         @return application id
         """
