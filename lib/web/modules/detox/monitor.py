@@ -35,7 +35,7 @@ class DetoxMonitor(WebModule, HTMLMixin):
                 pass
 
         if 'partition_id' in request:
-            partition_id = request['partition_id']
+            partition_id = int(request['partition_id'])
 
         if partition_id == 0:
             partition_id = self.history.db.query('SELECT `id` FROM `partitions` WHERE `name` = %s', self.default_partition)[0]
