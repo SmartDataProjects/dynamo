@@ -122,6 +122,11 @@ class PollCopyRequest(CopyRequestBase):
             max_id = max(existing_requests.iterkeys())
             existing_requests = {max_id: existing_requests[max_id]}
 
+        if len(existing_requests) != 0:
+            self.message = 'Request found'
+        else:
+            self.message = 'Request not found'
+
         return [r.to_dict() for r in existing_requests.itervalues()]
 
 
