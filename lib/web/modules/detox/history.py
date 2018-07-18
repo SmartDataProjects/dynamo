@@ -37,18 +37,25 @@ class WebDetoxHistory(WebModule):
             raise exceptions.InvalidRequest('Unknown partition %s' % name)
 
     def get_cycle(self, cycle):
-        sql = 'SELECT `id`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `deletion_cycles`'
-        sql += ' WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s AND `id` = %s'
-        result = self.detox_history.db.query(sql, self.partition_id, self.operation, cycle)
+        sql = 'SELECT `id`, `partition_id`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `deletion_cycles`'
+        sql += ' WHERE `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s AND `id` = %s'
+        result = self.detox_history.db.query(sql, self.operation, cycle)
 
         if len(result) == 0:
             return
 
+        if self.partition_id != 0 and result[0][1] != self.partition_id:
+            return
+
         self.cycle = result[0][0]
-        self.comment = result[0][1]
-        self.timestamp = result[0][2]
+        self.partition_id = result[0][1]
+        self.comment = result[0][2]
+        self.timestamp = result[0][3]
 
     def get_latest_cycle(self):
+        if self.partition_id == 0:
+            self.from_partition()
+
         sql = 'SELECT `id`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `deletion_cycles`'
         sql += ' WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` = %s ORDER BY `id` DESC LIMIT 1'
         result = self.detox_history.db.query(sql, self.partition_id, self.operation)
@@ -61,18 +68,43 @@ class WebDetoxHistory(WebModule):
         self.comment = result[0][1]
         self.timestamp = result[0][2]
 
-    def get_partition_and_cycle(self, request):
-        if 'partition_id' in request:
-            self.partition_id = int(request['partition_id'])
-        else:
+    def get_partition_and_cycle(self, request, default_latest = True):
+        if 'partition' in request:
+            self.from_partition(request['partition'])
+
+        elif 'partition_id' in request:
+            try:
+                self.partition_id = int(request['partition_id'])
+            except ValueError:
+                raise exceptions.IllFormedRequest('partition_id', request['partition_id'])
+
+        # partition_id can still be 0 here
+
+        requested_cycle = None
+
+        if 'cycle' in request:
+            try:
+                requested_cycle = int(request['cycle'])
+            except ValueError:
+                raise exceptions.IllFormedRequest('cycle', request['cycle'])
+
+            if requested_cycle != 0: # case 0 considered later
+                self.get_cycle(requested_cycle)
+                return requested_cycle
+
+        elif 'latest' in request and yesno(request, 'latest'):
+            requested_cycle = 0
+
+        # we either don't have a cycle request or are requested the latest cycle
+
+        if self.partition_id == 0:
             self.from_partition()
 
-        try:
-            cycle = int(request['cycle'])
-        except KeyError:
+        if requested_cycle is not None or default_latest:
+            # requested_cycle must be 0 if not None
             self.get_latest_cycle()
-        else:
-            self.get_cycle(cycle)
+
+        return requested_cycle
 
 
 class DetoxPartitions(WebDetoxHistory):
@@ -82,9 +114,15 @@ class DetoxPartitions(WebDetoxHistory):
         self.excluded_partitions = config.detox.get('excluded_partitions', [])
 
     def run(self, caller, request, inventory):
-        sql = 'SELECT DISTINCT `partitions`.`id`, `partitions`.`name` FROM `deletion_cycles`'
-        sql += ' INNER JOIN `partitions` ON `partitions`.`id` = `deletion_cycles`.`partition_id`'
-        sql += ' WHERE `deletion_cycles`.`operation` = %s ORDER BY `partitions`.`id`'
+        sql = 'SELECT DISTINCT p.`id`, p.`name` FROM `deletion_cycles` AS c'
+        sql += ' INNER JOIN `partitions` AS p ON p.`id` = c.`partition_id`'
+        sql += ' WHERE c.`operation` = %s'
+        if 'cycle' in request:
+            try:
+                sql += ' AND c.`id` = %d' % int(request['cycle'])
+            except ValueError:
+                raise exceptions.IllFormedRequest('cycle', request['cycle'])
+        sql += ' ORDER BY p.`id`'
 
         data = []
 
@@ -92,7 +130,12 @@ class DetoxPartitions(WebDetoxHistory):
             if partition in self.excluded_partitions:
                 continue
 
+            if 'partition' in request:
+                if not fnmatch.fnmatch(partition, request['partition']):
+                    continue
+
             if partition == self.default_partition:
+                # default always comes first
                 data.insert(0, {'id': partition_id, 'name': partition, 'monitored': (partition in self.monitored_partitions)})
             else:
                 data.append({'id': partition_id, 'name': partition, 'monitored': (partition in self.monitored_partitions)})
@@ -102,25 +145,13 @@ class DetoxPartitions(WebDetoxHistory):
 
 class DetoxCycles(WebDetoxHistory):
     def run(self, caller, request, inventory):
-        if 'partition_id' in request:
-            self.partition_id = int(request['partition_id'])
+        requested_cycle = self.get_partition_and_cycle(request, default_latest = False)
 
-        if self.partition_id == 0:
-            self.from_partition()
-
-        if ('cycle' in request and request['cycle'] == '0') or ('latest' in request and yesno(request, 'latest')):
-            self.get_latest_cycle()
-            return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'comment': self.comment, 'timestamp': self.timestamp}]
-
-        elif 'cycle' in request:
-            cycle = int(request['cycle'])
-
-            self.get_cycle(cycle)
-
-            if self.cycle != cycle:
-                self.get_latest_cycle()
-
-            return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'comment': self.comment, 'timestamp': self.timestamp}]
+        if requested_cycle is not None:
+            if self.cycle == 0:
+                return []
+            else:
+                return [{'cycle': self.cycle, 'partition_id': self.partition_id, 'comment': self.comment, 'timestamp': self.timestamp}]
 
         else:
             sql = 'SELECT `id`, `comment`, UNIX_TIMESTAMP(`time_start`) FROM `deletion_cycles`'
@@ -234,11 +265,16 @@ class DetoxCyclePolicy(WebDetoxHistory):
         if 'cycle' not in request:
             raise exceptions.MissingParameter('cycle')
 
+        try:
+            cycle = int(request['cycle'])
+        except ValueError:
+            raise exceptions.IllFormedRequest('cycle', request['cycle'])
+
         sql = 'SELECT `text` FROM `deletion_policies` WHERE `id` = (SELECT `policy_id` FROM `deletion_cycles` WHERE `id` = %s)'
         try:
-            text = self.detox_history.db.query(sql, int(request['cycle']))[0]
+            text = self.detox_history.db.query(sql, cycle)[0]
         except:
-            raise exceptions.InvalidRequest('Could not find policy text for cycle %s' % request['cycle'])
+            raise exceptions.InvalidRequest('Could not find policy text for cycle %d' % cycle)
 
         return text
 

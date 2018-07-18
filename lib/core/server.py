@@ -90,8 +90,6 @@ class DynamoServer(object):
         self.notification_recipient = config.notification_recipient
 
     def load_inventory(self):
-        self.inventory = DynamoInventory(self.inventory_config)
-
         ## Wait until there is no write process
         while self.manager.master.get_writing_process_id() is not None:
             LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
@@ -139,6 +137,8 @@ class DynamoServer(object):
         while True:
             # Lock write activities by other servers
             self.manager.set_status(ServerHost.STAT_STARTING)
+
+            self.inventory = DynamoInventory(self.inventory_config)
 
             if self.webserver:
                 self.webserver.start()

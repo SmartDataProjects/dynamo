@@ -85,6 +85,8 @@ class DetoxHistoryBase(DeletionHistoryDatabase):
         sql = 'SELECT s.`name`, n.`status`, n.`quota` FROM `{0}`.`{1}` AS n'.format(self.cache_db, table_name)
         sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = n.`site_id`'.format(self.history_db)
         if skip_unused:
+            self._fill_snapshot_cache('replicas', cycle_number)
+
             replica_table_name = 'replicas_%d' % cycle_number
             sql += ' INNER JOIN (SELECT DISTINCT `site_id` FROM `{0}`.`{1}`) AS r ON r.`site_id` = s.`id`'.format(self.cache_db, replica_table_name)
 
