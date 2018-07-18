@@ -547,7 +547,7 @@ class AppServer(object):
                     out.write('++++ %s: %s\n' % (timestamp, title))
                     out.write('%s/%s %s\n\n' % (work_dir, title, arguments))
 
-                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.scheduler_user_id, socket.gethostname(), auth_level)
+                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.scheduler_user_id, socket.gethostname(), auth_level, 0)
                 cursor.execute('UPDATE `sequence` SET `app_id` = ? WHERE `id` = ?', (app_id, sid))
                 LOG.info('[Scheduler] Scheduled %s/%s %s (AID %s).', sequence_name, title, arguments, app_id)
 
@@ -605,8 +605,8 @@ class AppServer(object):
     
                     with open(application) as source:
                         checksum = hashlib.md5(source.read()).hexdigest()
-        
-                    if write_enabled and self.dynamo_server.manager.master.check_application_auth(title, user, checksum) != AppManager.LV_WRITE:
+
+                    if write_enabled and not self.dynamo_server.manager.master.check_application_auth(title, user, checksum):
                         raise Exception('Application %s (%s) is not authorized for server write operation (line %d).' % (title, application, iline))
         
                     LOG.debug('Define application %s = %s (write enabled: %d) (line %d)', title, application, write_enabled, iline)
