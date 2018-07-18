@@ -122,7 +122,7 @@ class DetoxPartitions(WebDetoxHistory):
                 sql += ' AND c.`id` = %d' % int(request['cycle'])
             except ValueError:
                 raise exceptions.IllFormedRequest('cycle', request['cycle'])
-        sql += ' ORDER BY `partitions`.`id`'
+        sql += ' ORDER BY p.`id`'
 
         data = []
 
