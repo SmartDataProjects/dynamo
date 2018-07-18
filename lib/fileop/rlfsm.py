@@ -864,7 +864,7 @@ class RLFSM(object):
 
                 self.db.delete_many('deletion_tasks', 'id', [t.id for t in failed])
 
-                self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', [t.desubcription.id for t in failed])
+                self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', [t.desubscription.id for t in failed])
 
         return len(successful), len(result) - len(successful)
     
