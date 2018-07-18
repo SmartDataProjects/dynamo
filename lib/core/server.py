@@ -140,6 +140,9 @@ class DynamoServer(object):
             # Lock write activities by other servers
             self.manager.set_status(ServerHost.STAT_STARTING)
 
+            if self.webserver:
+                self.webserver.start()
+
             self.load_inventory()
 
             bconf = self.manager_config.board
@@ -158,7 +161,7 @@ class DynamoServer(object):
             self.manager.set_status(ServerHost.STAT_ONLINE)
 
             if self.webserver:
-                self.webserver.start()
+                self.webserver.restart()
 
             if self.fom:
                 self.fom.start(self.inventory)

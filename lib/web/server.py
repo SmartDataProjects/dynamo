@@ -463,9 +463,12 @@ class WebServer(object):
             ## Step 5
             caller = WebServer.User(user, dn, user_id, authlist)
 
-            inventory = self.dynamo_server.inventory.create_proxy()
-            if provider.write_enabled:
-                inventory._update_commands = []
+            if self.dynamo_server.inventory.loaded:
+                inventory = self.dynamo_server.inventory.create_proxy()
+                if provider.write_enabled:
+                    inventory._update_commands = []
+            else:
+                inventory = DummyInventory()
 
             content = provider.run(caller, request, inventory)
 
@@ -506,3 +509,11 @@ class WebServer(object):
             return response
         else:
             return 'Internal server error! (' + exc_type.__name__ + ': ' + str(exc) + ')\n'
+
+class DummyInventory(object):
+    """
+    Inventory placeholder that just throws a 503. To be used when inventory is not loaded yet.
+    We start the web server even before the inventory is loaded because not all web modules use inventory.
+    """
+    def __getattr__(self, attr):
+        raise exceptions.TryAgain('Dynamo server is starting. Please try again in a few moments.')
