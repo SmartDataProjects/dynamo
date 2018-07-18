@@ -231,7 +231,11 @@ class Block(object):
         if type(self._files) is set:
             return self._files
 
-        with Block._files_cache_lock:
+        if not Block.inventory_store.server_side:
+            # if server side we won't be using any caching
+            Block._files_cache_lock.acquire()
+
+        try:
             if cache:
                 if self._files is not None:
                     # self._files is either a real set (if _files was directly set), a valid weak proxy to a frozenset,
@@ -243,15 +247,15 @@ class Block(object):
                         self._files = None
     
                 if self._files is None:
-                    while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
-                        # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
-                        Block._files_cache.popitem(last = False)
-
                     files = frozenset(self._load_files())
                     
                     if Block.inventory_store.server_side:
                         # In server side inventory, we don't keep the files in memory
                         return files
+
+                    while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
+                        # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
+                        Block._files_cache.popitem(last = False)
 
                     Block._files_cache[self] = files
                     self._files = weakref.proxy(files)
@@ -275,7 +279,11 @@ class Block(object):
                 if self._files is None:
                     self._files = self._load_files()
 
-            return self._files
+        finally:
+            if not Block.inventory_store.server_side:
+                Block._files_cache_lock.release()
+
+        return self._files
 
     def _load_files(self):
         if self.id == 0:
