@@ -53,7 +53,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if len(tasks) == 0:
             return []
 
-        # FTS3 has no restriction on how to group the transfers
+        # FTS3 has no restriction on how to group the transfers, but cannot apparently take thousands
+        # of tasks at once
         batches = [[]]
         for task in tasks:
             batches[-1].append(task)
