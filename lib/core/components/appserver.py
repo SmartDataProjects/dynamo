@@ -288,9 +288,9 @@ class AppServer(object):
                     cursor.execute(sql, (iline,) + action)
 
                 elif action[0] == AppServer.WAIT:
-                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`)'
-                    sql += ' VALUES (?, ?, ?)'
-                    cursor.execute(sql, (iline, action[0], str(action[1])))
+                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`)'
+                    sql += ' VALUES (?, ?, ?, ?)'
+                    cursor.execute(sql, (iline, action[0], str(action[1]), str(time.time() + action[1])))
 
                 elif action[0] == AppServer.TERMINATE:
                     sql = 'INSERT INTO `sequence` (`line`, `command`)'
