@@ -87,5 +87,6 @@ irrecoverable_errors = set([
     errno.ENOKEY,          # Could not load key
     errno.EKEYEXPIRED,     # Key has expired
     errno.EKEYREJECTED,    # Key was rejected by service
-    errno.ENETUNREACH      # Network is unreachable
+    errno.ENETUNREACH,     # Network is unreachable
+    errno.ECOMM            # Communication error (may be recoverable in some cases?)
 ])

@@ -75,8 +75,8 @@ class Site(object):
             return repr(self._chains)
 
         def map(self, lfn):
-            source = lfn
             for chain in self._re_chains:
+                source = lfn
                 for source_re, dest_pat in chain:
                     matches = source_re.match(source)
                     if matches is None:
