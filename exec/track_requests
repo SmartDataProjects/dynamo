@@ -57,7 +57,8 @@ if config.get('remake_subscriptions', True):
     rlfsm.set_read_only(not authorized)
 
     subscriptions = rlfsm.get_subscriptions(inventory, 'transfer', status = ['new', 'inbatch', 'done', 'retry'])
-    subscribed_files = set(s.file for s in subscriptions)
+    # We need to compare LFNs instead of file objects themselves because the files cache may be wiped out between this line and the comparison line
+    subscribed_files = set(s.file.lfn for s in subscriptions)
     
     for replica in incomplete_drep:
         for block_replica in replica.block_replicas:
@@ -65,13 +66,13 @@ if config.get('remake_subscriptions', True):
                 continue
     
             for lfile in block_replica.block.files - block_replica.files():
-                if lfile not in subscribed_files:
+                if lfile.lfn not in subscribed_files:
                     LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, block_replica.site.name)
                     rlfsm.subscribe_file(block_replica.site, lfile)
     
     for replica in incomplete_brep:
         for lfile in replica.block.files - replica.files():
-            if lfile not in subscribed_files:
+            if lfile.lfn not in subscribed_files:
                 LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, replica.site.name)
                 rlfsm.subscribe_file(replica.site, lfile)
 

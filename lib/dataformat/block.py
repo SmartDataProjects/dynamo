@@ -16,7 +16,7 @@ class Block(object):
     # Container for the file-set "originals" - Block._files will normally be a weakref pointing to a value of this dict
     _files_cache = collections.OrderedDict()
     _files_cache_lock = threading.Lock()
-    _MAX_FILES_CACHE_DEPTH = 100
+    _MAX_FILES_CACHE_DEPTH = 1000
 
     # Pointer to inventory._store
     inventory_store = None
