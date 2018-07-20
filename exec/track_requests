@@ -62,7 +62,8 @@ if config.get('remake_subscriptions', True):
     
     for replica in incomplete_drep:
         for block_replica in replica.block_replicas:
-            if block_replica.is_complete():
+            if block_replica.is_complete() or block_replica.group is df.Group.null_group:
+                # owned by null group -> being deleted
                 continue
     
             for lfile in block_replica.block.files - block_replica.files():
@@ -71,6 +72,9 @@ if config.get('remake_subscriptions', True):
                     rlfsm.subscribe_file(block_replica.site, lfile)
     
     for replica in incomplete_brep:
+        if replica.group is df.Group.null_group:
+            continue
+
         for lfile in replica.block.files - replica.files():
             if lfile.lfn not in subscribed_files:
                 LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, replica.site.name)
