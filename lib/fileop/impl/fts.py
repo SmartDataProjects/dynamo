@@ -423,8 +423,14 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     exitcode = 0
                     
                 if get_time:
-                    start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
-                    finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+                    try:
+                        start_time = calendar.timegm(time.strptime(fts_file['start_time'], '%Y-%m-%dT%H:%M:%S'))
+                    except TypeError: # start time is NULL (can happen when the job is cancelled)
+                        start_time = None
+                    try:
+                        finish_time = calendar.timegm(time.strptime(fts_file['finish_time'], '%Y-%m-%dT%H:%M:%S'))
+                    except TypeError:
+                        start_time = None
 
                 LOG.debug('%s %d: %s, %d, %s, %s, %s', optype, task_id, FileQuery.status_name(status), exitcode, message, start_time, finish_time)
     
