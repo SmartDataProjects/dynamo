@@ -8,6 +8,7 @@ import errno
 
 import fts3.rest.client.easy as fts3
 from fts3.rest.client.request import Request
+import fts3.rest.client.exceptions as fts_exceptions
 
 from dynamo.fileop.base import FileQuery
 from dynamo.fileop.transfer import FileTransferOperation, FileTransferQuery
@@ -41,6 +42,9 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         # Parameter "retry" for fts3.new_job. 0 = server default
         self.fts_retry = config.get('fts_retry', 0)
+
+        # String passed to fts3.new_*_job(metadata = _)
+        self.metadata_string = config.get('metadata_string', 'Dynamo')
 
         # Bookkeeping device
         self.db = MySQL(config.db_params)
@@ -107,7 +111,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         if len(stage_files) != 0:
             LOG.debug('Submit new staging job for %d files', len(stage_files))
-            job = fts3.new_staging_job([ff[0] for ff in stage_files], bring_online = 36000)
+            job = fts3.new_staging_job([ff[0] for ff in stage_files], bring_online = 36000, metadata = self.metadata_string)
             success = self._submit_job(job, 'staging', batch_id, dict((pfn, task.id) for pfn, task in s_pfn_to_task.iteritems()))
 
             for source_pfn, _, _, _ in stage_files:
@@ -122,7 +126,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         if len(transfers) != 0:
             LOG.debug('Submit new transfer job for %d files', len(transfers))
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target')
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target', metadata = self.metadata_string)
             success = self._submit_job(job, 'transfer', batch_id, dict((pfn, task.id) for pfn, task in t_pfn_to_task.iteritems()))
 
             for transfer in transfers:
@@ -149,7 +153,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             # there should be only one task per destination pfn
             pfn_to_task[pfn] = task
 
-        job = fts3.new_delete_job(pfn_to_task.keys())
+        job = fts3.new_delete_job(pfn_to_task.keys(), metadata = self.metadata_string)
 
         success = self._submit_job(job, 'deletion', batch_id, dict((pfn, task.id) for pfn, task in pfn_to_task.iteritems()))
 
@@ -222,7 +226,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = filesize))
                 pfn_to_tid[dest_pfn] = task_id
 
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target')
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target', metadata = self.metadata_string)
             success = self._submit_job(job, 'transfer', batch_id, pfn_to_tid)
             if success and not self._read_only:
                 self.db.delete_many('fts_staging_queue', 'id', pfn_to_tid.values())
@@ -266,7 +270,22 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         LOG.debug('FTS: %s', method)
 
-        return getattr(fts3, method)(context, *args, **kwd)
+        wait_time = 1.
+        for attempt in xrange(10):
+            try:
+                return getattr(fts3, method)(context, *args, **kwd)
+            except fts_exceptions.ServerError as exc:
+                if str(exc.reason) == '500':
+                    # Internal server error - let's try again
+                    pass
+            except fts_exceptions.TryAgain:
+                pass
+
+            time.sleep(wait_time)
+            wait_time *= 1.5
+
+        LOG.error('Failed to communicate with FTS server: %s', method)
+        raise RuntimeError('Failed to communicate with FTS server: %s' % method)
 
     def _submit_job(self, job, optype, batch_id, pfn_to_tid):
         if self._read_only:
@@ -335,7 +354,10 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             by_job[job_id].append(file_id)
         
         for job_id, ids in by_job.iteritems():
-            self._ftscall('cancel', job_id, file_ids = ids)
+            try:
+                self._ftscall('cancel', job_id, file_ids = ids)
+            except:
+                LOG.error('Failed to cancel FTS job %s', job_id)
     
     def _get_status(self, batch_id, optype):
         if optype == 'transfer' or optype == 'staging':
@@ -359,7 +381,11 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             sql = 'SELECT `fts_file_id`, `id` FROM `{table}` WHERE `fts_batch_id` = %s'.format(table = task_table_name)
             fts_to_task = dict(self.db.xquery(sql, fts_batch_id))
 
-            result = self._ftscall('get_job_status', job_id = job_id, list_files = True)
+            try:
+                result = self._ftscall('get_job_status', job_id = job_id, list_files = True)
+            except:
+                LOG.error('Failed to get job status for FTS job %s', job_id)
+                continue
     
             if optype == 'transfer' or optype == 'staging':
                 fts_files = result['files']

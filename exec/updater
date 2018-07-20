@@ -34,7 +34,7 @@ from dynamo.registry.registry import RegistryDatabase
 registry = RegistryDatabase()
 
 ## Run
-from dynamo.dataformat import Block, BlockReplica, File
+from dynamo.dataformat import Block, BlockReplica, File, Group
 
 LOG.info('Updating the inventory from injections.')
 
@@ -315,7 +315,8 @@ for replica, (file_ids, projected) in by_replica.iteritems():
 for site in inventory.sites.itervalues():
     for dataset_replica in site.dataset_replicas():
         for block_replica in dataset_replica.block_replicas:
-            if block_replica.is_complete():
+            if block_replica.is_complete() or block_replica.group is Group.null_group:
+                # owned by null_group -> being deleted
                 continue
 
             # subscribed_files must be a set of LFNs instead of file objects themselves because the

@@ -2,6 +2,7 @@ import os
 import collections
 import random
 import time
+import datetime
 import threading
 import logging
 
@@ -538,7 +539,7 @@ class RLFSM(object):
         if created is None:
             created = now
         else:
-            created = MySQL.bare('FROM_UNIXTIME(%d)' % created)
+            created = datetime.datetime(*time.localtime(created)[:6])
 
         if lfile.id == 0 or site.id == 0:
             # file is not registered in inventory store yet; update the presubscription
@@ -678,8 +679,18 @@ class RLFSM(object):
                 if not self._read_only:
                     file_id = self.history_db.save_files([(lfn, size)], get_ids = True)[0]
 
-                    values = (file_id, exitcode, message, batch_id, MySQL.bare('FROM_UNIXTIME(%d)' % create_time),
-                        MySQL.bare('FROM_UNIXTIME(%d)' % start_time), MySQL.bare('FROM_UNIXTIME(%d)' % finish_time),
+                    if start_time is None:
+                        sql_start_time = None
+                    else:
+                        sql_start_time = datetime.datetime(*time.localtime(start_time)[:6])
+
+                    if finish_time is None:
+                        sql_finish_time = None
+                    else:
+                        sql_finish_time = datetime.datetime(*time.localtime(finish_time)[:6])
+
+                    values = (file_id, exitcode, message, batch_id, datetime.datetime(*time.localtime(create_time)[:6]),
+                        sql_start_time, sql_finish_time,
                         MySQL.bare('NOW()')) + history_site_ids
 
                     if optype == 'transfer':
