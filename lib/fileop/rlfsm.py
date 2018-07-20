@@ -121,6 +121,13 @@ class RLFSM(object):
         if self.main_cycle is not None:
             return
 
+        components = 'transfer_op: ' + type(self.transfer_operation).__name__
+        components += ', transfer_qry: ' + type(self.transfer_query).__name__
+        components += ', deletion_op: ' + type(self.deletion_operation).__name__
+        components += ', deletion_qry: ' + type(self.deletion_query).__name__
+
+        LOG.info('Starting file operations manager with components: ' + components)
+
         self.main_cycle = threading.Thread(target = self._run_cycle, name = 'FOM', args = (inventory,))
         self.main_cycle.start()
 

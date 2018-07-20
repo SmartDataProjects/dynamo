@@ -275,7 +275,8 @@ for sub in subscriptions:
 subscribed_files = set()
 
 for replica, (file_ids, projected) in by_replica.iteritems():
-    subscribed_files.update((lfile, replica.site) for lfile in projected)
+    # See below for why we take the LFN
+    subscribed_files.update((lfile.lfn, replica.site) for lfile in projected)
 
     if replica not in replicas_to_update:
         continue
@@ -317,8 +318,11 @@ for site in inventory.sites.itervalues():
             if block_replica.is_complete():
                 continue
 
+            # subscribed_files must be a set of LFNs instead of file objects themselves because the
+            # by this line the file objects may be flushed out of the cache.
+            # block_replica.block.files may bring in fresh new file objects.
             for lfile in (block_replica.block.files - block_replica.files()):
-                if (lfile, site) not in subscribed_files:
+                if (lfile.lfn, site) not in subscribed_files:
                     #LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, site.name)
                     rlfsm.subscribe_file(site, lfile)
 
