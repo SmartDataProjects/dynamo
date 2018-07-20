@@ -323,7 +323,7 @@ for site in inventory.sites.itervalues():
             # block_replica.block.files may bring in fresh new file objects.
             for lfile in (block_replica.block.files - block_replica.files()):
                 if (lfile.lfn, site) not in subscribed_files:
-                    #LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, site.name)
+                    LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, site.name)
                     rlfsm.subscribe_file(site, lfile)
 
 # Remove injections and subscriptions
