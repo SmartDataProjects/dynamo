@@ -793,7 +793,7 @@ class RLFSM(object):
 
             else:
                 LOG.debug('Selecting randomly')
-                return random.choice(not_tried)
+                return random.choice(list(not_tried))
 
         tasks = []
 
