@@ -214,12 +214,12 @@ class AutoStarter(object):
 
         if len(self.inputs) == self.task_per_thread:
             self.controller.add_inputs(self.inputs)
-            del self.inputs[:]
+            self.inputs = []
 
     def close(self):
         if len(self.inputs) != 0:
             self.controller.add_inputs(self.inputs)
-            del self.inputs[:]
+            self.inputs = []
 
     def get_outputs(self):
         return self.controller.execute()

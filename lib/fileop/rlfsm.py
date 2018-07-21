@@ -676,31 +676,29 @@ class RLFSM(object):
                     site_name = task_data[4]
                     history_site_ids = (self.history_db.save_sites([site_name], get_ids = True)[0],)
 
-                if not self._read_only:
-                    file_id = self.history_db.save_files([(lfn, size)], get_ids = True)[0]
+                file_id = self.history_db.save_files([(lfn, size)], get_ids = True)[0]
 
-                    if start_time is None:
-                        sql_start_time = None
-                    else:
-                        sql_start_time = datetime.datetime(*time.localtime(start_time)[:6])
+                if start_time is None:
+                    sql_start_time = None
+                else:
+                    sql_start_time = datetime.datetime(*time.localtime(start_time)[:6])
 
-                    if finish_time is None:
-                        sql_finish_time = None
-                    else:
-                        sql_finish_time = datetime.datetime(*time.localtime(finish_time)[:6])
+                if finish_time is None:
+                    sql_finish_time = None
+                else:
+                    sql_finish_time = datetime.datetime(*time.localtime(finish_time)[:6])
 
-                    values = (file_id, exitcode, message, batch_id, datetime.datetime(*time.localtime(create_time)[:6]),
-                        sql_start_time, sql_finish_time,
-                        MySQL.bare('NOW()')) + history_site_ids
+                values = (file_id, exitcode, message, batch_id, datetime.datetime(*time.localtime(create_time)[:6]),
+                    sql_start_time, sql_finish_time, MySQL.bare('NOW()')) + history_site_ids
 
-                    if optype == 'transfer':
-                        LOG.debug('Archiving transfer of %s from %s to %s (exitcode %d)', lfn, source_name, dest_name, exitcode)
-                    else:
-                        LOG.debug('Archiving deletion of %s at %s (exitcode %d)', lfn, site_name, exitcode)
+                if optype == 'transfer':
+                    LOG.debug('Archiving transfer of %s from %s to %s (exitcode %d)', lfn, source_name, dest_name, exitcode)
+                else:
+                    LOG.debug('Archiving deletion of %s at %s (exitcode %d)', lfn, site_name, exitcode)
 
-                    history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
+                history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
 
-                    write_history(self.history_db, task_id, history_id)
+                write_history(self.history_db, task_id, history_id)
 
                 # We check the subscription status and update accordingly. Need to lock the tables.
                 if not self._read_only:
@@ -729,16 +727,16 @@ class RLFSM(object):
                     if not self._read_only:
                         self.db.unlock_tables()
 
-                if optype == 'transfer':
-                    if subscription_status == 'cancelled' or (subscription_status == 'inbatch' and status == FileQuery.STAT_DONE):
-                        # Delete entries from failed_transfers table
-                        self.db.query(delete_failures, subscription_id)
-
-                    elif subscription_status == 'inbatch' and status == FileQuery.STAT_FAILED:
-                        # Insert entry to failed_transfers table
-                        self.db.query(insert_failure, exitcode, task_id)
-    
                 if not self._read_only:
+                    if optype == 'transfer':
+                        if subscription_status == 'cancelled' or (subscription_status == 'inbatch' and status == FileQuery.STAT_DONE):
+                            # Delete entries from failed_transfers table
+                            self.db.query(delete_failures, subscription_id)
+    
+                        elif subscription_status == 'inbatch' and status == FileQuery.STAT_FAILED:
+                            # Insert entry to failed_transfers table
+                            self.db.query(insert_failure, exitcode, task_id)
+        
                     self.db.query(delete_task, task_id)
 
                 if status == FileQuery.STAT_DONE:
@@ -768,28 +766,49 @@ class RLFSM(object):
         @return  List of TransferTask objects
         """
 
+        def find_site_to_try(sources, failed_sources):
+            not_tried = set(sources)
+            if failed_sources is not None:
+                not_tried -= set(failed_sources.iterkeys())
+
+            LOG.debug('%d sites not tried', len(not_tried))
+
+            if len(not_tried) == 0:
+                if failed_sources is None:
+                    return None
+
+                # we've tried all disk sites. Did any of them fail with a recoverable error?
+                sites_to_retry = []
+                for site, codes in failed_sources.iteritems():
+                    if codes[-1] not in irrecoverable_errors:
+                        sites_to_retry.append(site)
+
+                if len(sites_to_retry) == 0:
+                    return None
+                else:
+                    # select the least failed site
+                    by_failure = sorted(sites_to_retry, key = lambda s: len(failed_sources[s]))
+                    LOG.debug('%s has the least failures', by_failure[0].name)
+                    return by_failure[0]
+
+            else:
+                LOG.debug('Selecting randomly')
+                return random.choice(not_tried)
+
         tasks = []
 
         for subscription in subscriptions:
-            if len(subscription.disk_sources) == 0:
-                # intelligently random
-                source = random.choice(subscription.tape_sources)
+            LOG.debug('Selecting a disk source for subscription %d (%s to %s)', subscription.id, subscription.file.lfn, subscription.destination.name)
+            source = find_site_to_try(subscription.disk_sources, subscription.failed_sources)
+            if source is None:
+                LOG.debug('Selecting a tape source for subscription %d', subscription.id)
+                source = find_site_to_try(subscription.tape_sources, subscription.failed_sources)
 
-            elif len(subscription.disk_sources) == 1:
-                source = subscription.disk_sources[0]
-
-            else:
-                not_tried = set(subscription.disk_sources)
-                if subscription.failed_sources is not None:
-                    not_tried -= set(subscription.failed_sources.iterkeys())
-
-                if len(not_tried) != 0 or subscription.failed_sources is None:
-                    # intelligently random again
-                    source = random.choice(list(not_tried))
-                else:
-                    # select the least failed site
-                    by_failure = sorted(subscription.disk_sources, key = lambda s: subscription.failed_sources[s])
-                    source = by_failure[0]
+            if source is None:
+                # If both disk and tape failed irrecoveably, the subscription must be placed in held queue in get_subscriptions.
+                # Reaching this line means something is wrong.
+                LOG.warning('Could not find a source for transfer of %s to %s from %d disk and %d tape candidates.', file_name, site_name, len(subscription.disk_sources), len(subscription.tape_sources))
+                continue
             
             tasks.append(RLFSM.TransferTask(subscription, source))
 
