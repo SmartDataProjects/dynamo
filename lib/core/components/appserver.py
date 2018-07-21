@@ -290,7 +290,7 @@ class AppServer(object):
                 elif action[0] == AppServer.WAIT:
                     sql = 'INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`)'
                     sql += ' VALUES (?, ?, ?, ?)'
-                    cursor.execute(sql, (iline, action[0], str(action[1]), str(time.time() + action[1])))
+                    cursor.execute(sql, (iline, action[0], str(action[1]), str(int(time.time()) + action[1])))
 
                 elif action[0] == AppServer.TERMINATE:
                     sql = 'INSERT INTO `sequence` (`line`, `command`)'
@@ -553,7 +553,7 @@ class AppServer(object):
 
             elif command == AppServer.WAIT:
                 time_wait = int(title)
-                cursor.execute('UPDATE `sequence` SET `arguments` = ? WHERE `id` = ?', (int(time.time()) + time_wait, sid))
+                cursor.execute('UPDATE `sequence` SET `arguments` = ? WHERE `id` = ?', (str(int(time.time()) + time_wait), sid))
 
             elif command == AppServer.TERMINATE:
                 self._do_stop_sequence(sequence_name)
