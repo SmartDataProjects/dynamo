@@ -46,6 +46,9 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         # String passed to fts3.new_*_job(metadata = _)
         self.metadata_string = config.get('metadata_string', 'Dynamo')
 
+        # Proxy to be forwarded to FTS
+        self.x509proxy = config.get('x509proxy', None)
+
         # Bookkeeping device
         self.db = MySQL(config.db_params)
 
@@ -261,7 +264,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if self._context is None:
             # request_class = Request -> use "requests"-based https call (instead of default PyCURL, which may not be able to handle proxy certificates depending on the cURL installation)
             # verify = False -> do not verify the server certificate
-            context = fts3.Context(self.server_url, request_class = Request, verify = False)
+            context = fts3.Context(self.server_url, ucert = self.x509proxy, ukey = self.x509proxy,
+                                   request_class = Request, verify = False)
 
             if self.keep_context:
                 self._context = context
