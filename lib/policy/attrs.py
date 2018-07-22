@@ -2,7 +2,8 @@ import re
 import fnmatch
 import subprocess
 
-from dynamo.dataformat import DatasetReplica, BlockReplica
+from dynamo.dataformat import DatasetReplica, BlockReplica, Site, SitePartition
+from dynamo.dataformat.exceptions import OperationalError
 
 class InvalidExpression(Exception):
     pass
@@ -125,7 +126,7 @@ class ReplicaSiteAttr(Attr):
 
 
 class SiteAttr(Attr):
-    """Extract an attribute from a SitePartition object (*not* Site object)."""
+    """Extract an attribute from a Site or a SitePartition object."""
 
     def __init__(self, vtype, attr = None, args = None):
         Attr.__init__(self, vtype, attr = attr, args = args)
@@ -133,8 +134,14 @@ class SiteAttr(Attr):
         # When this is true, attribute is extracted from sitepartition.site
         self.get_from_site = False
 
-    def get(self, sitepartition):
+    def get(self, obj):
         if self.get_from_site:
-            return self._get(sitepartition.site)
+            if type(obj) is Site:
+                return self._get(obj)
+            elif type(obj) is SitePartition:
+                return self._get(obj.site)
         else:
-            return self._get(sitepartition)
+            if type(obj) is SitePartition:
+                return self._get(obj)
+
+        raise OperationalError('Object of invalid type %s passed to %s.' % (type(obj).__name__, type(self).__name__))

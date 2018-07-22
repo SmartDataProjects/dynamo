@@ -13,6 +13,8 @@ from dynamo.fileop.errors import irrecoverable_errors
 from dynamo.dataformat import Configuration, Block, Site, BlockReplica
 from dynamo.history.history import HistoryDatabase
 from dynamo.utils.interface.mysql import MySQL
+from dynamo.policy.condition import Condition
+from dynamo.policy.variables import site_variables
 
 LOG = logging.getLogger(__name__)
 
@@ -76,29 +78,51 @@ class RLFSM(object):
         self.history_db = HistoryDatabase(config.get('history', None))
 
         # FileTransferOperation backend (can make it a map from (source, dest) to operator)
+        self.transfer_operations = []
         if 'transfer' in config:
-            self.transfer_operation = FileTransferOperation.get_instance(config.transfer.module, config.transfer.config)
-        else:
-            # if all you need to do is make subscriptions
-            self.transfer_operation = None
+            for condition_text, module, conf in config.transfer:
+                if condition_text is None: # default
+                    condition = None
+                else:
+                    condition = Condition(condition_text, site_variables)
 
-        # QueryOperation backend
+                self.transfer_operations.append((condition, FileTransferOperation.get_instance(module, conf)))
+
         if 'transfer_query' in config:
-            self.transfer_query = FileTransferQuery.get_instance(config.transfer_query.module, config.transfer_query.config)
-        else:
-            self.transfer_query = self.transfer_operation
+            self.transfer_queries = []
+            for condition_text, module, conf in config.transfer_query:
+                if condition_text is None: # default
+                    condition = None
+                else:
+                    condition = Condition(condition_text, site_variables)
 
-        # FileDeletionOperation backend (can make it a map from dest to operator)
+                self.transfer_queries.append(condition, FileTransferQuery.get_instance(module, conf))
+        else:
+            self.transfer_queries = self.transfer_operations
+
         if 'deletion' in config:
-            self.deletion_operation = FileDeletionOperation.get_instance(config.deletion.module, config.deletion.config)
-        else:
-            self.deletion_operation = self.transfer_operation
+            self.deletion_operations = []
+            for condition_text, module, conf in config.deletion:
+                if condition_text is None: # default
+                    condition = None
+                else:
+                    condition = Condition(condition_text, site_variables)
 
-        # QueryOperation backend
-        if 'deletion_query' in config:
-            self.deletion_query = FileDeletionQuery.get_instance(config.deletion_query.module, config.deletion_query.config)
+                self.deletion_operations.append(condition, FileDeletionOperation.get_instance(module, conf))
         else:
-            self.deletion_query = self.deletion_operation
+            self.deletion_operations = self.transfer_operations
+
+        if 'deletion_query' in config:
+            self.deletion_queries = []
+            for condition_text, module, conf in config.deletion_query:
+                if condition_text is None: # default
+                    condition = None
+                else:
+                    condition = Condition(condition_text, site_variables)
+
+                self.deletion_queries.append(condition, FileDeletionQuery.get_instance(module, conf))
+        else:
+            self.deletion_queries = self.deletion_operations
 
         # Cycle thread
         self.main_cycle = None
@@ -109,10 +133,10 @@ class RLFSM(object):
     def set_read_only(self, value = True):
         self._read_only = value
         self.history_db.set_read_only(value)
-        if self.transfer_operation:
-            self.transfer_operation.set_read_only(value)
-        if self.deletion_operation:
-            self.deletion_operation.set_read_only(value)
+        for _, op in self.transfer_operations:
+            op.set_read_only(value)
+        for _, op in self.deletion_operations:
+            op.set_read_only(value)
 
     def start(self, inventory):
         """
@@ -122,12 +146,7 @@ class RLFSM(object):
         if self.main_cycle is not None:
             return
 
-        components = 'transfer_op: ' + type(self.transfer_operation).__name__
-        components += ', transfer_qry: ' + type(self.transfer_query).__name__
-        components += ', deletion_op: ' + type(self.deletion_operation).__name__
-        components += ', deletion_qry: ' + type(self.deletion_query).__name__
-
-        LOG.info('Starting file operations manager with components: ' + components)
+        LOG.info('Starting file operations manager')
 
         self.main_cycle = threading.Thread(target = self._run_cycle, name = 'FOM', args = (inventory,))
         self.main_cycle.start()
@@ -163,7 +182,8 @@ class RLFSM(object):
 
         LOG.debug('Clearing cancelled transfer tasks.')
         task_ids = self._get_cancelled_tasks('transfer')
-        self.transfer_operation.cancel_transfers(task_ids)
+        for _, op in self.transfer_operations:
+            op.cancel_transfers(task_ids)
 
         if self.cycle_stop.is_set():
             return
@@ -187,25 +207,67 @@ class RLFSM(object):
             return
 
         LOG.debug('Organizing %d transfers into batches.', len(tasks))
-        batches = self.transfer_operation.form_batches(tasks)
 
-        if self.cycle_stop.is_set():
-            return
+        def issue_tasks(op, my_tasks):
+            if len(my_tasks) == 0:
+                return 0, 0, 0
 
-        LOG.debug('Issuing transfer tasks.')
+            batches = op.form_batches(my_tasks)
+    
+            if self.cycle_stop.is_set():
+                return
+
+            ns = 0
+            nf = 0
+   
+            LOG.debug('Issuing transfer tasks.')
+            for batch_tasks in batches:
+                s, f = self._start_transfers(op, batch_tasks)
+                ns += s
+                nf += f
+                if self.cycle_stop.is_set():
+                    break
+
+            return len(batches), ns, nf
+
         num_success = 0
         num_failure = 0
-        for batch_tasks in batches:
-            s, f = self._start_transfers(batch_tasks)
-            num_success += s
-            num_failure += f
+        num_batches = 0
+        
+        for condition, op in self.transfer_operations:
+            if condition is None:
+                default_op = op
+                continue
+
+            my_tasks = []
+            it = 0
+            while it < len(tasks):
+                task = tasks[it]
+                if condition.match(task.subscription.destination):
+                    my_tasks.append(task)
+                    tasks.pop(it)
+                else:
+                    it += 1
+
+            nb, ns, nf = issue_tasks(op, my_tasks)
+            num_batches += nb
+            num_success += ns
+            num_failure += nf
+
             if self.cycle_stop.is_set():
                 break
 
-        if len(batches):
-            LOG.info('Issued transfer tasks: %d success, %d failure. %d batches.', num_success, num_failure, len(batches))
         else:
-            LOG.debug('Issued transfer tasks: %d success, %d failure. %d batches.', num_success, num_failure, len(batches))
+            # default condition
+            nb, ns, nf = issue_tasks(default_op, tasks)
+            num_batches += nb
+            num_success += ns
+            num_failure += nf
+
+        if num_success + num_failure != 0:
+            LOG.info('Issued transfer tasks: %d success, %d failure. %d batches.', num_success, num_failure, num_batches)
+        else:
+            LOG.debug('Issued transfer tasks: %d success, %d failure. %d batches.', num_success, num_failure, num_batches)
 
     def delete_files(self, inventory):
         """
@@ -222,7 +284,8 @@ class RLFSM(object):
 
         LOG.debug('Clearing cancelled deletion tasks.')
         task_ids = self._get_cancelled_tasks('deletion')
-        self.deletion_operation.cancel_deletions(task_ids)
+        for _, op in self.deletion_operations:
+            op.cancel_deletions(task_ids)
 
         if self.cycle_stop.is_set():
             return
@@ -245,25 +308,67 @@ class RLFSM(object):
         tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
 
         LOG.debug('Organizing the deletions into batches.')
-        batches = self.deletion_operation.form_batches(tasks)
 
-        if self.cycle_stop.is_set():
-            return
+        def issue_tasks(op, my_tasks):
+            if len(my_tasks) == 0:
+                return 0, 0, 0
 
-        LOG.debug('Issuing deletion tasks.')
+            batches = op.form_batches(my_tasks)
+    
+            if self.cycle_stop.is_set():
+                return
+
+            ns = 0
+            nf = 0
+    
+            LOG.debug('Issuing deletion tasks.')    
+            for batch_tasks in batches:
+                s, f = self._start_deletions(op, batch_tasks)
+                ns += s
+                nf += f
+                if self.cycle_stop.is_set():
+                    break
+
+            return len(batches), ns, nf
+
         num_success = 0
         num_failure = 0
-        for batch_tasks in batches:
-            s, f = self._start_deletions(batch_tasks)
-            num_success += s
-            num_failure += f
+        num_batches = 0
+
+        for condition, op in self.deletion_operations:
+            if condition is None:
+                default_op = op
+                continue
+
+            my_tasks = []
+            it = 0
+            while it < len(tasks):
+                task = tasks[it]
+                if condition.match(task.desubscription.site):
+                    my_tasks.append(task)
+                    tasks.pop(it)
+                else:
+                    it += 1
+
+            nb, ns, nf = issue_tasks(op, my_tasks)
+            num_batches += nb;
+            num_success += ns;
+            num_failure += nf;
+
             if self.cycle_stop.is_set():
-                break
-    
-        if len(batches) != 0:
-            LOG.info('Issued deletion tasks: %d success, %d failure. %d batches.', num_success, num_failure, len(batches))
+                return
+
         else:
-            LOG.debug('Issued deletion tasks: %d success, %d failure. %d batches.', num_success, num_failure, len(batches))
+            # default condition
+            nb, ns, nf = issue_tasks(default_op, my_tasks)
+            num_batches += nb;
+            num_success += ns;
+            num_failure += nf;
+
+        if num_success + num_failure != 0:
+            LOG.info('Issued deletion tasks: %d success, %d failure. %d batches.', num_success, num_failure, num_batches)
+        else:
+            LOG.debug('Issued deletion tasks: %d success, %d failure. %d batches.', num_success, num_failure, num_batches)
 
     def subscribe_file(self, site, lfile):
         """
@@ -525,9 +630,11 @@ class RLFSM(object):
         self.db.query(sql)
 
         # Cleanup the plugins (might delete tasks)
-        self.transfer_operation.cleanup()
-        if self.deletion_operation is not self.transfer_operation:
-            self.deletion_operation.cleanup()
+        for _, op in self.transfer_operations:
+            op.cleanup()
+        if self.deletion_operations is not self.transfer_operations:
+            for _, op in self.deletion_operations:
+                op.cleanup()
 
         sql = 'UPDATE `file_subscriptions` SET `status` = \'new\' WHERE `status` = \'inbatch\' AND `id` NOT IN (SELECT `subscription_id` FROM `transfer_tasks`) AND `id` NOT IN (SELECT `subscription_id` FROM `deletion_tasks`)'
         self.db.query(sql)
@@ -624,21 +731,20 @@ class RLFSM(object):
         num_failure = 0
         num_cancelled = 0
 
-        if optype == 'transfer':
-            get_results = self.transfer_query.get_transfer_status
-            write_history = self.transfer_query.write_transfer_history
-            acknowledge_result = self.transfer_query.forget_transfer_status
-            close_batch = self.transfer_query.forget_transfer_batch
-        else:
-            get_results = self.deletion_query.get_deletion_status
-            write_history = self.transfer_query.write_deletion_history
-            acknowledge_result = self.deletion_query.forget_deletion_status
-            close_batch = self.deletion_query.forget_deletion_batch
-
         # Collect completed tasks
 
         for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
-            results = get_results(batch_id)
+            if optype == 'transfer':
+                for query in self.transfer_queries:
+                    results = query.get_transfer_status(batch_id)
+                    if len(results) != 0:
+                        break
+
+            else:
+                for query in self.deletion_queries:
+                    results = query.get_deletion_status(batch_id)
+                    if len(results) != 0:
+                        break
 
             batch_complete = True
 
@@ -660,7 +766,11 @@ class RLFSM(object):
                     task_data = self.db.query(get_task_data, task_id)[0]
                 except IndexError:
                     LOG.warning('%s task %d got lost.', optype, task_id)
-                    acknowledge_result(task_id)
+                    if optype == 'transfer':
+                        query.forget_transfer_status(task_id)
+                    else:
+                        query.forget_deletion_status(task_id)
+
                     self.db.query(delete_task, task_id)
                     continue
 
@@ -698,7 +808,10 @@ class RLFSM(object):
 
                 history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
 
-                write_history(self.history_db, task_id, history_id)
+                if optype == 'transfer':
+                    query.write_transfer_history(self.history_db, task_id, history_id)
+                else:
+                    query.write_deletion_history(self.history_db, task_id, history_id)
 
                 # We check the subscription status and update accordingly. Need to lock the tables.
                 if not self._read_only:
@@ -742,14 +855,20 @@ class RLFSM(object):
                 if status == FileQuery.STAT_DONE:
                     done_subscriptions.append(subscription_id)
 
-                acknowledge_result(task_id)
+                if optype == 'transfer':
+                    query.forget_transfer_status(task_id)
+                else:
+                    query.forget_deletion_status(task_id)
 
                 if self.cycle_stop.is_set():
                     break
 
             if batch_complete:
                 self.db.query(delete_batch, batch_id)
-                close_batch(batch_id)
+                if optype == 'transfer':
+                    query.forget_transfer_batch(batch_id)
+                else:
+                    query.forget_deletion_batch(batch_id)
 
         if num_success + num_failure + num_cancelled != 0:
             LOG.info('Archived file %s: %d succeeded, %d failed, %d cancelled.', optype, num_success, num_failure, num_cancelled)
@@ -814,7 +933,7 @@ class RLFSM(object):
 
         return tasks
 
-    def _start_transfers(self, tasks):
+    def _start_transfers(self, transfer_operation, tasks):
         # start the transfer of tasks. If batch submission fails, make progressively smaller batches until failing tasks are identified.
         if self._read_only:
             batch_id = 0
@@ -839,7 +958,7 @@ class RLFSM(object):
         for task_id, subscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `transfer_tasks` WHERE `batch_id` = %s', batch_id):
             tasks_by_sub[subscription_id].id = task_id
 
-        result = self.transfer_operation.start_transfers(batch_id, tasks)
+        result = transfer_operation.start_transfers(batch_id, tasks)
 
         successful = [task for task, success in result.iteritems() if success]
 
