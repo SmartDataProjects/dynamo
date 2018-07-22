@@ -86,7 +86,7 @@ class RLFSM(object):
                 else:
                     condition = Condition(condition_text, site_variables)
 
-            self.transfer_operations.append((condition, FileTransferOperation.get_instance(module, conf)))
+                self.transfer_operations.append((condition, FileTransferOperation.get_instance(module, conf)))
 
         if 'transfer_query' in config:
             self.transfer_queries = []
@@ -96,7 +96,7 @@ class RLFSM(object):
                 else:
                     condition = Condition(condition_text, site_variables)
 
-            self.transfer_queries.append(condition, FileTransferQuery.get_instance(module, conf))
+                self.transfer_queries.append(condition, FileTransferQuery.get_instance(module, conf))
         else:
             self.transfer_queries = self.transfer_operations
 
@@ -108,7 +108,7 @@ class RLFSM(object):
                 else:
                     condition = Condition(condition_text, site_variables)
 
-            self.deletion_operations.append(condition, FileDeletionOperation.get_instance(module, conf))
+                self.deletion_operations.append(condition, FileDeletionOperation.get_instance(module, conf))
         else:
             self.deletion_operations = self.transfer_operations
 
@@ -120,7 +120,7 @@ class RLFSM(object):
                 else:
                     condition = Condition(condition_text, site_variables)
 
-            self.deletion_queries.append(condition, FileDeletionQuery.get_instance(module, conf))
+                self.deletion_queries.append(condition, FileDeletionQuery.get_instance(module, conf))
         else:
             self.deletion_queries = self.deletion_operations
 
@@ -135,7 +135,7 @@ class RLFSM(object):
         self.history_db.set_read_only(value)
         for _, op in self.transfer_operations:
             op.set_read_only(value)
-        if _, op in self.deletion_operations:
+        for _, op in self.deletion_operations:
             op.set_read_only(value)
 
     def start(self, inventory):
@@ -208,28 +208,35 @@ class RLFSM(object):
 
         LOG.debug('Organizing %d transfers into batches.', len(tasks))
 
-        num_success = 0
-        num_failure = 0
-        num_batches = 0
+        def issue_tasks(op, my_tasks):
+            if len(my_tasks) == 0:
+                return 0, 0, 0
 
-        def issue_tasks(my_tasks):
             batches = op.form_batches(my_tasks)
     
             if self.cycle_stop.is_set():
                 return
 
-            num_batches += len(batches)
-    
+            ns = 0
+            nf = 0
+   
             LOG.debug('Issuing transfer tasks.')
             for batch_tasks in batches:
                 s, f = self._start_transfers(op, batch_tasks)
-                num_success += s
-                num_failure += f
+                ns += s
+                nf += f
                 if self.cycle_stop.is_set():
                     break
+
+            return len(batches), ns, nf
+
+        num_success = 0
+        num_failure = 0
+        num_batches = 0
         
         for condition, op in self.transfer_operations:
             if condition is None:
+                default_op = op
                 continue
 
             my_tasks = []
@@ -242,12 +249,20 @@ class RLFSM(object):
                 else:
                     it += 1
 
-            issue_tasks(my_tasks)
-            if self.cycle_stop.is_set():
-                return
+            nb, ns, nf = issue_tasks(op, my_tasks)
+            num_batches += nb
+            num_success += ns
+            num_failure += nf
 
-        # default condition
-        issue_tasks(tasks)
+            if self.cycle_stop.is_set():
+                break
+
+        else:
+            # default condition
+            nb, ns, nf = issue_tasks(default_op, tasks)
+            num_batches += nb
+            num_success += ns
+            num_failure += nf
 
         if num_success + num_failure != 0:
             LOG.info('Issued transfer tasks: %d success, %d failure. %d batches.', num_success, num_failure, num_batches)
@@ -294,28 +309,35 @@ class RLFSM(object):
 
         LOG.debug('Organizing the deletions into batches.')
 
-        num_success = 0
-        num_failure = 0
-        num_batches = 0
+        def issue_tasks(op, my_tasks):
+            if len(my_tasks) == 0:
+                return 0, 0, 0
 
-        def issue_tasks(my_tasks):
             batches = op.form_batches(my_tasks)
     
             if self.cycle_stop.is_set():
                 return
-    
-            num_batches += len(batches)
 
+            ns = 0
+            nf = 0
+    
             LOG.debug('Issuing deletion tasks.')    
             for batch_tasks in batches:
                 s, f = self._start_deletions(op, batch_tasks)
-                num_success += s
-                num_failure += f
+                ns += s
+                nf += f
                 if self.cycle_stop.is_set():
                     break
 
+            return len(batches), ns, nf
+
+        num_success = 0
+        num_failure = 0
+        num_batches = 0
+
         for condition, op in self.deletion_operations:
             if condition is None:
+                default_op = op
                 continue
 
             my_tasks = []
@@ -328,12 +350,20 @@ class RLFSM(object):
                 else:
                     it += 1
 
-            issue_tasks(my_tasks)
+            nb, ns, nf = issue_tasks(op, my_tasks)
+            num_batches += nb;
+            num_success += ns;
+            num_failure += nf;
+
             if self.cycle_stop.is_set():
                 return
 
-        # default condition
-        issue_tasks(tasks)
+        else:
+            # default condition
+            nb, ns, nf = issue_tasks(default_op, my_tasks)
+            num_batches += nb;
+            num_success += ns;
+            num_failure += nf;
 
         if num_success + num_failure != 0:
             LOG.info('Issued deletion tasks: %d success, %d failure. %d batches.', num_success, num_failure, num_batches)
@@ -701,21 +731,20 @@ class RLFSM(object):
         num_failure = 0
         num_cancelled = 0
 
-        if optype == 'transfer':
-            get_results = self.transfer_query.get_transfer_status
-            write_history = self.transfer_query.write_transfer_history
-            acknowledge_result = self.transfer_query.forget_transfer_status
-            close_batch = self.transfer_query.forget_transfer_batch
-        else:
-            get_results = self.deletion_query.get_deletion_status
-            write_history = self.transfer_query.write_deletion_history
-            acknowledge_result = self.deletion_query.forget_deletion_status
-            close_batch = self.deletion_query.forget_deletion_batch
-
         # Collect completed tasks
 
         for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
-            results = get_results(batch_id)
+            if optype == 'transfer':
+                for query in self.transfer_queries:
+                    results = query.get_transfer_status(batch_id)
+                    if len(results) != 0:
+                        break
+
+            else:
+                for query in self.deletion_queries:
+                    results = query.get_deletion_status(batch_id)
+                    if len(results) != 0:
+                        break
 
             batch_complete = True
 
@@ -737,7 +766,11 @@ class RLFSM(object):
                     task_data = self.db.query(get_task_data, task_id)[0]
                 except IndexError:
                     LOG.warning('%s task %d got lost.', optype, task_id)
-                    acknowledge_result(task_id)
+                    if optype == 'transfer':
+                        query.forget_transfer_status(task_id)
+                    else:
+                        query.forget_deletion_status(task_id)
+
                     self.db.query(delete_task, task_id)
                     continue
 
@@ -775,7 +808,10 @@ class RLFSM(object):
 
                 history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
 
-                write_history(self.history_db, task_id, history_id)
+                if optype == 'transfer':
+                    query.write_transfer_history(self.history_db, task_id, history_id)
+                else:
+                    query.write_deletion_history(self.history_db, task_id, history_id)
 
                 # We check the subscription status and update accordingly. Need to lock the tables.
                 if not self._read_only:
@@ -819,14 +855,20 @@ class RLFSM(object):
                 if status == FileQuery.STAT_DONE:
                     done_subscriptions.append(subscription_id)
 
-                acknowledge_result(task_id)
+                if optype == 'transfer':
+                    query.forget_transfer_status(task_id)
+                else:
+                    query.forget_deletion_status(task_id)
 
                 if self.cycle_stop.is_set():
                     break
 
             if batch_complete:
                 self.db.query(delete_batch, batch_id)
-                close_batch(batch_id)
+                if optype == 'transfer':
+                    query.forget_transfer_batch(batch_id)
+                else:
+                    query.forget_deletion_batch(batch_id)
 
         if num_success + num_failure + num_cancelled != 0:
             LOG.info('Archived file %s: %d succeeded, %d failed, %d cancelled.', optype, num_success, num_failure, num_cancelled)
