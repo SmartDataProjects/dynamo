@@ -21,7 +21,7 @@ config = Configuration(args.config)
 ## Set up logging (write to stdout)
 from dynamo.core.executable import make_standard_logger, authorized
 
-LOG = make_standard_logger(config.get('log_level', 'debug'))
+LOG = make_standard_logger(config.get('log_level', 'info'))
 
 ## Configure
 from dynamo.fileop.rlfsm import RLFSM
