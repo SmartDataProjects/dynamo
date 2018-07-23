@@ -826,7 +826,12 @@ class MySQL(object):
         table_full = '`%s`.`%s`' % (db, table)[0][1]
         create_stmt = self.query('SHOW CREATE TABLE %s' % table_full)[0][1]
         self.query('SET sql_notes = 0')
-        self.query('DROP TABLE IF EXISTS ' + table_full)
+        try:
+            self.query('DROP TABLE IF EXISTS ' + table_full)
+        except MySQLdb.OperationalError:
+            # If executing this line in a lock, we get an op error if the table does not exist.
+            pass
+
         self.query('SET sql_notes = 1')
         self.query(create_stmt)
 
@@ -835,7 +840,12 @@ class MySQL(object):
             db = self.scratch_db
 
         self.query('SET sql_notes = 0')
-        self.query('DROP TABLE IF EXISTS `%s`.`%s`' % (db, table))
+        try:
+            self.query('DROP TABLE IF EXISTS `%s`.`%s`' % (db, table))
+        except MySQLdb.OperationalError:
+            # If executing this line in a lock, we get an op error if the table does not exist.
+            pass
+
         self.query('SET sql_notes = 1')
 
     def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
