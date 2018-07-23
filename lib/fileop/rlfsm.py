@@ -478,6 +478,7 @@ class RLFSM(object):
 
             dest_replica = lfile.block.find_replica(destination)
             if dest_replica is None and st != 'cancelled':
+                LOG.debug('Destination replica for %s does not exist. Canceling the subscription.', file_name)
                 # Replica was invalidated
                 sql = 'UPDATE `file_subscriptions` SET `status` = \'cancelled\''
                 sql += ' WHERE `id` = %s'
@@ -734,14 +735,16 @@ class RLFSM(object):
         # Collect completed tasks
 
         for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
+            results = []
+
             if optype == 'transfer':
-                for query in self.transfer_queries:
+                for _, query in self.transfer_queries:
                     results = query.get_transfer_status(batch_id)
                     if len(results) != 0:
                         break
 
             else:
-                for query in self.deletion_queries:
+                for _, query in self.deletion_queries:
                     results = query.get_deletion_status(batch_id)
                     if len(results) != 0:
                         break
@@ -983,7 +986,7 @@ class RLFSM(object):
 
         return len(successful), len(result) - len(successful)
 
-    def _start_deletions(self, tasks):
+    def _start_deletions(self, deletion_operation, tasks):
         if self._read_only:
             batch_id = 0
         else:
@@ -1004,7 +1007,7 @@ class RLFSM(object):
         for task_id, desubscription_id in self.db.xquery('SELECT `id`, `subscription_id` FROM `deletion_tasks` WHERE `batch_id` = %s', batch_id):
             tasks_by_sub[desubscription_id].id = task_id
         
-        result = self.deletion_operation.start_deletions(batch_id, tasks)
+        result = deletion_operation.start_deletions(batch_id, tasks)
 
         successful = [task for task, success in result.iteritems() if success]
 

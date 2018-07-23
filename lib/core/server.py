@@ -19,7 +19,6 @@ from dynamo.core.components.appserver import AppServer
 from dynamo.core.components.host import ServerHost, OutOfSyncError
 from dynamo.core.components.appmanager import AppManager
 from dynamo.web.server import WebServer
-from dynamo.fileop.rlfsm import RLFSM
 from dynamo.utils.log import log_exception, reset_logger
 from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat import Configuration
@@ -64,12 +63,6 @@ class DynamoServer(object):
             self.webserver = WebServer(config.web, self)
         else:
             self.webserver = None
-
-        ## File Operations Manager
-        if config.file_operations.enabled:
-            self.fom = RLFSM(config.file_operations.manager)
-        else:
-            self.fom = None
 
         ## Server status (and application) poll interval
         self.poll_interval = config.status_poll_interval
@@ -163,9 +156,6 @@ class DynamoServer(object):
             if self.webserver:
                 self.webserver.restart()
 
-            if self.fom:
-                self.fom.start(self.inventory)
-
             try:
                 # Actual stuff happens here
                 # Both functions are infinite loops; the only way out is an exception (can be a peaceful KeyboardInterrupt)
@@ -203,9 +193,6 @@ class DynamoServer(object):
             finally:
                 if self.webserver:
                     self.webserver.stop()
-
-                if self.fom:
-                    self.fom.stop()
 
         self.manager.disconnect()
 

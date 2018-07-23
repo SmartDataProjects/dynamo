@@ -94,25 +94,3 @@ enabled=true
 
 # Path to the configuration file for web modules
 modules_config=/etc/dynamo/web_modules_config.json
-
-[file_operations]
-## File operation management
-
-# Whether to transfer and delete files by ourselves
-enabled=true
-
-# File operation methods (standalone: direct gfal-* calls, fts: through FTS)
-backend=standalone
-
-# Configuration JSON for the File Operations Manager
-fom_conf={"db": {"user": "dynamofod"}, "transfer": {}}
-
-# Configuration JSON for the File Operations Daemon (empty if backend=fts)
-#  max_parallel_links: Maximum number of concurrent operations within each batch
-#  transfer_timeout: Timeout for individual transfers (seconds)
-fod_conf={"max_batches": 50, "max_parallel_links": 200, "transfer_timeout": 3600}
-
-# Alternative file operations configuration
-#backend=fts
-#fom_conf={"db": {"user": "dynamofod"}, "transfer": {"fts_server": "https://fts3.example.com:8446", "fts_retry": 3}}
-#fod_conf={}
