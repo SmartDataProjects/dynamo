@@ -57,9 +57,12 @@ class DeletionRequestManager(RequestManager):
 
             if request_id is not None:
                 # we were looking for a unique request and we found it
-                return all_requests
+                break
 
-        if statuses is not None and (set(statuses) < set(['new', 'activated']) or set(statuses) < set([Request.ST_NEW, Request.ST_ACTIVATED])):
+        self.registry.db.drop_tmp_table('ids_tmp')
+
+        if (request_id is not None and len(all_requests) != 0) or \
+           (statuses is not None and (set(statuses) < set(['new', 'activated']) or set(statuses) < set([Request.ST_NEW, Request.ST_ACTIVATED]))):
             # there's nothing in the archive
             return all_requests
 
@@ -101,6 +104,8 @@ class DeletionRequestManager(RequestManager):
                 archived_requests[rid].items.append(df.Block.to_full_name(dataset, block))
 
         all_requests.update(archived_requests)
+
+        self.history.db.drop_tmp_table('ids_tmp')
 
         return all_requests
 

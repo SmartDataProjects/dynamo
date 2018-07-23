@@ -100,7 +100,10 @@ class MakeCopyRequest(CopyRequestBase):
                 request = existing
 
         finally:
-            self.manager.unlock()
+            try:
+                self.manager.unlock()
+            except:
+                LOG.error('Error in manager.unlock()')
 
         # requests is a single-element dictionary
         return [request.to_dict()]

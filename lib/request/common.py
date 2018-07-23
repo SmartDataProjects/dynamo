@@ -135,6 +135,9 @@ class RequestManager(object):
         sql += ' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `{op}_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `{db}`.`items_tmp`)'
         self.registry.db.query(sql.format(db = self.registry.db.scratch_db, op = self.optype))
 
+        self.registry.db.drop_tmp_table('items_tmp')
+        self.registry.db.drop_tmp_table('sites_tmp')
+
         return '`{db}`.`ids_tmp`'.format(db = self.registry.db.scratch_db)
 
     def _make_temp_history_tables(self, dataset_ids, block_ids, site_ids):
@@ -188,6 +191,10 @@ class RequestManager(object):
         sql += ' AND '
         sql += ' 0 NOT IN (SELECT (`id` IN (SELECT `block_id` FROM `{op}_request_blocks` AS b WHERE b.`request_id` = r.`id`)) FROM `{db}`.`blocks_tmp`)'
         self.history.db.query(sql.format(db = self.history.db.scratch_db, op = self.optype))
+
+        self.history.db.drop_tmp_table('datasets_tmp')
+        self.history.db.drop_tmp_table('blocks_tmp')
+        self.history.db.drop_tmp_table('sites_tmp')
 
         return tmp_table_name
 
