@@ -234,10 +234,11 @@ class MySQL(object):
                             raise
                             #2006 = MySQL server has gone away
                             #If we are reusing connections, this type of error is to be ignored
-                            if not silent:
-                                LOG.error(str(sys.exc_info()[1]))
 
-                            last_except = sys.exc_info()[1]
+                        if not silent:
+                            LOG.error(str(sys.exc_info()[1]))
+
+                        last_except = sys.exc_info()[1]
 
                         # reconnect to server
                         cursor.close()
@@ -807,8 +808,6 @@ class MySQL(object):
 
         if not db:
             db = self.scratch_db
-
-        self.drop_tmp_table(table, db = db)
 
         if type(columns) is str:
             sql = 'CREATE TEMPORARY TABLE `%s`.`%s` LIKE %s' % (db, table, columns)
