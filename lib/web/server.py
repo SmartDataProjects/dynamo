@@ -163,27 +163,33 @@ class WebServer(object):
             log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
             root_logger.addHandler(log_handler)
 
-        # Ignore one specific warning issued by accident when a web page crashes and dumps a stack trace
-        # cgitb scans all exception attributes with dir(exc) + getattr(exc, attr) which results in accessing
-        # exception.message, a deprecated attribute.
-        warnings.filterwarnings('ignore', 'BaseException.message.*', DeprecationWarning, '.*cgitb.*', 173)
-
-        # Set up module defaults
-        # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
-        for key, config in self.dynamo_server.defaults_config.items():
-            try:
-                myconf = config['fullauth']
-            except KeyError:
+        # If the inventory loads super-fast in the main server, we get reset while loading the defaults
+        # Block the terminate signal to avoid KeyboardInterrupt error messages
+        try:
+            # Ignore one specific warning issued by accident when a web page crashes and dumps a stack trace
+            # cgitb scans all exception attributes with dir(exc) + getattr(exc, attr) which results in accessing
+            # exception.message, a deprecated attribute.
+            warnings.filterwarnings('ignore', 'BaseException.message.*', DeprecationWarning, '.*cgitb.*', 173)
+    
+            # Set up module defaults
+            # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
+            for key, config in self.dynamo_server.defaults_config.items():
                 try:
-                    myconf = config['all']
+                    myconf = config['fullauth']
                 except KeyError:
-                    continue
+                    try:
+                        myconf = config['all']
+                    except KeyError:
+                        continue
+        
+                modname, clsname = key.split(':')
+                module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
+                cls = getattr(module, clsname)
+        
+                cls.set_default(myconf)
     
-            modname, clsname = key.split(':')
-            module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
-            cls = getattr(module, clsname)
-    
-            cls.set_default(myconf)
+        except KeyboardInterrupt:
+            os._exit(0)
 
         try:
             self.wsgi_server.run()
