@@ -55,10 +55,6 @@ class DeletionRequestManager(RequestManager):
             for rid, item in self.registry.db.xquery(sql):
                 all_requests[rid].items.append(item)
 
-            if request_id is not None:
-                # we were looking for a unique request and we found it
-                break
-
         self.registry.db.drop_tmp_table('ids_tmp')
 
         if (request_id is not None and len(all_requests) != 0) or \
