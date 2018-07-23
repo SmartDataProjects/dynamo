@@ -24,7 +24,6 @@ spooldir = source_conf.get('paths', 'spool_path')
 
 serve_applications = source_conf.get('applications', 'enabled').lower()
 serve_web = source_conf.get('web', 'enabled').lower()
-serve_fileop = source_conf.get('file_operations', 'enabled').lower()
 
 class Namespace(object):
     pass
@@ -103,24 +102,6 @@ if serve_applications == 'true':
 
     app_conf['timeout'] = 7200
     app_conf['retain_records_for'] = 7
-
-## RLFSM
-server_conf['file_operations'] = OD()
-server_conf['file_operations']['enabled'] = (serve_fileop == 'true')
-
-if serve_fileop == 'true':
-    server_conf['file_operations']['manager'] = generators['mysql'].generate_fom_conf(source_conf.get('file_operations', 'fom_conf'))
-    transfer_conf = server_conf['file_operations']['manager']['transfer']
-
-    backend = source_conf.get('file_operations', 'backend')
-    if backend == 'standalone':
-        transfer_conf['module'] = 'standalone:StandaloneFileOperation'
-        transfer_conf['config']['batch_size'] = 200
-    elif backend == 'fts':
-        transfer_conf['module'] = 'fts:FTSFileOperation'
-        transfer_conf['config']['batch_size'] = 4000
-
-    server_conf['file_operations']['daemon'] = json.loads(source_conf.get('file_operations', 'fod_conf'))
 
 defaults_path = source_conf.get('server', 'defaults_conf')
 if not defaults_path.startswith('/'):

@@ -734,6 +734,8 @@ class RLFSM(object):
         # Collect completed tasks
 
         for batch_id in self.db.query('SELECT `id` FROM `{op}_batches`'.format(op = optype)):
+            results = []
+
             if optype == 'transfer':
                 for query in self.transfer_queries:
                     results = query.get_transfer_status(batch_id)

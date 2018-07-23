@@ -28,16 +28,19 @@
         },
         "history": "dynamohistory"
       },
-      "transfer": {
-        "config": {
-          "db_params": {
-            "user": "dynamofod",
-            "db": "dynamo"
-          },
-          "batch_size": 200
-        },
-        "module": "standalone:StandaloneFileOperation"
-      }
+      "transfer": [
+        [
+          null,
+          "standalone:StandaloneFileOperation",
+          {
+            "db_params": {
+              "user": "dynamofod",
+              "db": "dynamo"
+            },
+            "batch_size": 200
+          }
+        ]
+      ]
     },
     "readonly": {
       "db": {

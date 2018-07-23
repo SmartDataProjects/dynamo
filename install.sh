@@ -30,17 +30,16 @@ CLIENT_PATH=$($READCONF paths.client_path)
 SYSBIN_PATH=$($READCONF paths.sysbin_path)
 WEBSERVER=$($READCONF web.enabled)
 APPSERVER=$($READCONF applications.enabled)
-FILEOP=$($READCONF file_operations.enabled)
 
 ### Stop the daemons first ###
 
 if [[ $(uname -r) =~ el7 ]]
 then
   systemctl stop dynamod 2>/dev/null
-  [ "$FILEOP" = "true" ] && systemctl stop dynamo-fileopd 2> /dev/null
+  systemctl stop dynamo-fileopd 2> /dev/null
 else
   service dynamod stop 2>/dev/null
-  [ "$FILEOP" = "true" ] && service dynamo-fileopd stop 2> /dev/null
+  service dynamo-fileopd stop 2> /dev/null
 fi
 
 echo
@@ -347,23 +346,18 @@ else
   chmod +x /etc/init.d/dynamod
 fi
 
-FILEOP_BACKEND=$($READCONF file_operations.backend)
-
-if [ "$FILEOP" = "true" ] && [ "$FILEOP_BACKEND" = "standalone" ]
+if [[ $(uname -r) =~ el7 ]]
 then
-  if [[ $(uname -r) =~ el7 ]]
-  then
-    # systemd daemon
-    cp $SOURCE/daemon/dynamo-fileopd.systemd /usr/lib/systemd/system/dynamo-fileopd.service
-    sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /usr/lib/systemd/system/dynamo-fileopd.service
-  
-    systemctl daemon-reload
-  else
-    cp $SOURCE/daemon/dynamo-fileopd.sysv /etc/init.d/dynamo-fileopd
-    sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /etc/init.d/dynamo-fileopd
-    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-fileopd
-    chmod +x /etc/init.d/dynamo-fileopd
-  fi
+  # systemd daemon
+  cp $SOURCE/daemon/dynamo-fileopd.systemd /usr/lib/systemd/system/dynamo-fileopd.service
+  sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /usr/lib/systemd/system/dynamo-fileopd.service
+
+  systemctl daemon-reload
+else
+  cp $SOURCE/daemon/dynamo-fileopd.sysv /etc/init.d/dynamo-fileopd
+  sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /etc/init.d/dynamo-fileopd
+  sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-fileopd
+  chmod +x /etc/init.d/dynamo-fileopd
 fi
 
 ### Set up the admin user ###
