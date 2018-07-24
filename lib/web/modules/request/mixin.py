@@ -12,6 +12,10 @@ class ParseInputMixin(object):
         self.params = {}
 
     def parse_input(self, request, inventory, allowed_fields, required_fields = tuple()):
+        # JSON could have been uploaded
+        if self.input_data is not None:
+            request.update(self.input_data)
+
         # Check we have the right request fields
 
         input_fields = set(request.keys())
