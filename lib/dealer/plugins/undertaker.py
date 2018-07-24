@@ -1,7 +1,7 @@
 import logging
 
 from dynamo.dataformat import Site
-from base import BaseHandler
+from base import BaseHandler, DealerRequest
 from dynamo.detox.history import DetoxHistoryBase
 
 LOG = logging.getLogger(__name__)

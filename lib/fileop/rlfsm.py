@@ -432,28 +432,29 @@ class RLFSM(object):
 
         subscriptions = []
 
-        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
+        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`block_id`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
         get_all += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         get_all += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
 
         constraints = []
         if op == 'transfer':
-            constraints.append('`delete` = 0')
+            constraints.append('u.`delete` = 0')
         elif op == 'deletion':
-            constraints.append('`delete` = 1')
+            constraints.append('u.`delete` = 1')
         if status is not None:
             constraints.append('u.`status` IN ' + MySQL.stringify_sequence(status))
 
         if len(constraints) != 0:
             get_all += ' WHERE ' + ' AND '.join(constraints)
 
-        get_all += ' ORDER BY s.`id`'
+        get_all += ' ORDER BY s.`id`, f.`block_id`'
 
         get_tried_sites = 'SELECT s.`name`, f.`exitcode` FROM `failed_transfers` AS f'
         get_tried_sites += ' INNER JOIN `sites` AS s ON s.`id` = f.`source_id`'
         get_tried_sites += ' WHERE f.`subscription_id` = %s'
 
-        destination = None
+        _destination_name = ''
+        _block_id = -1
 
         to_hold = []
         to_done = []
@@ -462,21 +463,37 @@ class RLFSM(object):
         DELETE = 1
 
         for row in self.db.query(get_all):
-            sub_id, st, optype, file_id, file_name, site_name = row
+            sub_id, st, optype, block_id, file_id, file_name, site_name = row
 
-            if destination is None or site_name != destination.name:
+            if site_name != _destination_name:
+                _destination_name = site_name
                 try:
                     destination = inventory.sites[site_name]
                 except KeyError:
                     # Site disappeared from the inventory - weird but can happen!
-                    continue
+                    destination = None
 
-            lfile = inventory.find_file(file_name)
-            if lfile is None:
-                # Dataset, block, or file was deleted from the inventory earlier in this process (deletion not reflected in the inventory store yet)
+                _block_id = -1
+
+            if destination is None:
                 continue
 
-            dest_replica = lfile.block.find_replica(destination)
+            if block_id != _block_id:
+                lfile = inventory.find_file(file_name)
+                if lfile is None:
+                    # Dataset, block, or file was deleted from the inventory earlier in this process (deletion not reflected in the inventory store yet)
+                    continue
+
+                _block_id = block_id
+                block = lfile.block
+                dest_replica = block.find_replica(destination)
+
+            else:
+                lfile = block.find_file(file_name)
+                if lfile is None:
+                    # Dataset, block, or file was deleted from the inventory earlier in this process (deletion not reflected in the inventory store yet)
+                    continue
+
             if dest_replica is None and st != 'cancelled':
                 LOG.debug('Destination replica for %s does not exist. Canceling the subscription.', file_name)
                 # Replica was invalidated
@@ -500,7 +517,7 @@ class RLFSM(object):
 
                     disk_sources = []
                     tape_sources = []
-                    for replica in lfile.block.replicas:
+                    for replica in block.replicas:
                         if replica.site == destination or replica.site.status != Site.STAT_READY:
                             continue
         
@@ -809,7 +826,10 @@ class RLFSM(object):
                 else:
                     LOG.debug('Archiving deletion of %s at %s (exitcode %d)', lfn, site_name, exitcode)
 
-                history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
+                if self._read_only:
+                    history_id = 0
+                else:
+                    history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
 
                 if optype == 'transfer':
                     query.write_transfer_history(self.history_db, task_id, history_id)
@@ -929,7 +949,8 @@ class RLFSM(object):
             if source is None:
                 # If both disk and tape failed irrecoveably, the subscription must be placed in held queue in get_subscriptions.
                 # Reaching this line means something is wrong.
-                LOG.warning('Could not find a source for transfer of %s to %s from %d disk and %d tape candidates.', file_name, site_name, len(subscription.disk_sources), len(subscription.tape_sources))
+                LOG.warning('Could not find a source for transfer of %s to %s from %d disk and %d tape candidates.',
+                    subscription.file.lfn, subscription.destination.name, len(subscription.disk_sources), len(subscription.tape_sources))
                 continue
             
             tasks.append(RLFSM.TransferTask(subscription, source))
