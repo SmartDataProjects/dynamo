@@ -135,8 +135,15 @@ class RLFSM(object):
         self.history_db.set_read_only(value)
         for _, op in self.transfer_operations:
             op.set_read_only(value)
-        for _, op in self.deletion_operations:
-            op.set_read_only(value)
+        if self.transfer_queries is not self.transfer_operations:
+            for _, qry in self.transfer_queries:
+                qry.set_read_only(value)
+        if self.deletion_operations is not self.transfer_operations:
+            for _, op in self.deletion_operations:
+                op.set_read_only(value)
+        if self.deletion_queries is not self.deletion_operations:
+            for _, qry in self.deletion_queries:
+                qry.set_read_only(value)
 
     def start(self, inventory):
         """
@@ -630,6 +637,9 @@ class RLFSM(object):
                 break
 
     def _cleanup(self):
+        if self._read_only:
+            return
+
         # Make the tables consistent in case the previous cycles was terminated prematurely
 
         # There should not be tasks with subscription status new
@@ -798,7 +808,9 @@ class RLFSM(object):
                     else:
                         query.forget_deletion_status(task_id)
 
-                    self.db.query(delete_task, task_id)
+                    if not self._read_only:
+                        self.db.query(delete_task, task_id)
+
                     continue
 
                 subscription_id, lfn, size, create_time = task_data[:4]
@@ -894,7 +906,9 @@ class RLFSM(object):
                     break
 
             if batch_complete:
-                self.db.query(delete_batch, batch_id)
+                if not self._read_only:
+                    self.db.query(delete_batch, batch_id)
+
                 if optype == 'transfer':
                     query.forget_transfer_batch(batch_id)
                 else:
