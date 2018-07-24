@@ -8,5 +8,6 @@ CREATE TABLE `file_subscriptions` (
   `delete` tinyint(1) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `subscription` (`file_id`,`site_id`,`delete`),
-  KEY `delete` (`delete`)
+  KEY `delete` (`delete`),
+  KEY `status` (`status`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;

@@ -135,8 +135,15 @@ class RLFSM(object):
         self.history_db.set_read_only(value)
         for _, op in self.transfer_operations:
             op.set_read_only(value)
-        for _, op in self.deletion_operations:
-            op.set_read_only(value)
+        if self.transfer_queries is not self.transfer_operations:
+            for _, qry in self.transfer_queries:
+                qry.set_read_only(value)
+        if self.deletion_operations is not self.transfer_operations:
+            for _, op in self.deletion_operations:
+                op.set_read_only(value)
+        if self.deletion_queries is not self.deletion_operations:
+            for _, qry in self.deletion_queries:
+                qry.set_read_only(value)
 
     def start(self, inventory):
         """
@@ -208,6 +215,13 @@ class RLFSM(object):
 
         LOG.debug('Organizing %d transfers into batches.', len(tasks))
 
+        by_dest = {}
+        for task in tasks:
+            try:
+                by_dest[task.subscription.destination].append(task)
+            except KeyError:
+                by_dest[task.subscription.destination] = [task]
+
         def issue_tasks(op, my_tasks):
             if len(my_tasks) == 0:
                 return 0, 0, 0
@@ -240,14 +254,9 @@ class RLFSM(object):
                 continue
 
             my_tasks = []
-            it = 0
-            while it < len(tasks):
-                task = tasks[it]
-                if condition.match(task.subscription.destination):
-                    my_tasks.append(task)
-                    tasks.pop(it)
-                else:
-                    it += 1
+            for site in by_dest.keys():
+                if condition.match(site):
+                    my_tasks.extend(by_dest.pop(site))
 
             nb, ns, nf = issue_tasks(op, my_tasks)
             num_batches += nb
@@ -259,7 +268,8 @@ class RLFSM(object):
 
         else:
             # default condition
-            nb, ns, nf = issue_tasks(default_op, tasks)
+            my_tasks = sum(by_dest.itervalues(), [])
+            nb, ns, nf = issue_tasks(default_op, my_tasks)
             num_batches += nb
             num_success += ns
             num_failure += nf
@@ -307,6 +317,13 @@ class RLFSM(object):
 
         tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
 
+        by_site = {}
+        for task in tasks:
+            try:
+                by_site[task.desubscription.site].append(task)
+            except KeyError:
+                by_site[task.desubscription.site] = [task]
+
         LOG.debug('Organizing the deletions into batches.')
 
         def issue_tasks(op, my_tasks):
@@ -321,8 +338,9 @@ class RLFSM(object):
             ns = 0
             nf = 0
     
-            LOG.debug('Issuing deletion tasks.')    
+            LOG.debug('Issuing deletion tasks for %d batches.', len(batches))    
             for batch_tasks in batches:
+                LOG.debug('Batch with %d tasks.', len(batch_tasks))
                 s, f = self._start_deletions(op, batch_tasks)
                 ns += s
                 nf += f
@@ -341,14 +359,9 @@ class RLFSM(object):
                 continue
 
             my_tasks = []
-            it = 0
-            while it < len(tasks):
-                task = tasks[it]
-                if condition.match(task.desubscription.site):
-                    my_tasks.append(task)
-                    tasks.pop(it)
-                else:
-                    it += 1
+            for site in by_site.keys():
+                if condition.match(site):
+                    my_tasks.extend(by_site.pop(site))
 
             nb, ns, nf = issue_tasks(op, my_tasks)
             num_batches += nb;
@@ -360,6 +373,7 @@ class RLFSM(object):
 
         else:
             # default condition
+            my_tasks = sum(by_site.itervalues(), [])
             nb, ns, nf = issue_tasks(default_op, my_tasks)
             num_batches += nb;
             num_success += ns;
@@ -432,28 +446,29 @@ class RLFSM(object):
 
         subscriptions = []
 
-        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
+        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`block_id`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
         get_all += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         get_all += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
 
         constraints = []
         if op == 'transfer':
-            constraints.append('`delete` = 0')
+            constraints.append('u.`delete` = 0')
         elif op == 'deletion':
-            constraints.append('`delete` = 1')
+            constraints.append('u.`delete` = 1')
         if status is not None:
             constraints.append('u.`status` IN ' + MySQL.stringify_sequence(status))
 
         if len(constraints) != 0:
             get_all += ' WHERE ' + ' AND '.join(constraints)
 
-        get_all += ' ORDER BY s.`id`'
+        get_all += ' ORDER BY s.`id`, f.`block_id`'
 
         get_tried_sites = 'SELECT s.`name`, f.`exitcode` FROM `failed_transfers` AS f'
         get_tried_sites += ' INNER JOIN `sites` AS s ON s.`id` = f.`source_id`'
         get_tried_sites += ' WHERE f.`subscription_id` = %s'
 
-        destination = None
+        _destination_name = ''
+        _block_id = -1
 
         to_hold = []
         to_done = []
@@ -462,21 +477,37 @@ class RLFSM(object):
         DELETE = 1
 
         for row in self.db.query(get_all):
-            sub_id, st, optype, file_id, file_name, site_name = row
+            sub_id, st, optype, block_id, file_id, file_name, site_name = row
 
-            if destination is None or site_name != destination.name:
+            if site_name != _destination_name:
+                _destination_name = site_name
                 try:
                     destination = inventory.sites[site_name]
                 except KeyError:
                     # Site disappeared from the inventory - weird but can happen!
-                    continue
+                    destination = None
 
-            lfile = inventory.find_file(file_name)
-            if lfile is None:
-                # Dataset, block, or file was deleted from the inventory earlier in this process (deletion not reflected in the inventory store yet)
+                _block_id = -1
+
+            if destination is None:
                 continue
 
-            dest_replica = lfile.block.find_replica(destination)
+            if block_id != _block_id:
+                lfile = inventory.find_file(file_name)
+                if lfile is None:
+                    # Dataset, block, or file was deleted from the inventory earlier in this process (deletion not reflected in the inventory store yet)
+                    continue
+
+                _block_id = block_id
+                block = lfile.block
+                dest_replica = block.find_replica(destination)
+
+            else:
+                lfile = block.find_file(file_name)
+                if lfile is None:
+                    # Dataset, block, or file was deleted from the inventory earlier in this process (deletion not reflected in the inventory store yet)
+                    continue
+
             if dest_replica is None and st != 'cancelled':
                 LOG.debug('Destination replica for %s does not exist. Canceling the subscription.', file_name)
                 # Replica was invalidated
@@ -500,7 +531,7 @@ class RLFSM(object):
 
                     disk_sources = []
                     tape_sources = []
-                    for replica in lfile.block.replicas:
+                    for replica in block.replicas:
                         if replica.site == destination or replica.site.status != Site.STAT_READY:
                             continue
         
@@ -606,6 +637,9 @@ class RLFSM(object):
                 break
 
     def _cleanup(self):
+        if self._read_only:
+            return
+
         # Make the tables consistent in case the previous cycles was terminated prematurely
 
         # There should not be tasks with subscription status new
@@ -774,7 +808,9 @@ class RLFSM(object):
                     else:
                         query.forget_deletion_status(task_id)
 
-                    self.db.query(delete_task, task_id)
+                    if not self._read_only:
+                        self.db.query(delete_task, task_id)
+
                     continue
 
                 subscription_id, lfn, size, create_time = task_data[:4]
@@ -809,7 +845,10 @@ class RLFSM(object):
                 else:
                     LOG.debug('Archiving deletion of %s at %s (exitcode %d)', lfn, site_name, exitcode)
 
-                history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
+                if self._read_only:
+                    history_id = 0
+                else:
+                    history_id = self.history_db.db.insert_get_id(history_table_name, history_fields, values)
 
                 if optype == 'transfer':
                     query.write_transfer_history(self.history_db, task_id, history_id)
@@ -867,7 +906,9 @@ class RLFSM(object):
                     break
 
             if batch_complete:
-                self.db.query(delete_batch, batch_id)
+                if not self._read_only:
+                    self.db.query(delete_batch, batch_id)
+
                 if optype == 'transfer':
                     query.forget_transfer_batch(batch_id)
                 else:
@@ -929,7 +970,8 @@ class RLFSM(object):
             if source is None:
                 # If both disk and tape failed irrecoveably, the subscription must be placed in held queue in get_subscriptions.
                 # Reaching this line means something is wrong.
-                LOG.warning('Could not find a source for transfer of %s to %s from %d disk and %d tape candidates.', file_name, site_name, len(subscription.disk_sources), len(subscription.tape_sources))
+                LOG.warning('Could not find a source for transfer of %s to %s from %d disk and %d tape candidates.',
+                    subscription.file.lfn, subscription.destination.name, len(subscription.disk_sources), len(subscription.tape_sources))
                 continue
             
             tasks.append(RLFSM.TransferTask(subscription, source))

@@ -9,6 +9,7 @@ from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'File operations manager.')
 parser.add_argument('--config', '-c', metavar = 'CONFIG', dest = 'config', help = 'Configuration JSON.')
+parser.add_argument('--dry-run', '-T', action = 'store_true', dest = 'dry_run', help = 'Dry run.')
 
 args = parser.parse_args()
 sys.argv = []
@@ -32,7 +33,7 @@ LOG.info('Instantiating RLFSM.')
 
 rlfsm = RLFSM(config.get('rlfsm', None))
 
-if not authorized:
+if not authorized or args.dry_run:
     rlfsm.set_read_only()
 
 LOG.info('Checking and executing new file transfer subscriptions.')

@@ -783,9 +783,9 @@ class MySQLInventoryStore(InventoryStore):
         # not COUNT(*) - list can have holes
         maxid = self._mysql.query('SELECT MAX(`id`) FROM `software_versions`')[0]
         if maxid is None: # None: no entries in the table
-            Dataset._software_versions_byid = [Dataset.SoftwareVersion(None, vid)]
+            Dataset._software_versions_byid = [Dataset.SoftwareVersion(None, 0)]
         else:
-            Dataset._software_versions_byid = [Dataset.SoftwareVersion(None, vid)] * (maxid + 1)
+            Dataset._software_versions_byid = [Dataset.SoftwareVersion(None, 0)] * (maxid + 1)
 
         Dataset._software_versions_byvalue = {}
 

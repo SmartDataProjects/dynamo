@@ -356,12 +356,13 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         for job_id, file_id in result:
             by_job[job_id].append(file_id)
-        
-        for job_id, ids in by_job.iteritems():
-            try:
-                self._ftscall('cancel', job_id, file_ids = ids)
-            except:
-                LOG.error('Failed to cancel FTS job %s', job_id)
+
+        if not self._read_only:
+            for job_id, ids in by_job.iteritems():
+                try:
+                    self._ftscall('cancel', job_id, file_ids = ids)
+                except:
+                    LOG.error('Failed to cancel FTS job %s', job_id)
     
     def _get_status(self, batch_id, optype):
         if optype == 'transfer' or optype == 'staging':

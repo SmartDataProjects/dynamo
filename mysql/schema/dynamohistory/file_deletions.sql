@@ -11,5 +11,7 @@ CREATE TABLE `file_deletions` (
   `completed` datetime NOT NULL,
   PRIMARY KEY (`id`),
   KEY `deletion` (`file_id`,`site_id`),
-  KEY `batch` (`batch_id`)
+  KEY `batch` (`batch_id`),
+  KEY `created` (`created`),
+  KEY `started` (`started`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

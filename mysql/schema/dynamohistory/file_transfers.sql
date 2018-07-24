@@ -12,5 +12,7 @@ CREATE TABLE `file_transfers` (
   `completed` datetime NOT NULL,
   PRIMARY KEY (`id`),
   KEY `transfer` (`file_id`,`source_id`,`destination_id`),
-  KEY `batch` (`batch_id`)
+  KEY `batch` (`batch_id`),
+  KEY `created` (`created`),
+  KEY `started` (`started`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
