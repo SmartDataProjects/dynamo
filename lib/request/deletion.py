@@ -55,7 +55,8 @@ class DeletionRequestManager(RequestManager):
             for rid, item in self.registry.db.xquery(sql):
                 all_requests[rid].items.append(item)
 
-        self.registry.db.drop_tmp_table('ids_tmp')
+        if items is not None or sites is not None:
+            self.registry.db.drop_tmp_table('ids_tmp')
 
         if (request_id is not None and len(all_requests) != 0) or \
            (statuses is not None and (set(statuses) < set(['new', 'activated']) or set(statuses) < set([Request.ST_NEW, Request.ST_ACTIVATED]))):
@@ -101,7 +102,8 @@ class DeletionRequestManager(RequestManager):
 
         all_requests.update(archived_requests)
 
-        self.history.db.drop_tmp_table('ids_tmp')
+        if items is not None or sites is not None:
+            self.history.db.drop_tmp_table('ids_tmp')
 
         return all_requests
 
