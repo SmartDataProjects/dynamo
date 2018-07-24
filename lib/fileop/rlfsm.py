@@ -208,6 +208,13 @@ class RLFSM(object):
 
         LOG.debug('Organizing %d transfers into batches.', len(tasks))
 
+        by_dest = {}
+        for task in tasks:
+            try:
+                by_dest[task.subscription.destination].append(task)
+            except KeyError:
+                by_dest[task.subscription.destination] = [task]
+
         def issue_tasks(op, my_tasks):
             if len(my_tasks) == 0:
                 return 0, 0, 0
@@ -240,14 +247,9 @@ class RLFSM(object):
                 continue
 
             my_tasks = []
-            it = 0
-            while it < len(tasks):
-                task = tasks[it]
-                if condition.match(task.subscription.destination):
-                    my_tasks.append(task)
-                    tasks.pop(it)
-                else:
-                    it += 1
+            for site in by_dest.keys():
+                if condition.match(site):
+                    my_tasks.extend(by_dest.pop(site))
 
             nb, ns, nf = issue_tasks(op, my_tasks)
             num_batches += nb
@@ -259,7 +261,8 @@ class RLFSM(object):
 
         else:
             # default condition
-            nb, ns, nf = issue_tasks(default_op, tasks)
+            my_tasks = sum(by_dest.itervalues(), [])
+            nb, ns, nf = issue_tasks(default_op, my_tasks)
             num_batches += nb
             num_success += ns
             num_failure += nf
@@ -307,6 +310,13 @@ class RLFSM(object):
 
         tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
 
+        by_site = {}
+        for task in tasks:
+            try:
+                by_site[task.desubscription.site].append(task)
+            except KeyError:
+                by_site[task.desubscription.site] = [task]
+
         LOG.debug('Organizing the deletions into batches.')
 
         def issue_tasks(op, my_tasks):
@@ -321,8 +331,9 @@ class RLFSM(object):
             ns = 0
             nf = 0
     
-            LOG.debug('Issuing deletion tasks.')    
+            LOG.debug('Issuing deletion tasks for %d batches.', len(batches))    
             for batch_tasks in batches:
+                LOG.debug('Batch with %d tasks.', len(batch_tasks))
                 s, f = self._start_deletions(op, batch_tasks)
                 ns += s
                 nf += f
@@ -341,14 +352,9 @@ class RLFSM(object):
                 continue
 
             my_tasks = []
-            it = 0
-            while it < len(tasks):
-                task = tasks[it]
-                if condition.match(task.desubscription.site):
-                    my_tasks.append(task)
-                    tasks.pop(it)
-                else:
-                    it += 1
+            for site in by_site.keys():
+                if condition.match(site):
+                    my_tasks.extend(by_site.pop(site))
 
             nb, ns, nf = issue_tasks(op, my_tasks)
             num_batches += nb;
@@ -360,6 +366,7 @@ class RLFSM(object):
 
         else:
             # default condition
+            my_tasks = sum(by_site.itervalues(), [])
             nb, ns, nf = issue_tasks(default_op, my_tasks)
             num_batches += nb;
             num_success += ns;
