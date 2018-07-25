@@ -170,6 +170,8 @@ class WebServer(object):
             # cgitb scans all exception attributes with dir(exc) + getattr(exc, attr) which results in accessing
             # exception.message, a deprecated attribute.
             warnings.filterwarnings('ignore', 'BaseException.message.*', DeprecationWarning, '.*cgitb.*', 173)
+
+            load_modules()
     
             # Set up module defaults
             # Using the same piece of code as serverutils, but only picking up fullauth or all configurations

@@ -21,5 +21,3 @@ def load_modules():
         if hasattr(imp, 'registry_alias'):
             for alias, mappings in imp.registry_alias.iteritems():
                 modules['registry'][alias] = mappings
-
-load_modules()

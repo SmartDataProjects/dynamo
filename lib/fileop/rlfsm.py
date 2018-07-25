@@ -559,10 +559,14 @@ class RLFSM(object):
                             # this site may have been deleted in this process
                             continue
 
-                        if source not in failed_sources:
-                            failed_sources[source] = [exitcode]
-                        else:
+                        try:
                             failed_sources[source].append(exitcode)
+                        except KeyError:
+                            if source not in disk_sources and source not in tape_sources:
+                                # this is not a source site any more
+                                continue
+
+                            failed_sources[source] = [exitcode]
     
                     if len(failed_sources) == len(disk_sources) + len(tape_sources):
                         # transfers from all sites failed at least once
@@ -940,9 +944,12 @@ class RLFSM(object):
                 if failed_sources is None:
                     return None
 
-                # we've tried all disk sites. Did any of them fail with a recoverable error?
+                # we've tried all sites. Did any of them fail with a recoverable error?
                 sites_to_retry = []
                 for site, codes in failed_sources.iteritems():
+                    if site not in sources:
+                        continue
+
                     if codes[-1] not in irrecoverable_errors:
                         sites_to_retry.append(site)
 
