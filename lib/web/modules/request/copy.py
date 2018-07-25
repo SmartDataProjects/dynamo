@@ -1,7 +1,7 @@
 import time
 import logging
 
-from dynamo.web.exceptions import InvalidRequest
+from dynamo.web.exceptions import InvalidRequest, MissingParameter
 from dynamo.web.modules._base import WebModule
 from dynamo.web.modules.request.mixin import ParseInputMixin
 from dynamo.request.copy import CopyRequestManager
@@ -54,6 +54,16 @@ class MakeCopyRequest(CopyRequestBase):
                     raise InvalidRequest('Request %d cannot be updated any more' % request_id)
 
             else:
+                # create a new request
+                if 'item' not in self.params:
+                    raise MissingParameter('item')
+
+                if 'site' not in self.params:
+                    if len(self.default_sites) == 0:
+                        raise MissingParameter('site')
+                    else:
+                        self.params['site'] = list(self.default_sites)
+
                 constraints = self.make_constraints(by_id = False)
                 constraints['statuses'] = [Request.ST_NEW, Request.ST_ACTIVATED]
                 existing_requests = self.manager.get_requests(**constraints)
@@ -66,22 +76,12 @@ class MakeCopyRequest(CopyRequestBase):
                         existing = existing_requests[request_id]
 
             if existing is None:
-                # create a new request
-                if 'item' not in self.params:
-                    raise MissingParameter('item')
-        
                 if 'n' not in self.params:
                     self.params['n'] = 1
         
                 if 'group' not in self.params:
                     self.params['group'] = self.default_group
         
-                if 'site' not in self.params:
-                    if len(self.default_sites) == 0:
-                        raise MissingParameter('site')
-                    else:
-                        self.params['site'] = list(self.default_sites)
-
                 request = self.manager.create_request(caller, self.params['item'], self.params['site'], self.params['site_orig'], self.params['group'], self.params['n'])
 
             else:
