@@ -72,7 +72,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             for file_info in job_info['files']:
                 if file_info['file_state'] in file_states:
                     num_pending += 1
-                    if num_pending == self.max_pending_transfers:
+                    if num_pending == self.max_pending_transfers + 1:
                         # don't need to query more
                         return num_pending
 
@@ -92,7 +92,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             for file_info in job_info['dm']:
                 if file_info['file_state'] in file_states:
                     num_pending += 1
-                    if num_pending == self.max_pending_deletions:
+                    if num_pending == self.max_pending_deletions + 1:
                         # don't need to query more
                         return num_pending
 
