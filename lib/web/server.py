@@ -432,18 +432,28 @@ class WebServer(object):
 
                 post_data = environ['wsgi.input'].read(content_length)
 
-                if content_type == 'application/json':
-                    try:
-                        provider.input_data = json.loads(post_data)
-                    except:
+                # Even though our default content type is URL form, we check if this is a JSON
+                try:
+                    json_data = json.loads(post_data)
+                except:
+                    if content_type == 'application/json':
                         self.code = 400
                         self.message = 'Could not parse input.'
                         return
-
+                else:
+                    content_type = 'application/json'
+                    provider.input_data = json_data
                     unicode2str(provider.input_data)
 
-                elif content_type == 'application/x-www-form-urlencoded':
-                    post_request = parse_qs(post_data)
+                if content_type == 'application/x-www-form-urlencoded':
+                    try:
+                        post_request = parse_qs(post_data)
+                    except:
+                        self.code = 400
+                        self.message = 'Could not parse input.'
+                elif content_type != 'application/json':
+                    self.code = 400
+                    self.message = 'Unknown Content-Type %s.' % content_type
 
             get_request = parse_qs(environ['QUERY_STRING'])
 
