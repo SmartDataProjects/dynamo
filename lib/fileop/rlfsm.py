@@ -187,6 +187,8 @@ class RLFSM(object):
         @param inventory   The inventory.
         """
 
+        self._cleanup()
+
         LOG.debug('Clearing cancelled transfer tasks.')
         task_ids = self._get_cancelled_tasks('transfer')
         for _, op in self.transfer_operations:
@@ -199,6 +201,17 @@ class RLFSM(object):
         self._update_status('transfer')
 
         if self.cycle_stop.is_set():
+            return
+
+        pending_count = {}
+        n_available = 0
+        for _, op in self.transfer_operations:
+            pending_count[op] = op.num_pending_transfers()
+            if pending_count[op] <= op.max_pending_transfers:
+                n_available += 1
+
+        if n_available == 0:
+            LOG.info('No transfer operators are available at the moment.')
             return
 
         LOG.debug('Collecting new transfer subscriptions.')
@@ -229,20 +242,27 @@ class RLFSM(object):
             batches = op.form_batches(my_tasks)
     
             if self.cycle_stop.is_set():
-                return
+                return 0, 0, 0
 
+            nb = 0
             ns = 0
             nf = 0
    
             LOG.debug('Issuing transfer tasks.')
             for batch_tasks in batches:
                 s, f = self._start_transfers(op, batch_tasks)
+                nb += 1
                 ns += s
                 nf += f
+
+                pending_count[op] += s
+                if pending_count[op] > op.max_pending_transfers:
+                    break
+
                 if self.cycle_stop.is_set():
                     break
 
-            return len(batches), ns, nf
+            return nb, ns, nf
 
         num_success = 0
         num_failure = 0
@@ -252,11 +272,14 @@ class RLFSM(object):
             if condition is None:
                 default_op = op
                 continue
-
+            
             my_tasks = []
             for site in by_dest.keys():
                 if condition.match(site):
                     my_tasks.extend(by_dest.pop(site))
+
+            if pending_count[op] > op.max_pending_transfers:
+                continue
 
             nb, ns, nf = issue_tasks(op, my_tasks)
             num_batches += nb
@@ -268,11 +291,12 @@ class RLFSM(object):
 
         else:
             # default condition
-            my_tasks = sum(by_dest.itervalues(), [])
-            nb, ns, nf = issue_tasks(default_op, my_tasks)
-            num_batches += nb
-            num_success += ns
-            num_failure += nf
+            if pending_count[default_op] <= default_op.max_pending_transfers:
+                my_tasks = sum(by_dest.itervalues(), [])
+                nb, ns, nf = issue_tasks(default_op, my_tasks)
+                num_batches += nb
+                num_success += ns
+                num_failure += nf
 
         if num_success + num_failure != 0:
             LOG.info('Issued transfer tasks: %d success, %d failure. %d batches.', num_success, num_failure, num_batches)
@@ -292,6 +316,8 @@ class RLFSM(object):
         @param inventory   The inventory.
         """
 
+        self._cleanup()
+
         LOG.debug('Clearing cancelled deletion tasks.')
         task_ids = self._get_cancelled_tasks('deletion')
         for _, op in self.deletion_operations:
@@ -307,6 +333,17 @@ class RLFSM(object):
         self._set_dirclean_candidates(completed, inventory)
 
         if self.cycle_stop.is_set():
+            return
+
+        pending_count = {}
+        n_available = 0
+        for _, op in self.deletion_operations:
+            pending_count[op] = op.num_pending_deletions()
+            if pending_count[op] <= op.max_pending_deletions:
+                n_available += 1
+
+        if n_available == 0:
+            LOG.info('No deletion operators are available at the moment.')
             return
 
         LOG.debug('Collecting new deletion subscriptions.')
@@ -333,8 +370,9 @@ class RLFSM(object):
             batches = op.form_batches(my_tasks)
     
             if self.cycle_stop.is_set():
-                return
+                return 0, 0, 0
 
+            nb = 0
             ns = 0
             nf = 0
     
@@ -342,12 +380,18 @@ class RLFSM(object):
             for batch_tasks in batches:
                 LOG.debug('Batch with %d tasks.', len(batch_tasks))
                 s, f = self._start_deletions(op, batch_tasks)
+                nb += 1
                 ns += s
                 nf += f
+
+                pending_count[op] += s
+                if pending_count[op] > op.max_pending_deletions:
+                    break
+
                 if self.cycle_stop.is_set():
                     break
 
-            return len(batches), ns, nf
+            return nb, ns, nf
 
         num_success = 0
         num_failure = 0
@@ -363,21 +407,25 @@ class RLFSM(object):
                 if condition.match(site):
                     my_tasks.extend(by_site.pop(site))
 
+            if pending_count[op] > op.max_pending_deletions:
+                continue
+
             nb, ns, nf = issue_tasks(op, my_tasks)
             num_batches += nb;
             num_success += ns;
             num_failure += nf;
 
             if self.cycle_stop.is_set():
-                return
+                break
 
         else:
             # default condition
-            my_tasks = sum(by_site.itervalues(), [])
-            nb, ns, nf = issue_tasks(default_op, my_tasks)
-            num_batches += nb;
-            num_success += ns;
-            num_failure += nf;
+            if pending_count[default_op] <= default_op.max_pending_deletions:
+                my_tasks = sum(by_site.itervalues(), [])
+                nb, ns, nf = issue_tasks(default_op, my_tasks)
+                num_batches += nb;
+                num_success += ns;
+                num_failure += nf;
 
         if num_success + num_failure != 0:
             LOG.info('Issued deletion tasks: %d success, %d failure. %d batches.', num_success, num_failure, num_batches)
@@ -621,8 +669,6 @@ class RLFSM(object):
             self.db.delete_many('file_subscriptions', 'id', done_ids)
 
     def _run_cycle(self, inventory):
-        self._cleanup()
-
         while True:
             if self.cycle_stop.is_set():
                 break
