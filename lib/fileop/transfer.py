@@ -10,6 +10,9 @@ class FileTransferOperation(FileOperation):
     def __init__(self, config):
         FileOperation.__init__(self, config)
 
+        # Throttling threshold
+        self.max_pending_transfers = config.get('max_pending_transfers', 0xffffffff)
+
         # Checksum algorithm to use (optional)
         self.checksum_algorithm = config.get('checksum_algorithm', '')
         if self.checksum_algorithm:
@@ -17,6 +20,12 @@ class FileTransferOperation(FileOperation):
                 self.checksum_index = File.checksum_algorithms.index(self.checksum_algorithm)
             except ValueError:
                 raise ConfigurationError('Checksum algorithm %s not supported by File object.' % self.checksum_algorithm)
+
+    def num_pending_transfers(self):
+        """
+        Return the number of pending transfers. Can report max_pending_transfers even when there are more.
+        """
+        raise NotImplementedError('num_pending_transfers')
 
     def start_transfers(self, batch_id, batch_tasks):
         """

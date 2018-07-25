@@ -186,6 +186,7 @@ def gfal_exec(method, args, nonerrors = {}, return_value = False):
             exitcode, msg = 0, None
     
         finally:
+            handler.flush()
             log_tmp = stream.getvalue().strip()
 
         # give a nice indent to each line

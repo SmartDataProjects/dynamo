@@ -3,6 +3,7 @@ import re
 import time
 import calendar
 import collections
+import json
 import logging
 import errno
 
@@ -56,6 +57,47 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         self.keep_context = config.get('keep_context', True)
         self._context = None
 
+    def num_pending_transfers(self): #override
+        # Check the number of files in queue
+        # We first thought about counting files with /files, but FTS seems to return only 1000 maximum even when "limit" is set much larger
+        #files = self._ftscallurl('/files?state_in=ACTIVE,SUBMITTED,READY&limit=%d' % self.max_pending_transfers)
+        #return len(files)
+
+        num_pending = 0
+        file_states = ['SUBMITTED', 'READY', 'ACTIVE', 'STAGING', 'STARTED']
+
+        jobs = self._ftscall('list_jobs', state_in = ['SUBMITTED', 'ACTIVE', 'STAGING'])
+        for job in jobs:
+            job_info = self._ftscall('get_job_status', job['job_id'], list_files = True)
+            for file_info in job_info['files']:
+                if file_info['file_state'] in file_states:
+                    num_pending += 1
+                    if num_pending == self.max_pending_transfers:
+                        # don't need to query more
+                        return num_pending
+
+        return num_pending
+
+    def num_pending_deletions(self): #override
+        # See above
+        #files = self._ftscallurl('/files?state_in=ACTIVE,SUBMITTED,READY&limit=%d' % self.max_pending_deletions)
+        #return len(files)
+
+        num_pending = 0
+        file_states = ['SUBMITTED', 'READY', 'ACTIVE']
+
+        jobs = self._ftscall('list_jobs', state_in = ['SUBMITTED', 'ACTIVE'])
+        for job in jobs:
+            job_info = self._ftscall('get_job_status', job['job_id'], list_files = True)
+            for file_info in job_info['dm']:
+                if file_info['file_state'] in file_states:
+                    num_pending += 1
+                    if num_pending == self.max_pending_deletions:
+                        # don't need to query more
+                        return num_pending
+
+        return num_pending
+
     def form_batches(self, tasks): #override
         if len(tasks) == 0:
             return []
@@ -93,8 +135,10 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
             if self.checksum_algorithm:
                 checksum = '%s:%s' % (self.checksum_algorithm, str(sub.file.checksum[self.checksum_index]))
+                verify_checksum = 'target'
             else:
                 checksum = None
+                verify_checksum = False
 
             if task.source.storage_type == Site.TYPE_MSS:
                 LOG.debug('Staging %s at %s', lfn, task.source.name)
@@ -129,7 +173,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         if len(transfers) != 0:
             LOG.debug('Submit new transfer job for %d files', len(transfers))
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target', metadata = self.metadata_string)
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = verify_checksum, metadata = self.metadata_string)
             success = self._submit_job(job, 'transfer', batch_id, dict((pfn, task.id) for pfn, task in t_pfn_to_task.iteritems()))
 
             for transfer in transfers:
@@ -229,7 +273,12 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = filesize))
                 pfn_to_tid[dest_pfn] = task_id
 
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = 'target', metadata = self.metadata_string)
+            if self.checksum_algorithm:
+                verify_checksum = 'target'
+            else:
+                verify_checksum = None
+
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = verify_checksum, metadata = self.metadata_string)
             success = self._submit_job(job, 'transfer', batch_id, pfn_to_tid)
             if success and not self._read_only:
                 self.db.delete_many('fts_staging_queue', 'id', pfn_to_tid.values())
@@ -261,8 +310,16 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return self._forget_batch(task_id, 'deletion')
 
     def _ftscall(self, method, *args, **kwd):
+        return self._do_ftscall(binding = (method, args, kwd))
+
+    def _ftscallurl(self, url):
+        # Call to FTS URLs that don't have python bindings
+        return self._do_ftscall(url = url)
+
+    def _do_ftscall(self, binding = None, url = None):
         if self._context is None:
-            # request_class = Request -> use "requests"-based https call (instead of default PyCURL, which may not be able to handle proxy certificates depending on the cURL installation)
+            # request_class = Request -> use "requests"-based https call (instead of default PyCURL,
+            # which may not be able to handle proxy certificates depending on the cURL installation)
             # verify = False -> do not verify the server certificate
             context = fts3.Context(self.server_url, ucert = self.x509proxy, ukey = self.x509proxy,
                                    request_class = Request, verify = False)
@@ -272,12 +329,21 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         else:
             context = self._context
 
-        LOG.debug('FTS: %s', method)
+        if binding is not None:
+            reqstring = binding[0]
+        else:
+            reqstring = url
+
+        LOG.debug('FTS: %s', reqstring)
 
         wait_time = 1.
         for attempt in xrange(10):
             try:
-                return getattr(fts3, method)(context, *args, **kwd)
+                if binding is not None:
+                    method, args, kwd = binding
+                    return getattr(fts3, method)(context, *args, **kwd)
+                else:
+                    return json.loads(context.get(url))
             except fts_exceptions.ServerError as exc:
                 if str(exc.reason) == '500':
                     # Internal server error - let's try again
@@ -288,8 +354,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             time.sleep(wait_time)
             wait_time *= 1.5
 
-        LOG.error('Failed to communicate with FTS server: %s', method)
-        raise RuntimeError('Failed to communicate with FTS server: %s' % method)
+        LOG.error('Failed to communicate with FTS server: %s', reqstring)
+        raise RuntimeError('Failed to communicate with FTS server: %s' % reqstring)
 
     def _submit_job(self, job, optype, batch_id, pfn_to_tid):
         if self._read_only:

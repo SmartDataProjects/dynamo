@@ -23,6 +23,14 @@ class StandaloneFileOperation(FileTransferOperation, FileTransferQuery, FileDele
 
         self.db = MySQL(config.db_params)
 
+    def num_pending_transfers(self): #override
+        # FOD can throttle itself.
+        return 0
+
+    def num_pending_deletions(self): #override
+        # FOD can throttle itself.
+        return 0
+
     def form_batches(self, tasks): #override
         if len(tasks) == 0:
             return []
