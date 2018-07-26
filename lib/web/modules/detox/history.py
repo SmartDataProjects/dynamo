@@ -368,7 +368,7 @@ class DetoxDatasetSearch(WebDetoxHistory):
                     if dataset_name in ma:
                         decision += ' *'
     
-                    site_datasets.append({'name': dataset_name, 'size': replica_size * 1.e-9, 'decision': decision, 'conditionId': condition_id})
+                    site_datasets.append({'name': dataset_name, 'size': replica_size * 1.e-9, 'decision': decision, 'condition_id': condition_id})
                     if condition_id not in conditions:
                         conditions[condition_id] = condition_text
 
