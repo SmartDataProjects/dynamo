@@ -6,6 +6,7 @@ CREATE TABLE `file_subscriptions` (
   `created` datetime NOT NULL,
   `last_update` datetime DEFAULT NULL,
   `delete` tinyint(1) unsigned NOT NULL,
+  `hold_reason` enum('no_source','all_failed') CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `subscription` (`file_id`,`site_id`,`delete`),
   KEY `delete` (`delete`),

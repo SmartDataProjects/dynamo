@@ -518,7 +518,8 @@ class RLFSM(object):
         _destination_name = ''
         _block_id = -1
 
-        to_hold = []
+        no_source = []
+        all_failed = []
         to_done = []
 
         COPY = 0
@@ -569,35 +570,38 @@ class RLFSM(object):
                     continue
 
                 st = 'cancelled'
-                
+
             if optype == COPY:
+                disk_sources = None
+                tape_sources = None
+                failed_sources = None
+
                 if st not in ('done', 'held', 'cancelled'):
                     if dest_replica.has_file(lfile):
                         LOG.debug('%s already exists at %s', file_name, site_name)
                         to_done.append(sub_id)
-                        continue
 
-                    disk_sources = []
-                    tape_sources = []
-                    for replica in block.replicas:
-                        if replica.site == destination or replica.site.status != Site.STAT_READY:
-                            continue
-        
-                        if replica.file_ids is None or file_id in replica.file_ids:
-                            if replica.site.storage_type == Site.TYPE_DISK:
-                                disk_sources.append(replica.site)
-                            elif replica.site.storage_type == Site.TYPE_MSS:
-                                tape_sources.append(replica.site)
-        
-                    if len(disk_sources) + len(tape_sources) == 0:
-                        LOG.warning('Transfer of %s to %s has no source.', file_name, site_name)
-                        to_hold.append(sub_id)
-                        # don't add this subscritpion to subscriptions list
-                        continue
-                else:
-                    disk_sources = None
-                    tape_sources = None
-    
+                        st = 'done'
+
+                    else:
+                        disk_sources = []
+                        tape_sources = []
+                        for replica in block.replicas:
+                            if replica.site == destination or replica.site.status != Site.STAT_READY:
+                                continue
+            
+                            if replica.file_ids is None or file_id in replica.file_ids:
+                                if replica.site.storage_type == Site.TYPE_DISK:
+                                    disk_sources.append(replica.site)
+                                elif replica.site.storage_type == Site.TYPE_MSS:
+                                    tape_sources.append(replica.site)
+            
+                        if len(disk_sources) + len(tape_sources) == 0:
+                            LOG.warning('Transfer of %s to %s has no source.', file_name, site_name)
+                            no_source.append(sub_id)
+
+                            st = 'held'
+
                 if st == 'retry':
                     failed_sources = {}
                     for source_name, exitcode in self.db.query(get_tried_sites, sub_id):
@@ -623,28 +627,41 @@ class RLFSM(object):
                                 # This site failed for a recoverable reason
                                 break
                         else:
-                            # last failure from all sites due to missing file at source
-                            to_hold.append(sub_id)
-                            # don't add this subscritpion to subscriptions list
-                            continue
-                else:
-                    failed_sources = None
-    
-                subscription = RLFSM.Subscription(sub_id, st, lfile, destination, disk_sources, tape_sources, failed_sources)
-                subscriptions.append(subscription)
+                            # last failure from all sites due to irrecoverable errors
+                            LOG.warning('Transfer of %s to %s failed from all sites.', file_name, site_name)
+                            all_failed.append(sub_id)
+
+                            st = 'held'
+
+                # st value may have changed - filter again
+                if status is None or st in status:
+                    subscription = RLFSM.Subscription(sub_id, st, lfile, destination, disk_sources, tape_sources, failed_sources)
+                    subscriptions.append(subscription)
 
             elif optype == DELETE:
                 if st not in ('done', 'held', 'cancelled') and not dest_replica.has_file(lfile):
                     LOG.debug('%s is already gone from %s', file_name, site_name)
                     to_done.append(sub_id)
-                    continue
 
-                desubscription = RLFSM.Desubscription(sub_id, st, lfile, destination)
-                subscriptions.append(desubscription)
+                    st = 'done'
+
+                if status is None or st in status:
+                    desubscription = RLFSM.Desubscription(sub_id, st, lfile, destination)
+                    subscriptions.append(desubscription)
+
+        if len(to_done) + len(no_source) + len(all_failed) != 0:
+            msg = 'Subscriptions terminated directly: %d done' % len(to_done)
+            if len(no_source) != 0:
+                msg += ', %d held with reason "no_source"' % len(no_source)
+            if len(all_failed) != 0:
+                msg += ', %d held with reason "all_failed"' % len(all_failed)
+
+            LOG.info(msg)
 
         if not self._read_only:
             self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'done\', `last_update` = NOW()', 'id', to_done)
-            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `last_update` = NOW()', 'id', to_hold)
+            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `hold_reason` = \'no_source\', `last_update` = NOW()', 'id', no_source)
+            self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'held\', `hold_reason` = \'all_failed\', `last_update` = NOW()', 'id', all_failed)
 
             # Clean up subscriptions for deleted files / sites
             sql = 'DELETE FROM u USING `file_subscriptions` AS u'
@@ -721,7 +738,19 @@ class RLFSM(object):
             for _, op in self.deletion_operations:
                 op.cleanup()
 
+        # Reset inbatch subscriptions with no task to new state
         sql = 'UPDATE `file_subscriptions` SET `status` = \'new\' WHERE `status` = \'inbatch\' AND `id` NOT IN (SELECT `subscription_id` FROM `transfer_tasks`) AND `id` NOT IN (SELECT `subscription_id` FROM `deletion_tasks`)'
+        self.db.query(sql)
+
+        # Delete canceled subscriptions with no task (ones with task need to be archived in update_status)
+        sql = 'DELETE FROM u USING `file_subscriptions` AS u LEFT JOIN `transfer_tasks` AS t ON t.`subscription_id` = u.`id` WHERE u.`delete` = 0 AND u.`status` = \'cancelled\' AND t.`id` IS NULL'
+        self.db.query(sql)
+
+        sql = 'DELETE FROM u USING `file_subscriptions` AS u LEFT JOIN `deletion_tasks` AS t ON t.`subscription_id` = u.`id` WHERE u.`delete` = 1 AND u.`status` = \'cancelled\' AND t.`id` IS NULL'
+        self.db.query(sql)
+
+        # Delete failed transfers with no subscription
+        sql = 'DELETE FROM f USING `failed_transfers` AS f LEFT JOIN `file_subscriptions` AS u ON u.`id` = f.`subscription_id` WHERE u.`id` IS NULL'
         self.db.query(sql)
 
     def _subscribe(self, site, lfile, delete, created = None):
