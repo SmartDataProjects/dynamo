@@ -124,6 +124,8 @@ class RLFSM(object):
         else:
             self.deletion_queries = self.deletion_operations
 
+        self.sites_in_downtime = []
+
         # Cycle thread
         self.main_cycle = None
         self.cycle_stop = threading.Event()
@@ -203,6 +205,21 @@ class RLFSM(object):
         if self.cycle_stop.is_set():
             return
 
+        LOG.debug('Filtering out transfers to unavailable destinations.')
+        if not self._read_only:
+            for site in self.sites_in_downtime:
+                self.db.query('UPDATE `file_subscriptions` SET `status` = \'held\', `hold_reason` = \'site_unavailable\' WHERE `site_id` = (SELECT `id` FROM `sites` WHERE `name` = %s)', site.name)
+
+        if self.cycle_stop.is_set():
+            return
+
+        LOG.debug('Collecting new transfer subscriptions.')
+        subscriptions = self.get_subscriptions(inventory, op = 'transfer', status = ['new', 'retry'])
+
+        if self.cycle_stop.is_set():
+            return
+
+        # We check the operators here because get_subscriptions does some state update and we want that to happen
         pending_count = {}
         n_available = 0
         for _, op in self.transfer_operations:
@@ -212,12 +229,6 @@ class RLFSM(object):
 
         if n_available == 0:
             LOG.info('No transfer operators are available at the moment.')
-            return
-
-        LOG.debug('Collecting new transfer subscriptions.')
-        subscriptions = self.get_subscriptions(inventory, op = 'transfer', status = ['new', 'retry'])
-
-        if self.cycle_stop.is_set():
             return
 
         LOG.debug('Identifying source sites for %d transfers.', len(subscriptions))
@@ -335,6 +346,21 @@ class RLFSM(object):
         if self.cycle_stop.is_set():
             return
 
+        LOG.debug('Filtering out transfers to unavailable destinations.')
+        if not self._read_only:
+            for site in self.sites_in_downtime:
+                self.db.query('UPDATE `file_subscriptions` SET `status` = \'held\', `hold_reason` = \'site_unavailable\' WHERE `site_id` = (SELECT `id` FROM `sites` WHERE `name` = %s)', site.name)
+
+        if self.cycle_stop.is_set():
+            return
+
+        LOG.debug('Collecting new deletion subscriptions.')
+        desubscriptions = self.get_subscriptions(inventory, op = 'deletion', status = ['new', 'retry'])
+
+        if self.cycle_stop.is_set():
+            return
+
+        # See transfer_files
         pending_count = {}
         n_available = 0
         for _, op in self.deletion_operations:
@@ -344,12 +370,6 @@ class RLFSM(object):
 
         if n_available == 0:
             LOG.info('No deletion operators are available at the moment.')
-            return
-
-        LOG.debug('Collecting new deletion subscriptions.')
-        desubscriptions = self.get_subscriptions(inventory, op = 'deletion', status = ['new', 'retry'])
-
-        if self.cycle_stop.is_set():
             return
 
         tasks = [RLFSM.DeletionTask(d) for d in desubscriptions]
