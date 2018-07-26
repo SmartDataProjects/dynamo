@@ -532,7 +532,7 @@ class RLFSM(object):
 
         subscriptions = []
 
-        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`block_id`, f.`id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
+        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`block_id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
         get_all += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         get_all += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
 
@@ -564,7 +564,7 @@ class RLFSM(object):
         DELETE = 1
 
         for row in self.db.query(get_all):
-            sub_id, st, optype, block_id, file_id, file_name, site_name = row
+            sub_id, st, optype, block_id, file_name, site_name = row
 
             if site_name != _destination_name:
                 _destination_name = site_name
@@ -628,7 +628,7 @@ class RLFSM(object):
                             if replica.site == destination or replica.site.status != Site.STAT_READY:
                                 continue
             
-                            if replica.file_ids is None or file_id in replica.file_ids:
+                            if replica.has_file(lfile):
                                 if replica.site.storage_type == Site.TYPE_DISK:
                                     disk_sources.append(replica.site)
                                 elif replica.site.storage_type == Site.TYPE_MSS:

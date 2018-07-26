@@ -278,15 +278,14 @@ class BlockReplica(object):
             return result
 
     def has_file(self, lfile):
+        if lfile.block is not self.block:
+            return False
+
         if self.file_ids is None:
             return True
 
         if lfile.id == 0:
-            files = self.files()
-            if lfile in files:
-                return True
-
-            for f in files:
+            for f in self.files():
                 if f.lfn == lfile.lfn:
                     return True
 
