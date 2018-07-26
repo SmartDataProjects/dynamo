@@ -83,7 +83,7 @@ class ReplicaInfoSource(object):
         """
         raise NotImplementedError('get_replicas')
 
-    def get_updated_replicas(self, updated_since):
+    def get_updated_replicas(self, updated_since, inventory):
         """
         Return a list of unlinked BlockReplicas updated since the given timestamp.
         """

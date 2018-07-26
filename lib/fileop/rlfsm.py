@@ -472,6 +472,24 @@ class RLFSM(object):
 
         self._subscribe(site, lfile, 1)
 
+    def cancel_subscription(self, site = None, lfile = None, sub_id = None):
+        sql = 'UPDATE `file_subscriptions` SET `status` = \'cancelled\' WHERE '
+
+        if sub_id is None:
+            if site is None or lfile is None:
+                raise OperationalError('site and lfile must be non-None.')
+
+            sql += '`file_id` = %s AND `site_id` = %s'
+            if not self._read_only:
+                self.db.query(sql, lfile.id, site.id)
+        else:
+            sql += '`id` = %s'
+            if not self._read_only:
+                self.db.query(sql, sub_id)
+
+    def cancel_desubscription(self, site = None, lfile = None, sub_id = None):
+        self.cancel_subscription(site = site, lfile = lfile, sub_id = sub_id)
+
     def convert_pre_subscriptions(self, inventory):
         sql = 'SELECT `id`, `file_name`, `site_name`, UNIX_TIMESTAMP(`created`), `delete` FROM `file_pre_subscriptions`'
 
