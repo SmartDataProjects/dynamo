@@ -650,8 +650,13 @@ class RLFSM(object):
                     subscriptions.append(desubscription)
 
         if len(to_done) + len(no_source) + len(all_failed) != 0:
-            LOG.info('Subscriptions terminated directly: %d done, %d held with reason "no_source", %d held with reason "all_failed"',
-                     len(to_done), len(no_source), len(all_failed))
+            msg = 'Subscriptions terminated directly: %d done' % len(to_done)
+            if len(no_source) != 0:
+                msg += ', %d held with reason "no_source"' % len(no_source)
+            if len(all_failed) != 0:
+                msg += ', %d held with reason "all_failed"' % len(all_failed)
+
+            LOG.info(msg)
 
         if not self._read_only:
             self.db.execute_many('UPDATE `file_subscriptions` SET `status` = \'done\', `last_update` = NOW()', 'id', to_done)
