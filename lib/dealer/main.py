@@ -287,11 +287,17 @@ class Dealer(object):
             'Not allowed': 0,
             'Destination is full': 0,
             'Invalid request': 0,
-            'No destination available': 0
+            'No destination available': 0,
+            'Source files missing': 0
         }
 
         # now go through all requests
         for request, plugin in requests:
+            # make sure we have all blocks complete somewhere
+            if not self.policy.validate_source(request):
+                reject_stats['Source files missing'] += 1
+                continue
+
             if request.destination is None:
                 # Randomly choose the destination site with probability proportional to free space
                 # request.destination will be set in the function

@@ -2,7 +2,7 @@ import logging
 import fnmatch
 import random
 
-from dynamo.dataformat import Site
+from dynamo.dataformat import Site, BlockReplica
 
 LOG = logging.getLogger(__name__)
 
@@ -120,6 +120,84 @@ class DealerPolicy(object):
             else:
                 if not rule.dataset_allowed(request.dataset, site):
                     return False
+
+        return True
+
+    def validate_source(self, request):
+        if request.blocks is not None:
+            for block in request.blocks:
+                for replica in block.replicas:
+                    if replica.is_complete():
+                        break
+                else:
+                    # no block complete
+                    if BlockReplica._use_file_ids:
+                        # can determine completion at file level
+                        block_files = set(f.id for f in block.files)
+                        replica_files = set()
+                        for replica in block.replicas:
+                            if replica.file_ids is None:
+                                # can't happen but hey
+                                replica_files = block_files
+                                break
+                            else:
+                                replica_files.update(replica.file_ids)
+
+                        if block_files != replica_files:
+                            # some files missing
+                            return False
+                    else:
+                        return False
+
+        elif request.block is not None:
+            for replica in request.block.replicas:
+                if replica.is_complete():
+                    break
+            else:
+                # no block complete
+                if BlockReplica._use_file_ids:
+                    # can determine completion at file level
+                    block_files = set(f.id for f in request.block.files)
+                    replica_files = set()
+                    for replica in request.block.replicas:
+                        if replica.file_ids is None:
+                            # can't happen but hey
+                            replica_files = block_files
+                            break
+                        else:
+                            replica_files.update(replica.file_ids)
+
+                    if block_files != replica_files:
+                        # some files missing
+                        return False
+                else:
+                    return False
+
+        else:
+            replica_blocks = set()
+            for replica in request.dataset.replicas:
+                if replica.is_complete():
+                    return True
+
+                for block_replica in replica.block_replicas:
+                    if block_replica.is_complete():
+                        replica_blocks.add(block_replica.block)
+
+            if request.dataset.blocks == replica_blocks:
+                return True
+
+            if BlockReplica._use_file_ids:
+                # some blocks missing - go to file level
+                dataset_files = set(f.id for f in request.dataset.files)
+                replica_files = set()
+                for replica in request.dataset.replicas:
+                    for block_replica in replica.block_replicas:
+                        replica_files.update(f.id for f in block_replica.files())
+    
+                if dataset_files != replica_files:
+                    return False
+            else:
+                return False
 
         return True
 
