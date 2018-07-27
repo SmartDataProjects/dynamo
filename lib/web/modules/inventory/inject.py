@@ -302,12 +302,12 @@ class InjectDataBase(WebModule):
     
                 block._files = set()
 
+                # For growing dataset replicas, we automatically create new block replicas
+                # All new files will be subscribed to block replicas that don't have them yet
                 for replica in dataset.replicas:
                     if replica.growing:
-                        # For growing replicas, we automatically create new block replicas
-                        # All new files will be subscribed to block replicas that don't have them yet
-                        blockreplica = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0}
-                        self._make_blockreplicas([blockreplica], replica, inventory, counts)
+                        block_replica_data = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0}
+                        self._make_blockreplicas([block_replica_data], replica, inventory, counts)
 
                 num_blocks += 1
 
@@ -367,13 +367,8 @@ class InjectDataBase(WebModule):
             except TypeError as exc:
                 raise IllFormedRequest('file', str(obj), hint = str(exc))
 
-            if len(block.replicas) != 0:
-                # when adding a file to a block with replicas, we need to specify where the file can be found
-                # otherwise subscriptions made for other replicas will never complete
-                try:
-                    site_name = obj['site']
-                except KeyError:
-                    raise MissingParameter('site', context = 'file ' + str(obj))
+            if 'site' in obj:
+                site_name = obj['site']
 
                 try:
                     block_replica = block_replicas[site_name]
@@ -385,18 +380,28 @@ class InjectDataBase(WebModule):
                     
                     block_replica = block.find_replica(site)
                     if block_replica is None:
-                        raise InvalidRequest('Block %s does not have a replica at %s' % (block.full_name(), site_name))
+                        # replica doesn't exist yet; create one here
+
+                        block_replica_data = {'block': block.real_name(), 'site': site.name, 'group': None, 'size': 0}
+
+                        dataset_replica = block.dataset.find_replica(site)
+                        if dataset_replica is None:
+                            dataset_replica_data = {'dataset': block.dataset.name, 'site': site.name, 'blockreplicas': [block_replica_data], 'growing': False}
+                            self._make_datasetreplicas(dataset_replica_data, inventory, counts)
+                        else:
+                            self._make_blockreplicas([block_replica_data], dataset_replica, inventory, counts)
+
+                        block_replica = block.find_replica(site)
 
                     block_replicas[site_name] = block_replica
 
-                block_current_files = []
-                for lfile in block.files:
-                    if lfile.id == 0:
-                        block_current_files.append(lfile.lfn)
-                    else:
-                        block_current_files.append(lfile.id)
+            else:
+                if len(block.replicas) != 0:
+                    # when adding a file to a block with replicas, we need to specify where the file can be found
+                    # otherwise subscriptions made for other replicas will never complete
+                    raise MissingParameter('site', context = 'file ' + str(obj))
 
-                block_current_files = tuple(block_current_files)
+                block_replica = None
 
             block.size += new_lfile.size
             block.num_files += 1
@@ -406,16 +411,33 @@ class InjectDataBase(WebModule):
             except:
                 raise RuntimeError('Inventory update failed')
 
-            if len(block.replicas) != 0:
+            if block_replica is not None:
+                # add_file updates the size and file_ids list
                 block_replica.add_file(lfile)
                 self._register_update(inventory, block_replica)
+
+                # go through all the other replicas of this block and update the ones that claim to be full
+                old_files_list = None
 
                 for replica in block.replicas:
                     if replica is block_replica:
                         continue
 
                     if replica.file_ids is None:
-                        replica.file_ids = block_current_files
+                        if old_files_list is None:
+                            # first time making the list
+                            for f in block.files:
+                                if f.lfn == lfile.lfn:
+                                    continue
+            
+                                if f.id == 0:
+                                    old_files_list.append(f.lfn)
+                                else:
+                                    old_files_list.append(f.id)
+            
+                            old_files_list = tuple(old_files_list)
+
+                        replica.file_ids = old_files_list
                         self._register_update(inventory, replica)
 
             num_files += 1
