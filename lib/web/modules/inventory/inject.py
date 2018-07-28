@@ -387,7 +387,7 @@ class InjectDataBase(WebModule):
                         dataset_replica = block.dataset.find_replica(site)
                         if dataset_replica is None:
                             dataset_replica_data = {'dataset': block.dataset.name, 'site': site.name, 'blockreplicas': [block_replica_data], 'growing': False}
-                            self._make_datasetreplicas(dataset_replica_data, inventory, counts)
+                            self._make_datasetreplicas([dataset_replica_data], inventory, counts)
                         else:
                             self._make_blockreplicas([block_replica_data], dataset_replica, inventory, counts)
 
