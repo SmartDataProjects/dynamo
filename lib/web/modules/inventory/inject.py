@@ -426,6 +426,8 @@ class InjectDataBase(WebModule):
                     if replica.file_ids is None:
                         if old_files_list is None:
                             # first time making the list
+                            old_files_list = []
+
                             for f in block.files:
                                 if f.lfn == lfile.lfn:
                                     continue
