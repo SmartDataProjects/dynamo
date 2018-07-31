@@ -43,9 +43,9 @@ class MySQLReplicaLock(object):
                 pass
 
         if len(self.users) != 0:
-            entries = self._mysql.select_many('detox_locks', ('item', 'sites', 'groups'), ('user_id', 'role_id'), self.users, additional_conditions = ['`unlock_date` IS NULL'])
+            entries = self._mysql.select_many('detox_locks', ('item', 'sites', 'groups'), ('user_id', 'role_id'), self.users)
         else:
-            query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks` WHERE `unlock_date` IS NULL'
+            query = 'SELECT `item`, `sites`, `groups` FROM `detox_locks`'
             entries = self._mysql.query(query)
 
         for item_name, sites_pattern, groups_pattern in entries:
