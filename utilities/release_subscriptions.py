@@ -7,7 +7,7 @@ parser = ArgumentParser(description = 'Unhold subscriptions')
 
 parser.add_argument('--site', '-s', metavar = 'SITE', dest = 'site', help = 'Site name.')
 parser.add_argument('--reason', '-r', metavar = 'REASON', dest = 'reason', help = 'Hold reason.')
-parser.add_argument('--id', '-i', metavar = 'ID', dest = 'ids', nargs = '+', help = 'Subscription ids.')
+parser.add_argument('--id', '-i', metavar = 'ID', dest = 'ids', nargs = '+', type = int, help = 'Subscription ids.')
 
 args = parser.parse_args()
 sys.argv = []
