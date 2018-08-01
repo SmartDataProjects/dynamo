@@ -235,6 +235,7 @@ class WebServer(object):
             self.headers = [] # list of header tuples
             self.callback = None # set to callback function name if this is a JSONP request
             self.message = '' # string
+            self.phedex_request = '' # backward compatibility
 
             content = self._main(environ)
 
@@ -253,15 +254,34 @@ class WebServer(object):
                 status = 'Service Unavailable'
 
             if self.content_type == 'application/json':
-                json_data = {'result': status, 'message': self.message}
-                if content is not None:
-                    json_data['data'] = content
+                if self.phedex_request != '':
+                    if type(content) is not dict:
+                        self.code == 500
+                        status = 'Internal Server Error'
+                    else:
+                        url = '%s://%s' % (environ['REQUEST_SCHEME'], environ['HTTP_HOST'])
+                        if (environ['REQUEST_SCHEME'] == 'http' and environ['SERVER_PORT'] != '80') or \
+                           (environ['REQUEST_SCHEME'] == 'https' and environ['SERVER_PORT'] != '443'):
+                            url += '%s' % environ['SERVER_PORT']
+                        url += environ['REQUEST_URI']
+    
+                        json_data = {'phedex': {'call_time': 0, 'instance': 'prod', 'request_call': self.phedex_request,
+                                                'request_date': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()), 'request_timestamp': time.time(),
+                                                'request_url': url, 'request_version': '2.2.1'}}
+                        json_data['phedex'].update(content)
+    
+                        content = json.dumps(json_data)
 
-                # replace content with the json string
-                if self.callback is not None:
-                    content = '%s(%s)' % (self.callback, json.dumps(json_data))
                 else:
-                    content = json.dumps(json_data)
+                    json_data = {'result': status, 'message': self.message}
+                    if content is not None:
+                        json_data['data'] = content
+    
+                    # replace content with the json string
+                    if self.callback is not None:
+                        content = '%s(%s)' % (self.callback, json.dumps(json_data))
+                    else:
+                        content = json.dumps(json_data)
 
             headers = [('Content-Type', self.content_type)] + self.headers
 
@@ -354,10 +374,14 @@ class WebServer(object):
                 return content
 
         ## Step 3
-        if mode != 'data' and mode != 'web' and mode != 'registry': # registry for backward compatibility
+        if mode != 'data' and mode != 'web' and mode != 'registry' and mode != 'phedexdata': # registry and phedexdata for backward compatibility
             self.code = 404
             self.message = 'Invalid request %s.' % mode
             return
+
+        if mode == 'phedexdata':
+            mode = 'data'
+            self.phedex_request = environ['PATH_INFO'][1:]
 
         module, _, command = environ['PATH_INFO'][1:].partition('/')
 
