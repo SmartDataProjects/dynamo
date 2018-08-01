@@ -27,6 +27,7 @@ msg_to_code = [
     ('ile exists and overwrite', errno.EEXIST),
     ('No such file', errno.ENOENT),
     ('SRM_INVALID_PATH', errno.ENOENT),
+    ('the server responded with an error 500 rm() fail[SUCCESS]', errno.ENOENT),
     ('The certificate has expired', errno.EKEYEXPIRED),
     ('The available CRL has expired', errno.EKEYEXPIRED),
     ('SRM Authentication failed', errno.EKEYREJECTED),

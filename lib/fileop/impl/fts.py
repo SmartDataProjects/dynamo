@@ -442,7 +442,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             batch_data = self.db.query(sql, self.server_id, batch_id)
             task_table_name = 'fts_deletion_tasks'
 
-        message_pattern = re.compile('(?:DESTINATION|SOURCE|TRANSFER) \[([0-9]+)\] (.*)')
+        message_pattern = re.compile('(?:DESTINATION|SOURCE|TRANSFER|DELETION) \[([0-9]+)\] (.*)')
 
         results = []
 
