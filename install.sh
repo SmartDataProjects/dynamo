@@ -313,9 +313,13 @@ then
   
   mkdir -p $INSTALL_PATH/web
   
-  cp -r $SOURCE/web/html $INSTALL_PATH/web/html
-  cp -r $SOURCE/web/js $INSTALL_PATH/web/js
-  cp -r $SOURCE/web/css $INSTALL_PATH/web/css
+  cp -r $SOURCE/web/html $INSTALL_PATH/web/
+  cp -r $SOURCE/web/js $INSTALL_PATH/web/
+  cp -r $SOURCE/web/css $INSTALL_PATH/web/
+
+  # temporary
+  cp -r $SOURCE/web/js /var/www/lighttpd/
+  cp -r $SOURCE/web/css /var/www/lighttpd/
 fi
 
 ### Install the daemons ###
