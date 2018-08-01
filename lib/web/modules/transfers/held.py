@@ -58,9 +58,17 @@ class HeldFileTransferDetail(WebModule):
         get_all += ' WHERE u.`delete` = 0 AND u.`status` = \'held\''
 
         args = []
+
         if 'site' in request:
             get_all += ' AND s.`name` = %s'
             args.append(request['site'])
+
+        if 'reason' in request:
+            if request['reason'] == 'unknown':
+                get_all += ' AND u.`hold_reason` IS NULL'
+            else:
+                get_all += ' AND u.`hold_reason` = %s'
+                args.append(request['reason'])
 
         get_all += ' ORDER BY u.`id`'
 
