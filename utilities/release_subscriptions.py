@@ -26,6 +26,8 @@ if not authorized:
 
 subscriptions = rlfsm.get_subscriptions(inventory, op = 'transfer', status = ['held'])
 
+num_released = 0
+
 for subscription in subscriptions:
     if args.ids is not None and subscription.id not in args.ids:
         continue
@@ -37,3 +39,7 @@ for subscription in subscriptions:
         continue
 
     rlfsm.release_subscription(subscription)
+
+    num_released += 1
+
+print 'Released %d subscriptions.' % num_released
