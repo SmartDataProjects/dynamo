@@ -71,6 +71,42 @@ function displayDetails(data)
     tableRow.append('td').text(function (d, i) { return d.file; });
     tableRow.append('td').text(function (d, i) { return d.destination; });
     tableRow.append('td').text(function (d, i) { return d.reason; });
-    tableRow.append('td').text(function (d, i) { if (d.reason == "all_failed") return d.source; else return ''; });
-    tableRow.append('td').text(function (d, i) { if (d.reason == "all_failed") return d.exitcode; else return ''; });
+    tableRow.append('td').text(function (d, i) {
+        if (d.reason != "all_failed")
+            return '';
+
+        var counter = {};
+        for (var x in d.attempts) {
+            var attempt = d.attempts[x];
+            if (counter[attempt.source] === undefined)
+                counter[attempt.source] = 1;
+            else
+                counter[attempt.source] += 1;
+        }
+
+        var data = [];
+        for (var site in counter)
+            data.push(site + '(' + counter[site] + ')');
+
+        return data.join(',');
+    });
+    tableRow.append('td').text(function (d, i) {
+        if (d.reason != "all_failed")
+            return '';
+
+        var counter = {};
+        for (var x in d.attempts) {
+            var attempt = d.attempts[x];
+            if (counter[attempt.exitcode] === undefined)
+                counter[attempt.exitcode] = 1;
+            else
+                counter[attempt.exitcode] += 1;
+        }
+
+        var data = [];
+        for (var code in counter)
+            data.push(code + '(' + counter[code] + ')');
+
+        return data.join(',');
+    });
 }
