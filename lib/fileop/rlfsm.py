@@ -25,9 +25,9 @@ class RLFSM(object):
     """
 
     class Subscription(object):
-        __slots__ = ['id', 'status', 'file', 'destination', 'disk_sources', 'tape_sources', 'failed_sources']
+        __slots__ = ['id', 'status', 'file', 'destination', 'disk_sources', 'tape_sources', 'failed_sources', 'hold_reason']
 
-        def __init__(self, id, status, file, destination, disk_sources, tape_sources, failed_sources = None):
+        def __init__(self, id, status, file, destination, disk_sources, tape_sources, failed_sources = None, hold_reason = None):
             self.id = id
             self.status = status
             self.file = file
@@ -35,6 +35,7 @@ class RLFSM(object):
             self.disk_sources = disk_sources
             self.tape_sources = tape_sources
             self.failed_sources = failed_sources
+            self.hold_reason = hold_reason
 
     class TransferTask(object):
         __slots__ = ['id', 'subscription', 'source']
@@ -532,7 +533,7 @@ class RLFSM(object):
 
         subscriptions = []
 
-        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`block_id`, f.`name`, s.`name` FROM `file_subscriptions` AS u'
+        get_all = 'SELECT u.`id`, u.`status`, u.`delete`, f.`block_id`, f.`name`, s.`name`, u.`hold_reason` FROM `file_subscriptions` AS u'
         get_all += ' INNER JOIN `files` AS f ON f.`id` = u.`file_id`'
         get_all += ' INNER JOIN `sites` AS s ON s.`id` = u.`site_id`'
 
@@ -564,7 +565,7 @@ class RLFSM(object):
         DELETE = 1
 
         for row in self.db.query(get_all):
-            sub_id, st, optype, block_id, file_name, site_name = row
+            sub_id, st, optype, block_id, file_name, site_name, hold_reason = row
 
             if site_name != _destination_name:
                 _destination_name = site_name
@@ -673,7 +674,7 @@ class RLFSM(object):
 
                 # st value may have changed - filter again
                 if status is None or st in status:
-                    subscription = RLFSM.Subscription(sub_id, st, lfile, destination, disk_sources, tape_sources, failed_sources)
+                    subscription = RLFSM.Subscription(sub_id, st, lfile, destination, disk_sources, tape_sources, failed_sources, hold_reason)
                     subscriptions.append(subscription)
 
             elif optype == DELETE:
@@ -722,6 +723,20 @@ class RLFSM(object):
 
         if not self._read_only:
             self.db.delete_many('file_subscriptions', 'id', done_ids)
+
+    def release_subscription(self, subscription):
+        """
+        Clear failed transfers list and set the subscription status to retry.
+        """
+
+        if subscription.status != 'held':
+            return
+
+        if self._read_only:
+            return
+
+        self.db.query('DELETE FROM `failed_transfers` WHERE `subscription_id` = %s', subscription.id)
+        self.db.query('UPDATE `file_subscriptions` SET `status` = \'retry\' WHERE `id` = %s', subscription.id)
 
     def _run_cycle(self, inventory):
         while True:
