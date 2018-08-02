@@ -18,11 +18,31 @@ class FileTransferList(WebModule, HTMLMixin):
         self.header_script = '$(document).ready(function() { initPage(); });'
         return self.form_html()
 
+class FileTransferSizes(WebModule, HTMLMixin):
+    """
+    Open the file transfer list HTML and let monitor.js take care of data loading.
+    """
+
+    def __init__(self, config):
+        WebModule.__init__(self, config)
+        HTMLMixin.__init__(self, 'Transfer Sizes', 'transfers/sizes.html')
+
+        self.stylesheets = ['/css/transfers/monitor.css']
+        self.scripts = ['/js/plotly-latest.min.js', '/js/utils.js', '/js/transfers/sizes.js']
+        
+    def run(self, caller, request, inventory):
+        self.header_script = '$(document).ready(function() { initPage(); });'
+        return self.form_html()
+
+
+
+
+
 from dynamo.web.modules.transfers.current import CurrentFileTransfers
 
-class FileTransferListStatic(WebModule, HTMLMixin):
+class CurrentFileTransferListStatic(WebModule, HTMLMixin):
     """
-    Simpler example of file transfer listing using direct python HTML formatting.
+    Simpler example of cuirrent file transfer listing using direct python HTML formatting.
     """
 
     def __init__(self, config):
@@ -55,8 +75,47 @@ class FileTransferListStatic(WebModule, HTMLMixin):
 
         return self.form_html()
 
+from dynamo.web.modules.transfers.history import FileTransferHistory
+
+class HistoryFileTransferListStatic(WebModule, HTMLMixin):
+    """
+    Simpler example of history file transfer listing using direct python HTML formatting.
+    """
+
+    def __init__(self, config):
+        WebModule.__init__(self, config)
+        HTMLMixin.__init__(self, 'Historic file transfers (only 100)', 'transfers/history_list.html')
+
+        self.stylesheets = ['/css/transfers/monitor.css']
+
+        # Instantiate the JSON producer
+        self.history = FileTransferHistory(config)
+
+    def run(self, caller, request, inventory):
+        data = self.history.run(caller, request, inventory)
+
+        rows = ''
+        for transfer in data:
+            rows += '<tr>'
+            rows += '<td>%s</td>' % transfer['from']
+            rows += '<td>%s</td>' % transfer['to']
+            rows += '<td class="lfn">%s</td>' % transfer['lfn']
+            rows += '<td>%.2f</td>' % (transfer['size'] * 1.e-9)
+            rows += '<td>%d </td>' % transfer['exitcode']
+            rows += '<td>%s</td>' % transfer['create']
+            rows += '<td>%s</td>' % transfer['start']
+            rows += '<td>%s</td>' % transfer['finish']
+            rows += '<td>%s</td>' % transfer['complete']
+            rows += '</tr>'
+
+        # body_html is already set to the contents of monitor_static.html
+        self.body_html = self.body_html.format(_ROWS_ = rows)
+
+        return self.form_html()
 
 export_web = {
-#    'list': FileTransferList
-    'list': FileTransferListStatic
+    'list': FileTransferList,
+    'sizes': FileTransferSizes,
+    'current_list': CurrentFileTransferListStatic,
+    'history_list': HistoryFileTransferListStatic
 }

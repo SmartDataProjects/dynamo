@@ -16,7 +16,6 @@ class FileTransferHistory(WebModule):
         sql += ' INNER JOIN `files` AS f ON f.`id` = t.`file_id`'
         sql += ' INNER JOIN `sites` AS ss ON ss.`id` = t.`source_id`'
         sql += ' INNER JOIN `sites` AS sd ON sd.`id` = t.`destination_id`'
-        
         ## USING A HARD LIMIT FOR NOW - SHOULD CONTROL USING THE request DICTIONARY
         sql += ' LIMIT 100'
         
