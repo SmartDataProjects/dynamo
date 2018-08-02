@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import lzma
+import hashlib
 import logging
 
 from dynamo.utils.interface.mysql import MySQL
@@ -51,7 +52,7 @@ class DetoxHistoryBase(DeletionHistoryDatabase):
 
         partition_id = result[0]
 
-        sql = 'SELECT `id` FROM `cycles` WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')'
+        sql = 'SELECT `id` FROM `deletion_cycles` WHERE `partition_id` = %s AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'deletion\', \'deletion_test\')'
 
         if first >= 0:
             sql += ' AND `id` >= %d' % first
@@ -84,6 +85,8 @@ class DetoxHistoryBase(DeletionHistoryDatabase):
         sql = 'SELECT s.`name`, n.`status`, n.`quota` FROM `{0}`.`{1}` AS n'.format(self.cache_db, table_name)
         sql += ' INNER JOIN `{0}`.`sites` AS s ON s.`id` = n.`site_id`'.format(self.history_db)
         if skip_unused:
+            self._fill_snapshot_cache('replicas', cycle_number)
+
             replica_table_name = 'replicas_%d' % cycle_number
             sql += ' INNER JOIN (SELECT DISTINCT `site_id` FROM `{0}`.`{1}`) AS r ON r.`site_id` = s.`id`'.format(self.cache_db, replica_table_name)
 
@@ -261,7 +264,7 @@ class DetoxHistoryBase(DeletionHistoryDatabase):
 
         if is_cycle:
             # cycle_number is really a number. Update the partition cache table too
-            sql = 'SELECT p.`name` FROM `{hdb}`.`partitions` AS p INNER JOIN `{hdb}`.`cycles` AS r ON r.`partition_id` = p.`id` WHERE r.`id` = %s'.format(hdb = self.history_db)
+            sql = 'SELECT p.`name` FROM `{hdb}`.`partitions` AS p INNER JOIN `{hdb}`.`deletion_cycles` AS r ON r.`partition_id` = p.`id` WHERE r.`id` = %s'.format(hdb = self.history_db)
             partition = self.db.query(sql, cycle_number)[0]
     
             self._fill_snapshot_cache(template, partition)
@@ -310,13 +313,13 @@ class DetoxHistory(DetoxHistoryBase):
     Class for handling Detox history.
     """
 
-    def new_cycle(self, partition, policy_version, comment = '', test = False):
+    def new_cycle(self, partition, policy_text, comment = '', test = False):
         """
         Set up a new deletion cycle for the partition.
-        @param partition        partition name string
-        @param policy_version   string for policy version
-        @param comment          comment string
-        @param test             if True, create a deletion_test cycle.
+        @param partition        Partition name string
+        @param policy_text      Full text of the policy
+        @param comment          Comment string
+        @param test             If True, create a deletion_test cycle.
 
         @return cycle number.
         """
@@ -326,14 +329,16 @@ class DetoxHistory(DetoxHistoryBase):
 
         part_id = self.save_partitions([partition], get_ids = True)[0]
 
+        policy_id = self.save_policy(policy_text)
+
         if test:
             operation_str = 'deletion_test'
         else:
             operation_str = 'deletion'
 
-        columns = ('operation', 'partition_id', 'policy_version', 'comment', 'time_start')
-        values = (operation_str, part_id, policy_version, comment, MySQL.bare('NOW()'))
-        return self.db.insert_get_id('cycles', columns = columns, values = values)
+        columns = ('operation', 'partition_id', 'policy_id', 'comment', 'time_start')
+        values = (operation_str, part_id, policy_id, comment, MySQL.bare('NOW()'))
+        return self.db.insert_get_id('deletion_cycles', columns = columns, values = values)
 
     def close_cycle(self, cycle_number):
         """
@@ -344,7 +349,20 @@ class DetoxHistory(DetoxHistoryBase):
         if self._read_only:
             return
 
-        self.db.query('UPDATE `cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)
+        self.db.query('UPDATE `deletion_cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)
+
+    def save_policy(self, policy_text):
+        md5 = hashlib.md5(policy_text).hexdigest()
+        result = self.db.query('SELECT `id`, `text` FROM `deletion_policies` WHERE `hash` = UNHEX(%s)', md5)
+
+        for policy_id, text in result:
+            if text == policy_text:
+                return policy_id
+
+        # no row with matching hash or no row with matching text although hash matches (basically impossible)
+        # new policy
+        columns = ('hash', 'text')
+        return self.db.insert_get_id('deletion_policies', columns = columns, values = (MySQL.bare('UNHEX(\'%s\')' % md5), policy_text))
 
     def save_conditions(self, policy_lines):
         """
@@ -596,6 +614,6 @@ class DetoxHistory(DetoxHistoryBase):
         history_record = self.make_entry(site.name)
 
         if not self._read_only:
-            self.db.query('INSERT INTO `cycle_copy_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, history_record.operation_id)
+            self.db.query('INSERT INTO `cycle_deletion_operations` (`cycle_id`, `operation_id`) VALUES (%s, %s)', cycle_number, history_record.operation_id)
 
         return history_record

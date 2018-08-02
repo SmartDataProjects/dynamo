@@ -15,6 +15,7 @@ from email.mime.text import MIMEText
 
 from dynamo.core.components.appmanager import AppManager
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat.exceptions import ConfigurationError
 
 LOG = logging.getLogger(__name__)
 
@@ -39,6 +40,12 @@ class AppServer(object):
 
         # Base directory for scheduled application sequences
         self.scheduler_base = config.scheduler_base
+
+        # User id for the scheduler
+        user_info = self.dynamo_server.manager.master.identify_user(name = config.scheduler_user)
+        if user_info is None:
+            raise ConfigurationError('Unknown user %s given for the scheduler.' % config.scheduler_user)
+        self.scheduler_user_id = user_info[1]
 
         ## Queues synchronous applications will wait on. {app_id: Queue}
         self.synch_app_queues = {}
@@ -170,7 +177,7 @@ class AppServer(object):
 
         with self.notify_lock:
             keys = set(app_data.keys())
-            args = set(['title', 'path', 'args', 'user', 'host', 'write_request'])
+            args = set(['title', 'path', 'args', 'user_id', 'host', 'auth_level', 'timeout'])
             if len(keys - args) != 0:
                 return False, 'Extra parameter(s): %s' % (str(list(keys - args)))
             if len(args - keys) != 0:
@@ -187,9 +194,9 @@ class AppServer(object):
                 # this app is not going to run
                 return False, 'Application status: %s.' % AppManager.status_name(msg['status'])
 
-            return True, {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']} # msg['path'] should be == workarea
+            return True, {'appid': app_id, 'path': msg['path'], 'pid': msg['pid']} # msg['path'] should be == app_data['path']
         else:
-            return True, {'appid': app_id, 'path': msg['path']}
+            return True, {'appid': app_id, 'path': app_data['path']}
 
     def _add_sequences(self, path, user):
         """
@@ -269,21 +276,21 @@ class AppServer(object):
             sql += '`title` TEXT DEFAULT NULL,'
             sql += '`arguments` TEXT DEFAULT NULL,'
             sql += '`criticality` TINYINT DEFAULT NULL,'
-            sql += '`write_request` TINYINT DEFAULT NULL,'
+            sql += '`auth_level` SMALLINT DEFAULT NULL,'
             sql += '`app_id` INTEGER DEFAULT NULL'
             sql += ')'
             db.execute(sql)
 
             for iline, action in enumerate(sequence):
                 if action[0] == AppServer.EXECUTE:
-                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`)'
+                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `auth_level`)'
                     sql += ' VALUES (?, ?, ?, ?, ?, ?)'
                     cursor.execute(sql, (iline,) + action)
 
                 elif action[0] == AppServer.WAIT:
-                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`)'
-                    sql += ' VALUES (?, ?, ?)'
-                    cursor.execute(sql, (iline, action[0], str(action[1])))
+                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`)'
+                    sql += ' VALUES (?, ?, ?, ?)'
+                    cursor.execute(sql, (iline, action[0], str(action[1]), str(int(time.time()) + action[1])))
 
                 elif action[0] == AppServer.TERMINATE:
                     sql = 'INSERT INTO `sequence` (`line`, `command`)'
@@ -443,7 +450,7 @@ class AppServer(object):
                 db = sqlite3.connect(work_dir + '/sequence.db')
                 cursor = db.cursor()
                 try:
-                    cursor.execute('SELECT `line`, `command`, `title`, `arguments`, `criticality`, `write_request`, `app_id` FROM `sequence` ORDER BY `id` LIMIT 1')
+                    cursor.execute('SELECT `line`, `command`, `title`, `arguments`, `criticality`, `auth_level`, `app_id` FROM `sequence` ORDER BY `id` LIMIT 1')
                     row = cursor.fetchone()
                     if row is None:
                         raise RuntimeError('Sequence is empty')
@@ -453,7 +460,7 @@ class AppServer(object):
 
                 db.close()
 
-                iline, command, title, arguments, criticality, write_request, app_id = row
+                iline, command, title, arguments, criticality, _, app_id = row
 
                 if command == AppServer.EXECUTE:
                     if app_id is None:
@@ -525,7 +532,7 @@ class AppServer(object):
                 self._do_stop_sequence(sequence_name)
                 return
                 
-            sid, iline, command, title, arguments, criticality, write_request = row
+            sid, iline, command, title, arguments, criticality, auth_level = row
 
             db = sqlite3.connect(work_dir + '/sequence.db')
             cursor = db.cursor()
@@ -540,13 +547,13 @@ class AppServer(object):
                     out.write('++++ %s: %s\n' % (timestamp, title))
                     out.write('%s/%s %s\n\n' % (work_dir, title, arguments))
 
-                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.dynamo_server.user, socket.gethostname(), (write_request != 0))
+                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.scheduler_user_id, socket.gethostname(), auth_level, 0)
                 cursor.execute('UPDATE `sequence` SET `app_id` = ? WHERE `id` = ?', (app_id, sid))
                 LOG.info('[Scheduler] Scheduled %s/%s %s (AID %s).', sequence_name, title, arguments, app_id)
 
             elif command == AppServer.WAIT:
                 time_wait = int(title)
-                cursor.execute('UPDATE `sequence` SET `arguments` = ? WHERE `id` = ?', (int(time.time()) + time_wait, sid))
+                cursor.execute('UPDATE `sequence` SET `arguments` = ? WHERE `id` = ?', (str(int(time.time()) + time_wait), sid))
 
             elif command == AppServer.TERMINATE:
                 self._do_stop_sequence(sequence_name)
@@ -565,7 +572,7 @@ class AppServer(object):
 
     def _parse_sequence_def(self, path, user):
         app_paths = {} # {title: exec path}
-        authorized_applications = set() # set of titles
+        writer_applications = set() # set of titles
         sequences = {} # {name: sequence}
         sequences_with_restart = []
         sequence = None
@@ -598,7 +605,7 @@ class AppServer(object):
     
                     with open(application) as source:
                         checksum = hashlib.md5(source.read()).hexdigest()
-        
+
                     if write_enabled and not self.dynamo_server.manager.master.check_application_auth(title, user, checksum):
                         raise Exception('Application %s (%s) is not authorized for server write operation (line %d).' % (title, application, iline))
         
@@ -606,7 +613,7 @@ class AppServer(object):
         
                     app_paths[title] = application
                     if write_enabled:
-                        authorized_applications.add(title)
+                        writer_applications.add(title)
                     
                     continue
         
@@ -627,7 +634,7 @@ class AppServer(object):
                     raise Exception('Invalid line "%s" before sequence definition is given.' % line)
         
                 # Sequence application step definitions
-                # {title} options  ...  Read-only execution
+                # {title} options  ...  Elevated privilege (but no inventory write) execution
                 # <title> options  ...  Write-request execution
                 matches = re.match('(\^|\&|\|) +({\S+}|<\S+>)\s*(.*)', line)
                 if matches:
@@ -643,8 +650,13 @@ class AppServer(object):
                     write_request = (enclosed_title[0] == '<')
                     arguments = matches.group(3)
         
-                    if write_request and title not in authorized_applications:
-                        raise Exception('Application %s is not write-enabled (line %d).' % iline)
+                    if write_request:
+                        if title not in writer_applications:
+                            raise Exception('Application %s is not write-enabled (line %d).' % iline)
+
+                        auth_level = AppManager.LV_WRITE
+                    else:
+                        auth_level = AppManager.LV_AUTH
         
                     # Replace environment variables
                     matches = re.findall('\$\(([^\)]+)\)', arguments)
@@ -653,7 +665,7 @@ class AppServer(object):
         
                     LOG.debug('Execute %s %s (line %d)', title, arguments, iline)
         
-                    sequence.append((AppServer.EXECUTE, title, arguments, criticality, write_request))
+                    sequence.append((AppServer.EXECUTE, title, arguments, criticality, auth_level))
                     continue
         
                 matches = re.match('WAIT\s+(.*)', line)
@@ -697,7 +709,7 @@ class AppServer(object):
             looped_once = False
             
             while True:
-                cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `write_request` FROM `sequence` ORDER BY `id`')
+                cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `auth_level` FROM `sequence` ORDER BY `id`')
                 for row in cursor.fetchall():
                     if row[1] == iline:
                         return row
@@ -706,7 +718,7 @@ class AppServer(object):
         
                     if not terminates:
                         # this sequence is an infinite loop; move the entry to the bottom
-                        cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `write_request`) VALUES (?, ?, ?, ?, ?, ?)', row[1:])
+                        cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `auth_level`) VALUES (?, ?, ?, ?, ?, ?)', row[1:])
 
                 db.commit()
 

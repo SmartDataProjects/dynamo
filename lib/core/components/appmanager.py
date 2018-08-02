@@ -1,4 +1,5 @@
 from dynamo.utils.classutil import get_instance
+from dynamo.registry.registry import RegistryDatabase
 
 class AppManager(object):
     """
@@ -10,6 +11,9 @@ class AppManager(object):
 
     _statuses = ['new', 'assigned', 'run', 'done', 'notfound', 'authfailed', 'failed', 'killed']
     STAT_NEW, STAT_ASSIGNED, STAT_RUN, STAT_DONE, STAT_NOTFOUND, STAT_AUTHFAILED, STAT_FAILED, STAT_KILLED = range(1, 9)
+
+    _auth_levels = ['read', 'auth', 'write']
+    LV_NOAUTH, LV_AUTH, LV_WRITE = range(1, 4)
 
     @staticmethod
     def status_name(arg):
@@ -26,11 +30,29 @@ class AppManager(object):
             return arg
 
     @staticmethod
+    def auth_level_name(arg):
+        try:
+            return AppManager._auth_levels[arg - 1]
+        except:
+            return arg
+
+    @staticmethod
+    def auth_level_val(arg):
+        try:
+            return eval('AppManager.LV_' + arg.upper())
+        except:
+            return arg
+
+    @staticmethod
     def get_instance(module, config):
         return get_instance(AppManager, module, config)
 
     def __init__(self, config):
-        pass
+        self.readonly_config = None
+        if 'applock' in config:
+            self.applock = RegistryDatabase(config.applock)
+        else:
+            self.applock = None
 
     def get_writing_process_id(self):
         """
@@ -50,15 +72,22 @@ class AppManager(object):
         """
         raise NotImplementedError('get_web_write_process_id')
 
-    def schedule_application(self, title, path, args, user, host, write_request):
+    def get_running_processes(self):
+        """
+        @return  [(title, write_request, host, queued_time)]
+        """
+        raise NotImplementedError('get_running_processes')
+
+    def schedule_application(self, title, path, args, user_id, host, auth_level, timeout):
         """
         Schedule an application to the master server.
         @param title          Application title.
         @param path           Application path.
         @param args           Arguments to the application
-        @param user           User name of the requester
+        @param user_id        User id of the requester
         @param host           Host name of the requester
-        @param write_request  Boolean
+        @param auth_level     Authorization level (LV_*)
+        @param timeout        Maximum allowed execution time in hours. If 0, server default is used. If < 0, application will run indefinitely.
 
         @return application id
         """
@@ -66,11 +95,14 @@ class AppManager(object):
 
     def get_next_application(self, read_only):
         """
-        @param read_only    Limit to read_only applications
-        
         @return {appid, write_request, user_name, user_host, title, path, args} or None
         """
-        raise NotImplementedError('get_next_application')
+        if self.applock:
+            blocked_apps = self.applock.get_locked_apps()
+        else:
+            blocked_apps = []
+
+        return self._do_get_next_application(read_only, blocked_apps)
 
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None):
         """
@@ -113,11 +145,18 @@ class AppManager(object):
         raise NotImplementedError('stop_write_web')
 
     def check_application_auth(self, title, user, checksum):
+        """
+        @param title      Title of the application
+        @param user       User of the application
+        @param checksum   Checksum of the application file
+        
+        @return True if the application is authorized to write to the inventory.
+        """
         raise NotImplementedError('check_application_auth')
 
     def list_authorized_applications(self, titles = None, users = None, checksums = None):
         """
-        Return the list of authorized applications.
+        Return the list of write-authorized applications.
         @param title      If given as a list of strings, limit to applications with given titles.
         @param users      If given as a list of strings, limit to applications authorized under given users.
         @param checksums  If given as a list of strings, limit to applications with given checksums.
@@ -126,7 +165,7 @@ class AppManager(object):
 
     def authorize_application(self, title, checksum, user = None):
         """
-        Authorize an application. If user = None, authorize for everyone.
+        Authorize an application to write to inventory. If user = None, authorize for everyone.
         @return True if success, False if not.
         """
         raise NotImplementedError('authorize_application')
@@ -183,3 +222,10 @@ class AppManager(object):
         @return [name]
         """
         raise NotImplementedError('get_sequences')
+
+    def create_appmanager(self):
+        """
+        Clone self with fresh connections. Use readonly_config if available.
+        @return A new AppManager instance with a fresh connection
+        """
+        raise NotImplementedError('create_appmanager')

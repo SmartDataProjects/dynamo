@@ -73,7 +73,7 @@ def generate_store_conf(conf_str):
 
     return store_conf
 
-def generate_master_conf(conf_str):
+def generate_master_conf(conf_str, master = True):
     conf = json.loads(conf_str)
 
     with open(thisdir + '/grants.json') as source:
@@ -109,6 +109,16 @@ def generate_master_conf(conf_str):
         ('scratch_db', 'dynamo_tmp')
     ])
 
+    if master:
+        master_conf['config']['applock'] = OD()
+        master_conf['config']['applock']['db_params'] = OD([
+            ('host', host),
+            ('db', 'dynamoregister'),
+            ('user', user),
+            ('passwd', passwd),
+            ('scratch_db', 'dynamo_tmp')
+        ])
+
     if readuser is not None:
         if 'readpasswd' in conf:
             readpasswd = conf['readpasswd']
@@ -125,46 +135,6 @@ def generate_master_conf(conf_str):
         ])
 
     return master_conf
-
-def generate_fom_conf(conf_str):
-    conf = json.loads(conf_str)
-
-    with open(thisdir + '/grants.json') as source:
-        grants_conf = json.load(source)
-
-    try:
-        host = conf['db']['host']
-    except KeyError:
-        host = 'localhost'
-
-    user = conf['db']['user']
-
-    try:
-        passwd = conf['db']['passwd']
-    except KeyError:
-        passwd = grants_conf[user]['passwd']
-
-    fom_conf = OD({'db': OD()})
-
-    fom_conf['db']['db_params'] = OD([
-        ('host', host),
-        ('user', user),
-        ('passwd', passwd),
-        ('db', 'dynamo'),
-        ('scratch_db', 'dynamo_tmp')
-    ])
-    fom_conf['db']['history'] = 'dynamohistory'
-
-    fom_conf['transfer'] = OD({'config': OD(conf['transfer'])})
-    fom_conf['transfer']['config']['db_params'] = OD([
-        ('host', host),
-        ('user', user),
-        ('passwd', passwd),
-        ('db', 'dynamo'),
-        ('scratch_db', 'dynamo_tmp')
-    ])
-
-    return fom_conf
 
 try:
     __namespace__.generate_store_conf = generate_store_conf

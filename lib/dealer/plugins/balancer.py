@@ -15,9 +15,9 @@ class BalancingHandler(BaseHandler):
     def __init__(self, config):
         BaseHandler.__init__(self, 'Balancer')
 
-        self.max_dataset_size = config.max_dataset_size * 1.e+12
-        self.max_cycle_volume = config.max_cycle_volume * 1.e+12
-        self.detoxhistory = DetoxHistoryBase(config.detox_history)
+        self.max_dataset_size = config.get('max_dataset_size', 0) * 1.e+12
+        self.max_cycle_volume = config.get('max_cycle_volume', 0) * 1.e+12
+        self.detoxhistory = DetoxHistoryBase(config.get('detox_history', None))
         self.target_reasons = dict(config.target_reasons)
 
     def get_requests(self, inventory, policy):
@@ -68,7 +68,7 @@ class BalancingHandler(BaseHandler):
             last_copies[site] = []
 
             for ds_name, size, reason in protections:
-                if size > self.max_dataset_size:
+                if self.max_dataset_size > 0 and size > self.max_dataset_size:
                     # protections is ordered -> there are no more
                     break
 
@@ -110,7 +110,7 @@ class BalancingHandler(BaseHandler):
         total_size = 0
         variation = 1.
 
-        while len(protected_fractions) != 0 and total_size < self.max_cycle_volume:
+        while len(protected_fractions) != 0 and (self.max_cycle_volume <= 0. or total_size < self.max_cycle_volume):
             maxsite, maxfrac = max(protected_fractions.items(), key = lambda x: x[1])
             minsite, minfrac = min(protected_fractions.items(), key = lambda x: x[1])
 

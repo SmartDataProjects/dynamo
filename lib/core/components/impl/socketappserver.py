@@ -221,10 +221,13 @@ class SocketAppServer(AppServer):
             for rdn in user_cert_data['subject']:
                 dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
 
-            user_name, _, _ = master.identify_user(dn = dn, check_trunc = True)
-            if user_name is None:
+            user_info = master.identify_user(dn = dn, check_trunc = True)
+
+            if user_info is None:
                 io.send('failed', 'Unidentified user DN %s' % dn)
                 return
+
+            user_name, user_id = user_info[:2]
 
             io.send('OK', 'Connected')
 
@@ -245,8 +248,13 @@ class SocketAppServer(AppServer):
 
             if command == 'poll':
                 act_and_respond(self._poll_app(app_data['appid']))
+                return
 
-            elif command == 'kill':
+            elif not master.check_user_auth(user_name, 'admin', 'application') and not master.check_user_auth(user_name, 'operator', 'application'):
+                io.send('failed', 'User not authorized')
+                return
+
+            if command == 'kill':
                 act_and_respond(self._kill_app(app_data['appid']))
 
             elif command == 'add':
@@ -259,20 +267,12 @@ class SocketAppServer(AppServer):
                 if 'sequence' in app_data:
                     act_and_respond(self._start_sequence(app_data['sequence'], user_name))
                 else:
-                    if user_name != self.dynamo_server.user:
-                        io.send('failed', 'Only the daemon user can start all sequences.')
-                        return
-
                     act_and_respond(self._start_all_sequences())
 
             elif command == 'stop':
                 if 'sequence' in app_data:
                     act_and_respond(self._stop_sequence(app_data['sequence'], user_name))
                 else:
-                    if user_name != self.dynamo_server.user:
-                        io.send('failed', 'Only the daemon user can stop all sequences.')
-                        return
-
                     act_and_respond(self._stop_all_sequences())
 
             else:
@@ -287,7 +287,7 @@ class SocketAppServer(AppServer):
     
                 if command == 'submit':
                     app_data['path'] = workarea
-                    app_data['user'] = user_name
+                    app_data['user_id'] = user_id
                     if io.host == 'localhost' or io.host == '127.0.0.1':
                         app_data['host'] = socket.gethostname()
                     else:

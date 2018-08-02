@@ -1,7 +1,7 @@
 import time
 import logging
 
-from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError
+from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError, TryAgain
 from dynamo.web.modules._base import WebModule
 import dynamo.dataformat as df
 from dynamo.registry.registry import RegistryDatabase
@@ -15,6 +15,7 @@ class InjectDataBase(WebModule):
 
     def __init__(self, config):
         WebModule.__init__(self, config)
+        self.must_authenticate = True
 
     def run(self, caller, request, inventory):
         """
@@ -27,33 +28,28 @@ class InjectDataBase(WebModule):
         if ('admin', 'inventory') not in caller.authlist:
             raise AuthorizationError()
 
-        if type(request) is not dict:
-            raise IllFormedRequest('request', type(request).__name__, hint = 'data must be a dict type')
-
-        self._initialize()
+        if type(self.input_data) is not dict:
+            raise IllFormedRequest('input', type(self.input_data).__name__, hint = 'data must be a dict type')
 
         counts = {}
 
         # blocks_with_new_file list used in the synchronous version of this class
 
-        if 'dataset' in request:
-            self._make_datasets(request['dataset'], inventory, counts)
+        if 'dataset' in self.input_data:
+            self._make_datasets(self.input_data['dataset'], inventory, counts)
 
-        if 'site' in request:
-            self._make_sites(request['site'], inventory, counts)
+        if 'site' in self.input_data:
+            self._make_sites(self.input_data['site'], inventory, counts)
 
-        if 'group' in request:
-            self._make_groups(request['group'], inventory, counts)
+        if 'group' in self.input_data:
+            self._make_groups(self.input_data['group'], inventory, counts)
 
-        if 'datasetreplica' in request:
-            self._make_datasetreplicas(request['datasetreplica'], inventory, counts)
+        if 'datasetreplica' in self.input_data:
+            self._make_datasetreplicas(self.input_data['datasetreplica'], inventory, counts)
 
         self._finalize()
         
         return counts
-
-    def _initialize(self):
-        pass
 
     def _finalize(self):
         pass
@@ -306,12 +302,12 @@ class InjectDataBase(WebModule):
     
                 block._files = set()
 
+                # For growing dataset replicas, we automatically create new block replicas
+                # All new files will be subscribed to block replicas that don't have them yet
                 for replica in dataset.replicas:
                     if replica.growing:
-                        # For growing replicas, we automatically create new block replicas
-                        # All new files will be subscribed to block replicas that don't have them yet
-                        blockreplica = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0}
-                        self._make_blockreplicas([blockreplica], replica, inventory, counts)
+                        block_replica_data = {'block': block.real_name(), 'site': replica.site.name, 'group': replica.group.name, 'size': 0}
+                        self._make_blockreplicas([block_replica_data], replica, inventory, counts)
 
                 num_blocks += 1
 
@@ -334,73 +330,122 @@ class InjectDataBase(WebModule):
             except KeyError:
                 raise MissingParameter('name', context = 'file ' + str(obj))
 
-            lfile = block.find_file(lfn)
+            try:
+                lfile = block.find_file(lfn)
+            except df.IntegrityError:
+                # If we are in the middle of an inventory update which involves adding files to this specific block,
+                # the files may already be in the inventory store while the inventory image that the web server has
+                # is from pre-update. When the block loads the files, it sees more files than it knows about, and
+                # raises an IntegrityError.
+                # The only solutions here are 1. Block web access while there is an update to File; 2. Raise a 503.
+                # We choose 2.
+                raise TryAgain('Inventory update is ongoing. Please retry after a minute.')
 
-            if lfile is None:
-                # new file
+            if lfile is not None:
+                continue
+
+            # new file
+
+            try:
+                size = obj['size']
+            except KeyError:
+                raise MissingParameter('size', context = 'file ' + str(obj))
+
+            try:
+                checksum = tuple(obj[algo] for algo in df.File.checksum_algorithms)
+            except KeyError:
+                raise MissingParameter(','.join(df.File.checksum_algorithms), context = 'file ' + str(obj))
+
+            try:
+                new_lfile = df.File(
+                    lfn,
+                    block = block,
+                    size = size,
+                    checksum = checksum
+                )
+
+            except TypeError as exc:
+                raise IllFormedRequest('file', str(obj), hint = str(exc))
+
+            if 'site' in obj:
+                site_name = obj['site']
 
                 try:
-                    size = obj['size']
+                    block_replica = block_replicas[site_name]
                 except KeyError:
-                    raise MissingParameter('size', context = 'file ' + str(obj))
+                    try:
+                        site = inventory.sites[site_name]
+                    except KeyError:
+                        raise InvalidRequest('Unknown site %s' % site_name)
+                    
+                    block_replica = block.find_replica(site)
+                    if block_replica is None:
+                        # replica doesn't exist yet; create one here
 
-                try:
-                    new_lfile = df.File(
-                        lfn,
-                        block = block,
-                        size = size
-                    )
-                except TypeError as exc:
-                    raise IllFormedRequest('file', str(obj), hint = str(exc))
+                        block_replica_data = {'block': block.real_name(), 'site': site.name, 'group': None, 'size': 0}
 
+                        dataset_replica = block.dataset.find_replica(site)
+                        if dataset_replica is None:
+                            dataset_replica_data = {'dataset': block.dataset.name, 'site': site.name, 'blockreplicas': [block_replica_data], 'growing': False}
+                            self._make_datasetreplicas([dataset_replica_data], inventory, counts)
+                        else:
+                            self._make_blockreplicas([block_replica_data], dataset_replica, inventory, counts)
+
+                        block_replica = block.find_replica(site)
+
+                    block_replicas[site_name] = block_replica
+
+            else:
                 if len(block.replicas) != 0:
                     # when adding a file to a block with replicas, we need to specify where the file can be found
                     # otherwise subscriptions made for other replicas will never complete
-                    try:
-                        site_name = obj['site']
-                    except KeyError:
-                        raise MissingParameter('site', context = 'file ' + str(obj))
+                    raise MissingParameter('site', context = 'file ' + str(obj))
 
-                    try:
-                        block_replica = block_replicas[site_name]
-                    except KeyError:
-                        try:
-                            site = inventory.sites[site_name]
-                        except KeyError:
-                            raise InvalidRequest('Unknown site %s' % site_name)
-                        
-                        block_replica = block.find_replica(site)
-                        if block_replica is None:
-                            raise InvalidRequest('Block %s does not have a replica at %s' % (block.full_name(), site_name))
+                block_replica = None
 
-                        block_replicas[site_name] = block_replica
+            block.size += new_lfile.size
+            block.num_files += 1
 
-                block.size += new_lfile.size
-                block.num_files += 1
+            try:
+                lfile = self._update(inventory, new_lfile)
+            except:
+                raise RuntimeError('Inventory update failed')
 
-                try:
-                    lfile = self._update(inventory, new_lfile)
-                except:
-                    raise RuntimeError('Inventory update failed')
+            if block_replica is not None:
+                # add_file updates the size and file_ids list
+                block_replica.add_file(lfile)
+                self._register_update(inventory, block_replica)
 
-                if len(block.replicas) != 0:
-                    block_replica.size += lfile.size
+                # go through all the other replicas of this block and update the ones that claim to be full
+                old_files_list = None
 
-                    if block_replica.file_ids is None:
-                        pass
-                    else:
-                        block_replica.file_ids += (lfile.lfn,)
-    
-                num_files += 1
+                for replica in block.replicas:
+                    if replica is block_replica:
+                        continue
+
+                    if replica.file_ids is None:
+                        if old_files_list is None:
+                            # first time making the list
+                            old_files_list = []
+
+                            for f in block.files:
+                                if f.lfn == lfile.lfn:
+                                    continue
+            
+                                if f.id == 0:
+                                    old_files_list.append(f.lfn)
+                                else:
+                                    old_files_list.append(f.id)
+            
+                            old_files_list = tuple(old_files_list)
+
+                        replica.file_ids = old_files_list
+                        self._register_update(inventory, replica)
+
+            num_files += 1
 
         if num_files != 0:
             self._register_update(inventory, block)
-
-        try:
-            for block_replica in block_replicas.itervalues():
-                self._update(inventory, block_replica)
-        except:
-            raise RuntimeError('Inventory update failed')
 
         try:
             counts['files'] += num_files
@@ -455,43 +500,53 @@ class InjectDataBase(WebModule):
 
                 num_blockreplicas += 1
 
+                try:
+                    block_replica = self._update(inventory, block_replica)
+                except:
+                    raise RuntimeError('Inventory update failed')
+
             if 'files' in obj:
-                file_names = obj['files']
+                # add file to the block replica (no need to give the full list of files)
+                if not df.BlockReplica._use_file_ids:
+                    raise RuntimeError('File addition to block replica not supported in this Dynamo installation.')
 
-                if df.BlockReplica._use_file_ids:
-                    file_ids = []
+                if block_replica.file_ids is None:
+                    # the replica is already complete
+                    continue
 
-                size = 0
-                for lfn in file_names:
+                file_ids = list(block_replica.file_ids)
+
+                updated = False
+
+                for lfn in obj['files']:
                     lfile = block.find_file(lfn)
                     if lfile is None:
                         raise InvalidRequest('Unknown file %s' % lfn)
 
-                    size += lfile.size
+                    if lfile.id == 0:
+                        if lfn in file_ids:
+                            continue
+                        if lfn in set(f.lfn for f in block_replica.files()):
+                            continue
 
-                    if df.BlockReplica._use_file_ids:
-                        if lfile.id == 0:
-                            file_ids.append(lfn)
-                        else:
-                            file_ids.append(lfile.id)
+                        file_ids.append(lfn)
+                    else:
+                        if lfile.id in file_ids:
+                            continue
 
-                block_replica.size = size
+                        file_ids.append(lfile.id)
 
-                if len(file_names) == block.num_files and size == block.size:
-                    if df.BlockReplica._use_file_ids:
+                    block_replica.size += lfile.size
+
+                    updated = True
+
+                if updated:
+                    if len(file_ids) == block.num_files and block_replica.size == block.size:
                         block_replica.file_ids = None
                     else:
-                        block_replica.file_ids = block.num_files
-                else:
-                    if df.BlockReplica._use_file_ids:
                         block_replica.file_ids = tuple(file_ids)
-                    else:
-                        block_replica.file_ids = len(file_names)
 
-            try:
-                self._update(inventory, block_replica)
-            except:
-                raise RuntimeError('Inventory update failed')
+                    self._register_update(inventory, block_replica)
 
         try:
             counts['blockreplicas'] += num_blockreplicas
@@ -522,14 +577,12 @@ class InjectData(InjectDataBase):
     def _register_update(self, inventory, obj):
         self.inject_queue.append(obj)
 
-    def _initialize(self):
-        # Lock will be release if this process crashes
-        self.registry.db.lock_tables(write = ['data_injections'])
-
     def _finalize(self):
         fields = ('cmd', 'obj')
         mapping = lambda obj: ('update', repr(obj))
 
+        # make injection entries consecutive
+        self.registry.db.lock_tables(write = ['data_injections'])
         self.registry.db.insert_many('data_injections', fields, mapping, self.inject_queue)
         self.registry.db.unlock_tables()
 
@@ -566,7 +619,8 @@ class InjectDataSync(InjectDataBase):
         for block in self.blocks_with_new_file:
             all_files = block.files
             for replica in block.replicas:
-                self.rlfsm.subscribe_files(replica.site, all_files - replica.files())
+                for lfile in (all_files - replica.files()):
+                    self.rlfsm.subscribe_file(replica.site, lfile)
 
         self.message = 'Data is injected.'
 

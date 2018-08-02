@@ -7,14 +7,14 @@ from dynamo.fileop.rlfsm import RLFSM
 
 LOG = logging.getLogger(__name__)
 
-class FODCopyInterface(CopyInterface):
+class RLFSMCopyInterface(CopyInterface):
     """
-    CopyInterface using the Dynamo FOD.
+    CopyInterface using the Dynamo RLFSM.
     """
 
     def __init__(self, config = None):
         CopyInterface.__init__(self, config)
-        self.rlfsm = RLFSM(config.get('fod', None))
+        self.rlfsm = RLFSM(config.get('rlfsm', None))
 
     def set_read_only(self, value = True): #override
         self._read_only = value
@@ -45,7 +45,8 @@ class FODCopyInterface(CopyInterface):
                 all_files = block_replica.block.files
                 missing_files = all_files - block_replica.files()
 
-                self.rlfsm.subscribe_files(block_replica.site, missing_files)
+                for lfile in missing_files:
+                    self.rlfsm.subscribe_file(block_replica.site, lfile)
 
                 clone_block_replica = BlockReplica(block_replica.block, block_replica.site, block_replica.group)
                 clone_block_replica.copy(block_replica)
@@ -54,6 +55,3 @@ class FODCopyInterface(CopyInterface):
 
         # no external dependency - everything is a success
         return result
-
-    def copy_status(self, operation_id): #override
-        raise NotImplementedError('copy_status')

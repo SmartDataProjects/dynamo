@@ -243,18 +243,13 @@ function sortTableBy(siteName, column, direction)
 function displaySummary(data)
 {
     var cycleHeader = d3.select('#cycleHeader');
-    cycleHeader.append('span').text('Cycle ' + data.cycle + ' (Policy ');
-    if (data.cycle_policy != '') {
-        cycleHeader.append('span').text(data.cycle_policy)
-            .classed('clickable', true)
-            .on('click', function () { window.open('https://github.com/SmartDataProjects/dynamo-policies/blob/' + this.textContent + '/detox/' + currentPartitionName + '.txt'); });
-    }
-    else {
-        cycleHeader.append('span').text('unknown');
-    }
+    cycleHeader.append('span').text('Cycle ' + data.cycle)
+        .classed('clickable', true)
+        .on('click', function () { window.open(detoxPath + '/policy?cycle=' + data.cycle); });
+
     var local = new Date(); // add the timezone offset to the unix timestamp to get at UTC
     var timestamp = new Date((data.cycle_timestamp + local.getTimezoneOffset() * 60) * 1000);
-    cycleHeader.append('span').text(', ' + d3.time.format('%Y-%m-%d %H:%M:%S UTC')(timestamp) + ')');
+    cycleHeader.append('span').text(' (' + d3.time.format('%Y-%m-%d %H:%M:%S UTC')(timestamp) + ')');
 
     if (data.cycle_timestamp < (local.getTime() / 1000 - 3600 * 18))
         cycleHeader.style('color', 'red');

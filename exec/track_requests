@@ -18,7 +18,7 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout)
-from dynamo.core.executable import read_only, make_standard_logger
+from dynamo.core.executable import authorized, make_standard_logger
 
 LOG = make_standard_logger(config.get('log_level', 'info'))
 
@@ -28,6 +28,7 @@ from dynamo.request.deletion import DeletionRequestManager
 from dynamo.request.copy import CopyRequestManager
 from dynamo.operation.deletion import DeletionInterface
 from dynamo.operation.history import DeletionHistoryDatabase
+from dynamo.fileop.rlfsm import RLFSM
 import dynamo.dataformat as df
 from dynamo.dataformat.request import Request, RequestAction
 from dynamo.dataformat.history import DeletedReplica
@@ -40,7 +41,7 @@ if 'deletion' in config:
 else:
     deletion = DeletionInterface.get_instance()
 
-if read_only:
+if not authorized:
     deletion_manager.set_read_only()
     copy_manager.set_read_only()
     history.set_read_only()
@@ -48,7 +49,36 @@ if read_only:
 
 # Check the inventory content and update the requests
 deletion_manager.collect_updates(inventory)
-copy_manager.collect_updates(inventory)
+incomplete_drep, incomplete_brep = copy_manager.collect_updates(inventory)
+
+if config.get('remake_subscriptions', True):
+    # Make sure incomplete replicas do have file subscriptions
+    rlfsm = RLFSM(config.get('rlfsm', None))
+    rlfsm.set_read_only(not authorized)
+
+    subscriptions = rlfsm.get_subscriptions(inventory, 'transfer', status = ['new', 'inbatch', 'done', 'retry'])
+    # We need to compare LFNs instead of file objects themselves because the files cache may be wiped out between this line and the comparison line
+    subscribed_files = set(s.file.lfn for s in subscriptions)
+    
+    for replica in incomplete_drep:
+        for block_replica in replica.block_replicas:
+            if block_replica.is_complete() or block_replica.group is df.Group.null_group:
+                # owned by null group -> being deleted
+                continue
+    
+            for lfile in block_replica.block.files - block_replica.files():
+                if lfile.lfn not in subscribed_files:
+                    LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, block_replica.site.name)
+                    rlfsm.subscribe_file(block_replica.site, lfile)
+    
+    for replica in incomplete_brep:
+        if replica.group is df.Group.null_group:
+            continue
+
+        for lfile in replica.block.files - replica.files():
+            if lfile.lfn not in subscribed_files:
+                LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, replica.site.name)
+                rlfsm.subscribe_file(replica.site, lfile)
 
 # Execute deletion operations on new deletion requests
 new_requests = deletion_manager.get_requests(statuses = [Request.ST_NEW])

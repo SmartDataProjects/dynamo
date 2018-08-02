@@ -234,10 +234,11 @@ class MySQL(object):
                             raise
                             #2006 = MySQL server has gone away
                             #If we are reusing connections, this type of error is to be ignored
-                            if not silent:
-                                LOG.error(str(sys.exc_info()[1]))
 
-                            last_except = sys.exc_info()[1]
+                        if not silent:
+                            LOG.error(str(sys.exc_info()[1]))
+
+                        last_except = sys.exc_info()[1]
 
                         # reconnect to server
                         cursor.close()
@@ -331,6 +332,7 @@ class MySQL(object):
 
         except:
             self._fully_unlock()
+            raise
 
     def xquery(self, sql, *args):
         """
@@ -807,8 +809,6 @@ class MySQL(object):
         if not db:
             db = self.scratch_db
 
-        self.drop_tmp_table(table, db = db)
-
         if type(columns) is str:
             sql = 'CREATE TEMPORARY TABLE `%s`.`%s` LIKE %s' % (db, table, columns)
         else:
@@ -825,7 +825,12 @@ class MySQL(object):
         table_full = '`%s`.`%s`' % (db, table)[0][1]
         create_stmt = self.query('SHOW CREATE TABLE %s' % table_full)[0][1]
         self.query('SET sql_notes = 0')
-        self.query('DROP TABLE IF EXISTS ' + table_full)
+        try:
+            self.query('DROP TABLE IF EXISTS ' + table_full)
+        except MySQLdb.OperationalError:
+            # If executing this line in a lock, we get an op error if the table does not exist.
+            pass
+
         self.query('SET sql_notes = 1')
         self.query(create_stmt)
 
@@ -834,7 +839,12 @@ class MySQL(object):
             db = self.scratch_db
 
         self.query('SET sql_notes = 0')
-        self.query('DROP TABLE IF EXISTS `%s`.`%s`' % (db, table))
+        try:
+            self.query('DROP TABLE IF EXISTS `%s`.`%s`' % (db, table))
+        except MySQLdb.OperationalError:
+            # If executing this line in a lock, we get an op error if the table does not exist.
+            pass
+
         self.query('SET sql_notes = 1')
 
     def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):

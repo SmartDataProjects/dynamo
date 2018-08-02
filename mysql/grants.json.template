@@ -15,10 +15,7 @@
       ["SELECT, LOCK TABLES", "dynamoregister"],
       ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE TEMPORARY TABLES, DROP", "dynamohistory"],
       ["SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE TEMPORARY TABLES, CREATE, DROP", "dynamohistory\\_cache"],
-      ["INSERT, UPDATE", "dynamo", "system"],
-      ["INSERT, UPDATE, DELETE", "dynamo", "dataset_requests"],
-      ["INSERT, UPDATE, DELETE", "dynamo", "dataset_accesses"],
-      ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
+      ["INSERT, UPDATE, DELETE, ALTER", "dynamoregister", "activity_lock"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_requests"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_request_items"],
       ["INSERT, UPDATE, DELETE", "dynamoregister", "copy_request_sites"],
@@ -46,7 +43,8 @@
       ["INSERT, UPDATE, DELETE", "dynamoregister", "activity_lock"],
       ["SELECT", "dynamoserver", "users"],
       ["SELECT", "dynamoserver", "roles"],
-      ["SELECT", "dynamoserver", "user_authorizations"]
+      ["SELECT", "dynamoserver", "user_authorizations"],
+      ["SELECT", "dynamoserver", "applications"]
     ]
   },
   "dynamofod": {
@@ -61,21 +59,27 @@
       ["INSERT, UPDATE, DELETE", "dynamo", "deletion_batches"],
       ["INSERT, UPDATE, DELETE", "dynamo", "deletion_tasks"],
       ["INSERT, UPDATE, DELETE", "dynamo", "file_subscriptions"],
+      ["INSERT, UPDATE, DELETE, ALTER", "dynamo", "file_pre_subscriptions"],
       ["INSERT, UPDATE, DELETE", "dynamo", "directory_cleaning_tasks"],
       ["INSERT, UPDATE, DELETE", "dynamo", "fts_servers"],
-      ["INSERT, UPDATE, DELETE", "dynamo", "fts_error_messages"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_transfer_tasks"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_deletion_tasks"],
       ["INSERT, UPDATE, DELETE", "dynamo", "fts_transfer_batches"],
-      ["INSERT, UPDATE, DELETE", "dynamo", "fts_transfer_files"],
       ["INSERT, UPDATE, DELETE", "dynamo", "fts_deletion_batches"],
-      ["INSERT, UPDATE, DELETE", "dynamo", "fts_deletion_files"],
+      ["INSERT, UPDATE, DELETE", "dynamo", "fts_staging_queue"],
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_transfer_tasks"],
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_tasks"],
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_transfer_batches"],
       ["INSERT, UPDATE, DELETE", "dynamo", "standalone_deletion_batches"],
       ["SELECT, LOCK TABLES", "dynamohistory"],
       ["INSERT, UPDATE", "dynamohistory", "files"],
+      ["INSERT, UPDATE", "dynamohistory", "sites"],
       ["INSERT, UPDATE", "dynamohistory", "file_transfers"],
-      ["INSERT, UPDATE", "dynamohistory", "file_deletions"]
+      ["INSERT, UPDATE", "dynamohistory", "file_deletions"],
+      ["INSERT, UPDATE", "dynamohistory", "fts_file_transfers"],
+      ["INSERT, UPDATE", "dynamohistory", "fts_file_deletions"],
+      ["INSERT, UPDATE", "dynamohistory", "fts_servers"],
+      ["INSERT, UPDATE", "dynamohistory", "fts_batches"]
     ]
   }
 }

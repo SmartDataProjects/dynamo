@@ -3,6 +3,7 @@ import re
 import logging
 
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 
@@ -12,8 +13,21 @@ class SiteInfoSource(object):
     """
 
     @staticmethod
-    def get_instance(module, config):
+    def get_instance(module = None, config = None):
+        if module is None:
+            module = SiteInfoSource._module
+        if config is None:
+            config = SiteInfoSource._config
+
         return get_instance(SiteInfoSource, module, config)
+
+    _module = ''
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        SiteInfoSource._module = config.module
+        SiteInfoSource._config = config.config
 
     def __init__(self, config):
         if hasattr(config, 'include'):
@@ -50,6 +64,15 @@ class SiteInfoSource(object):
         @param site_name  Site name
         """
         raise NotImplementedError('get_site_status')
+
+    def get_filename_mapping(self, site_name):
+        """
+        Get the list of regular expression file name mapping rules for the given site.
+        @param site_name  Site name
+
+        @return {protocol: chains} where chains = [chain] and chain = [(match, dest), (match, dest)]
+        """
+        raise NotImplementedError('get_filename_mapping')
 
     def check_allowed_site(self, site_name):
         if self.include is not None:

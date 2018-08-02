@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Detox locks API</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <link href="css/dynamo.css" rel="stylesheet">
+    <link href="css/detox.css" rel="stylesheet">
+  </head>
+  <body>
+    <h1>Detox locks API</h1>
+    <h3>Usage</h3>
+    <p>
+      This API is used to protect / unprotect datasets and blocks from dynamo deletions. Locks are identified
+      by the protected item (dataset or block), site, group, requesting user, and optionally the "service name".
+      Service name is used if a user is managing locks in behalf of some system. Only users and
+      with permissions can make changes to the lock database (read-only functions are available to
+      everyone).
+    </p>
+    <p>
+      There is NO browser-friendly interface for detox locks at the moment, aside from this manual page. Use
+      cURL to access the API:
+      <pre>
+        curl --cert <i>proxy</i> --key <i>proxy</i> 'https://dynamo.example.com/data/detox/lock/<i>command</i>[?<i>options</i>]'
+      </pre>
+      where <i>proxy</i> is a valid grid proxy and <i>command</i> is one of the commands listed below. <br>
+      <span style="color:red;">Note that authentication with grid proxies work only with cURL+OpenSSL, which is not the default build in Scientific Linux and CentOS.</span>
+    </p>
+
+    <h3>Examples</h3>
+    <ul>
+      <li>Lock a dataset D:
+        <pre>
+          detox/lock/lock?item=D&amp;expires=2017-12-31&amp;comment=Lock%20for%20production
+        </pre>
+        When the lock is successful, a JSON containing "lock ID" will be returned. This ID can be used to release or re-lock the same item.
+      </li>
+      <li>Lock a dataset D at site X:
+        <pre>
+          detox/lock/lock?item=D&amp;sites=X&amp;expires=2017-12-31&amp;comment=Lock%20for%20production
+        </pre>
+      </li>
+      <li>Lock a dataset D as a service user "prodsystem":
+        <pre>
+          detox/lock/lock?service=prodsystem&amp;item=D&amp;expires=2017-12-31&amp;comment=Lock%20for%20production
+        </pre>
+      </li>
+      <li>Release a lock with ID 20:
+        <pre>
+          detox/lock/unlock?lockid=20
+        </pre>
+        Only locks created with your grid user name can be released.
+      </li>
+      <li>Release a lock with item and site names:
+        <pre>
+          detox/lock/unlock?item=D&amp;sites=X
+        </pre>
+      </li>
+      <li>Release a lock for the service "prodsystem":
+        <pre>
+          detox/lock/unlock?service=prodsystem&amp;item=D
+        </pre>
+      </li>
+      <li>List all locks created before 2017-04-01:
+        <pre>
+          detox/lock/list?created_before=2017-04-01&amp;user=all
+        </pre>
+      </li>
+    </ul>
+
+    <h3>Commands</h3>
+    <ul>
+      <li><strong>lock</strong>
+        <p>
+          Creates or update a lock and enable it. Takes options <strong>service</strong>, <strong>item</strong>, <strong>sites</strong>, <strong>groups</strong>, <strong>expires</strong>, and <strong>comment</strong>. At least <strong>item</strong> and <strong>expires</strong> must be specified.
+        </p>
+      </li>
+      <li><strong>unlock</strong>
+        <p>
+          Updates a lock and disable it. Takes options <strong>service</strong>, <strong>lockid</strong>, <strong>item</strong>, <strong>sites</strong>, <strong>groups</strong>, <strong>expires</strong>, and <strong>comment</strong>. At least <strong>lockid</strong> or <strong>item</strong> must be specified. All locks matching the condition are disabled.
+        </p>
+      </li>
+      <li><strong>set</strong>
+        <p>
+          Upload a JSON as POST data with this command. Disables all locks owned by the user first and loads the content of the uploaded data. The JSON format is
+          <pre>
+            [{{"item": "item_name", "sites": "sites_pattern", "groups": "groups_pattern", "expires": "2017-12-31 00:00:00", "comment": "comment_string"}}, ...]
+          </pre>
+        </p>
+        Sites, groups, and comment are optional. Takes option <strong>service</strong>.
+      </li>
+      <li><strong>list</strong>
+        <p>
+          Returns a list of locks. Locks can be enabled or disabled. By default, return only locks created by the user's grid user name. List can be narrowed by options. Takes options <strong>service</strong>, <strong>lockid</strong>, <strong>item</strong>, <strong>sites</strong>, <strong>groups</strong>, <strong>user</strong>, <strong>created_before</strong>, <strong>created_after</strong>, <strong>expires_before</strong>, and <strong>expires_after</strong>.
+        </p>
+      </li>
+    </ul>
+
+    <h3>Options</h3>
+    <ul>
+      <li><strong>service</strong>
+        <p>
+          Name of the service the user is managing the locks for. When specified, locks are identified by user-service combination (lock for the same dataset by one user for differentt service are distinguished from each other).
+        </p>
+        <p><i>Values</i><br>
+          A service name string.
+        </p>
+      </li>
+      <li><strong>lockid</strong>
+        <p>
+          A unique identifier of locks. Displayed in the text output after all commands when <i>return=yes</i>. lockid can be used to update the state of the locks.
+        </p>
+        <p><i>Value</i><br>
+          An integer.
+        </p>
+      </li>
+      <li><strong>item</strong>
+        <p>
+          A dataset or block name. Wildcard (*) is allowed and will match strings of any length.
+        </p>
+        <p><i>Value</i><br>
+          A string.
+        </p>
+      </li>
+      <li><strong>sites</strong>
+        <p>
+          Site name pattern. Wildcard (*) is allowed and will match strings of any length.
+        </p>
+        <p><i>Value</i><br>
+          A string.
+        </p>
+      </li>
+      <li><strong>groups</strong>
+        <p>
+          PhEDEx group name pattern. Wildcard (*) is allowed and will match strings of any length.
+        </p>
+        <p><i>Value</i><br>
+          A string.
+        </p>
+      </li>
+      <li><strong>expires</strong>
+        <p>
+          Expiration date of the lock. Expiration is used as a guidance but is not enforced.
+        </p>
+        <p><i>Value</i><br>
+          A string of format YYYY-mm-dd[ HH:MM:SS] given in UTC. Note that the white space must be replaced by %20 when passed as a GET string from the command line.
+        </p>
+      </li>
+      <li><strong>comment</strong>
+        <p>
+          Lock comment.
+        </p>
+        <p><i>Value</i><br>
+          A free-format string. Note that white spaces must be replaced by %20 (and all other non-alphanumeric characters with their URL-encoded values) when passed as a GET string from the command line.
+        </p>
+      </li>
+      <li><strong>user</strong>
+        <p>
+          Used only with <i>list</i> command. When set to <i>all</i>, lists locks by all users.
+        </p>
+        <p><i>Value</i><br>
+          self (default), all
+        </p>
+      </li>
+      <li><strong>created_before</strong>
+        <p>
+          Used only with <i>list</i> command. Limits the list to locks created before the given timestamp.
+        </p>
+        <p><i>Value</i><br>
+          A string of format YYYY-mm-dd[ HH:MM:SS]. Note that the white space must be replaced by %20 when passed as a GET string from the command line.
+        </p>
+      </li>
+      <li><strong>created_after</strong>
+        <p>
+          Used only with <i>list</i> command. Limits the list to locks created after the given timestamp.
+        </p>
+        <p><i>Value</i><br>
+          A string of format YYYY-mm-dd[ HH:MM:SS]. Note that the white space must be replaced by %20 when passed as a GET string from the command line.
+        </p>
+      </li>
+      <li><strong>expires_before</strong>
+        <p>
+          Used only with <i>list</i> command. Limits the list to locks expiring before the given timestamp.
+        </p>
+        <p><i>Value</i><br>
+          A string of format YYYY-mm-dd[ HH:MM:SS]. Note that the white space must be replaced by %20 when passed as a GET string from the command line.
+        </p>
+      </li>
+      <li><strong>expires_after</strong>
+        <p>
+          Used only with <i>list</i> command. Limits the list to locks expiring after the given timestamp.
+        </p>
+        <p><i>Value</i><br>
+          A string of format YYYY-mm-dd[ HH:MM:SS]. Note that the white space must be replaced by %20 when passed as a GET string from the command line.
+        </p>
+      </li>
+    </ul>
+  </body>
+</html>

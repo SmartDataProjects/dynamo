@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-import os
 import sys
+import time
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description = 'Update subscriptions.')
@@ -16,7 +16,7 @@ from dynamo.dataformat.configuration import Configuration
 config = Configuration(args.config)
 
 ## Set up logging (write to stdout & stderr)
-from dynamo.core.executable import make_standard_logger, read_only, inventory
+from dynamo.core.executable import make_standard_logger, authorized, inventory
 
 LOG = make_standard_logger(config.get('log_level', 'info'))
 
@@ -25,7 +25,7 @@ from dynamo.fileop.rlfsm import RLFSM
 
 rlfsm = RLFSM(config.get('rlfsm', None))
 
-if read_only:
+if not authorized:
     rlfsm.set_read_only()
 
 ## Set up a handle to the registry
@@ -34,42 +34,312 @@ from dynamo.registry.registry import RegistryDatabase
 registry = RegistryDatabase()
 
 ## Run
-from dynamo.dataformat import File
+from dynamo.dataformat import Block, BlockReplica, File, Group
 
 LOG.info('Updating the inventory from injections.')
 
-if not read_only:
-    registry.db.lock_tables(write = ['data_injections'])
+processed_injection_ids = []
 
 n_injected = 0
+n_updated = 0
 n_deleted = 0
+new_files = []
 
-for cmd, objstr in registry.db.xquery('SELECT `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
+for iid, cmd, objstr in registry.db.xquery('SELECT `id`, `cmd`, `obj` FROM `data_injections` ORDER BY `id`'):
+    processed_injection_ids.append(iid)
+
     obj = inventory.make_object(objstr)
 
     if cmd == 'update':
-        embedded_obj = inventory.update(obj)
-        n_injected += 1
+        if type(obj) is Block:
+            # Special case - due to the asynchronous nature of the injections, two injection commands can leave inconsistent
+            # block attributes. Here we let num_files and size to be only set by changes in the files.
+    
+            dataset_name, block_name = Block.from_full_name(obj.full_name())
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                # Another request deleted the dataset
+                continue
 
-        if type(obj) is File:
-            block = embedded_obj.block
+            block = dataset.find_block(block_name)
+    
+            if block is None:
+                # new block
+                obj._num_files = 0
+                obj._size = 0
+                inventory.update(obj)
+                n_injected += 1
+            else:
+                obj._num_files = block.num_files
+                obj._size = block.size
+                inventory.update(obj)
+                n_updated += 1
+
+        elif type(obj) is BlockReplica:
+            # Don't set the file_ids list to one injection - always just expand
+
+            dataset_name, block_name = Block.from_full_name(obj.block)
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                continue
+
+            block = dataset.find_block(block_name)
+            if block is None:
+                continue
+
+            try:
+                site = inventory.sites[obj.site]
+            except KeyError:
+                continue
+
+            replica = block.find_replica(site)
+
+            if replica is None:
+                # new replica
+                inventory.update(obj)
+                n_injected += 1
+            else:
+                if replica.file_ids is None:
+                    # If there was a new file injected, file_ids will not be None
+                    # We are not going to encounter a brand new file id here, so everything must be included already
+                    continue
+
+                updated = False
+                
+                if obj.file_ids is None:
+                    replica.file_ids = None
+                    replica.size = block.size
+                    updated = True
+                else:
+                    file_ids = list(replica.file_ids)
+
+                    # replace obj.block so that we can use obj.files()
+                    obj._block = block
+
+                    for lfile in obj.files() - replica.files():
+                        updated = True
+                        replica.size += lfile.size
+                        if lfile.id == 0:
+                            file_ids.append(lfile.lfn)
+                        else:
+                            file_ids.append(lfile.id)
+                            
+                    if updated:
+                        if len(file_ids) == block.num_files and replica.size == block.size:
+                            replica.file_ids = None
+                        else:
+                            replica.file_ids = tuple(file_ids)
+
+                if updated:
+                    inventory.register_update(replica)
+                    n_updated += 1
+
+        elif type(obj) is File:
+            # Update the block properties when injecting files
+
+            dataset_name, block_name = Block.from_full_name(obj.block)
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                continue
+
+            block = dataset.find_block(block_name)
+            if block is None:
+                continue
+
+            if block.find_file(obj.lfn) is not None:
+                # File already injected
+                continue
+
+            block_current_files = tuple((lfile.lfn if lfile.id == 0 else lfile.id) for lfile in block.files)
+
+            block.num_files += 1
+            block.size += obj.size
+            inventory.register_update(block)
+            new_file = inventory.update(obj)
+            n_injected += 1
+
+            new_files.append(new_file)
+
+            # Need to make all block replicas missing this file first
             for replica in block.replicas:
-                rlfsm.subscribe_files(replica.site, embedded_obj)
+                if replica.file_ids is None:
+                    replica.file_ids = block_current_files
+                    inventory.register_update(replica)
+                    n_updated += 1
+
+        else:
+            inventory.update(obj)
+            n_injected += 1
 
     elif cmd == 'delete':
-        inventory.delete(obj)
-        n_deleted += 1
+        if type(obj) is File:
+            dataset_name, block_name = Block.from_full_name(obj.block)
+            try:
+                dataset = inventory.datasets[dataset_name]
+            except KeyError:
+                continue
 
-if not read_only:
-    registry.db.query('DELETE FROM `data_injections`')
-    registry.db.query('ALTER TABLE `data_injections` AUTO_INCREMENT = 1')
+            block = dataset.find_block(block_name)
+            if block is None:
+                continue
 
-    registry.db.unlock_tables()
+            lfile = block.find_file(obj.lfn)
+            if lfile is None:
+                # File already deleted
+                continue
 
-LOG.info('Injected %d objects and deleted %d objects.', n_injected, n_deleted)
+            block.num_files -= 1
+            block.size -= lfile.size
+            inventory.register_update(block)
+            n_updated += 1
+            inventory.delete(lfile) # block replicas get updated automatically
+            n_deleted += 1
+
+        else:
+            inventory.delete(obj)
+            n_deleted += 1
+
+for lfile in new_files:
+    for replica in lfile.block.replicas:
+        if not replica.has_file(lfile):
+            rlfsm.subscribe_file(replica.site, lfile)
+
+LOG.info('Injected %d objects, updated %d objects, and deleted %d objects.', n_injected, n_updated, n_deleted)
 
 LOG.info('Updating the inventory from transfers and deletions.')
 
-rlfsm.update_inventory(inventory)
+subscriptions = rlfsm.get_subscriptions(inventory)
+
+by_replica = {}
+replicas_to_update = set()
+done_ids = []
+
+for sub in subscriptions:
+    if type(sub) is RLFSM.Subscription:
+        optype = 'transfer'
+        LOG.debug('Subscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.destination.name)
+        site = sub.destination
+    else:
+        optype = 'deletion'
+        LOG.debug('Desubscription entry: %d, %s, %s, %s, %s', sub.id, sub.status, optype, sub.file.lfn, sub.site.name)
+        site = sub.site
+
+    replica = sub.file.block.find_replica(site)
+
+    if replica is None:
+        # unexpected file! -> mark the subscription for deletion and move on
+        LOG.warning('Subscription %s to %s does not have a corresponding block replica', sub.file.lfn, site.name)
+        if sub.status == 'done':
+            done_ids.append(sub.id)
+        continue
+
+    try:
+        file_ids, projected = by_replica[replica]
+    except KeyError:
+        file_ids, projected = by_replica[replica] = (set(), set())
+
+        if replica.file_ids is None:
+            # this replica is already full
+            file_ids.update(f.id for f in replica.block.files)
+        else:
+            file_ids.update(replica.file_ids)
+
+    if type(sub) is RLFSM.Subscription:
+        if sub.status == 'done':
+            file_ids.add(sub.file.id)
+        elif sub.status != 'cancelled':
+            projected.add(sub.file)
+
+    else:
+        if sub.status != 'cancelled':
+            try:
+                projected.remove(sub.file)
+            except KeyError:
+                pass
+
+        if sub.status == 'done':
+            try:
+                LOG.info('Done deletion %d', sub.file.id)
+                file_ids.remove(sub.file.id)
+            except KeyError:
+                pass
+
+    if sub.status == 'done':
+        replicas_to_update.add(replica)
+        done_ids.append(sub.id)
+
+# collect all subscribed files and check against incomplete block replicas
+subscribed_files = set()
+
+for replica, (file_ids, projected) in by_replica.iteritems():
+    # See below for why we take the LFN
+    subscribed_files.update((lfile.lfn, replica.site) for lfile in projected)
+
+    if replica not in replicas_to_update:
+        continue
+
+    n_projected = len(projected)
+
+    LOG.debug('Updating replica %s with file_ids %s projected %d', replica, file_ids, n_projected)
+
+    if len(file_ids) == 0 and n_projected == 0:
+        LOG.debug('Deleting')
+        inventory.delete(replica)
+    else:
+        all_files = replica.block.files
+        full_file_ids = set(f.id for f in all_files)
+
+        if file_ids == full_file_ids:
+            LOG.debug('Replica is full. Updating')
+            replica.file_ids = None
+            replica.size = sum(f.size for f in all_files)
+            replica.last_update = int(time.time())
+            inventory.register_update(replica)
+        else:
+            if replica.file_ids is None:
+                existing_file_ids = full_file_ids
+            else:
+                existing_file_ids = set(replica.file_ids)
+
+            if file_ids != existing_file_ids:
+                LOG.debug('Replica content has changed: existing %s, new %s', existing_file_ids, file_ids)
+                replica.file_ids = tuple(file_ids)
+                replica.size = sum(f.size for f in all_files if f.id in file_ids)
+                replica.last_update = int(time.time())
+                inventory.register_update(replica)
+
+# Make subscriptions for incomplete block replicas who lost file subscriptions for whatever reasons
+for site in inventory.sites.itervalues():
+    for dataset_replica in site.dataset_replicas():
+        for block_replica in dataset_replica.block_replicas:
+            if block_replica.is_complete() or block_replica.group is Group.null_group:
+                # owned by null_group -> being deleted
+                continue
+
+            # subscribed_files must be a set of LFNs instead of file objects themselves because the
+            # by this line the file objects may be flushed out of the cache.
+            # block_replica.block.files may bring in fresh new file objects.
+            for lfile in (block_replica.block.files - block_replica.files()):
+                if (lfile.lfn, site) not in subscribed_files:
+                    LOG.warning('%s somehow lost subscription to %s. Remaking.', lfile.lfn, site.name)
+                    rlfsm.subscribe_file(site, lfile)
+
+# Remove injections and subscriptions
+# This is dangerous though - if inventory update fails on the server side for some reason,
+# we might not see the inconsistency for a while.
+
+if authorized:
+    registry.db.lock_tables(write = ['data_injections'])
+    registry.db.delete_many('data_injections', 'id', processed_injection_ids)
+
+    if registry.db.query('SELECT COUNT(*) FROM `data_injections`')[0] == 0:
+        registry.db.query('ALTER TABLE `data_injections` AUTO_INCREMENT = 1')
+
+    registry.db.unlock_tables()
+
+rlfsm.close_subscriptions(done_ids)
 
 LOG.info('Inventory update completed.')

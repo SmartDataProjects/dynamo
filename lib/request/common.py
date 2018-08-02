@@ -135,6 +135,9 @@ class RequestManager(object):
         sql += ' 0 NOT IN (SELECT (`item` IN (SELECT `item` FROM `{op}_request_items` AS i WHERE i.`request_id` = r.`id`)) FROM `{db}`.`items_tmp`)'
         self.registry.db.query(sql.format(db = self.registry.db.scratch_db, op = self.optype))
 
+        self.registry.db.drop_tmp_table('items_tmp')
+        self.registry.db.drop_tmp_table('sites_tmp')
+
         return '`{db}`.`ids_tmp`'.format(db = self.registry.db.scratch_db)
 
     def _make_temp_history_tables(self, dataset_ids, block_ids, site_ids):
@@ -144,6 +147,20 @@ class RequestManager(object):
         @param block_ids     List of block ids.
         @param site_ids      List of site ids.
         """
+
+        columns = [
+            '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
+            'PRIMARY KEY (`id`)'
+        ]
+        self.history.db.create_tmp_table('ids_tmp', columns)
+
+        tmp_table_name = '`{db}`.`ids_tmp`'.format(db = self.history.db.scratch_db)
+
+        if (dataset_ids is not None and len(dataset_ids) == 0) or \
+                (block_ids is not None and len(block_ids) == 0) or \
+                (site_ids is not None and len(site_ids) == 0):
+            # temp table must be empty
+            return tmp_table_name
 
         # Make temporary tables and fill ids_tmp with ids of requests whose item and site lists fully cover the provided list of items and sites.
         columns = ['`id` int(10) unsigned NOT NULL']
@@ -160,12 +177,6 @@ class RequestManager(object):
         if site_ids is not None:
             self.history.db.insert_many('sites_tmp', ('id',), MySQL.make_tuple, site_ids, db = self.history.db.scratch_db)
 
-        columns = [
-            '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
-            'PRIMARY KEY (`id`)'
-        ]
-        self.history.db.create_tmp_table('ids_tmp', columns)
-
         # Explaining the query outwards:
         # SELECT `X_id` FROM `{op}_request_X` WHERE `request_id` = r.`id` -> Full list of X for the request
         # `id` IN (SELECT `X_id` ...) -> 0 or 1
@@ -181,7 +192,11 @@ class RequestManager(object):
         sql += ' 0 NOT IN (SELECT (`id` IN (SELECT `block_id` FROM `{op}_request_blocks` AS b WHERE b.`request_id` = r.`id`)) FROM `{db}`.`blocks_tmp`)'
         self.history.db.query(sql.format(db = self.history.db.scratch_db, op = self.optype))
 
-        return '`{db}`.`ids_tmp`'.format(db = self.history.db.scratch_db)
+        self.history.db.drop_tmp_table('datasets_tmp')
+        self.history.db.drop_tmp_table('blocks_tmp')
+        self.history.db.drop_tmp_table('sites_tmp')
+
+        return tmp_table_name
 
     def _make_registry_constraints(self, request_id, statuses, users, items, sites):
         constraints = []

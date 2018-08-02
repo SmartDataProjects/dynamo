@@ -73,7 +73,10 @@ class MySQLAuthorizer(Authorizer):
 
         targets = self._mysql.query(sql, *args)
 
-        return target in targets
+        if target is None:
+            return len(targets) != 0
+        else:
+            return target in targets
 
     def list_user_auth(self, user): #override
         sql = 'SELECT r.`name`, a.`target` FROM `user_authorizations` AS a'
@@ -86,11 +89,9 @@ class MySQLAuthorizer(Authorizer):
         sql = 'SELECT u.`name`, s.`name` FROM `user_authorizations` AS a'
         sql += ' INNER JOIN `users` AS u ON u.`id` = a.`user_id`'
         sql += ' INNER JOIN `roles` AS s ON s.`id` = a.`role_id`'
+        args = tuple()
 
-        if target is None:
-            sql += ' WHERE a.`target` IS NULL'
-            args = tuple()            
-        else:
+        if target is not None:
             sql += ' WHERE a.`target` = %s'
             args = (target,)
         

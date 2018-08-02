@@ -34,8 +34,8 @@ class RequestWatcher(object):
         self.event = threading.Event()
         self.name = name
 
-    def start(self):
-        self.thread = threading.Thread(target = watcher.wait, args = (timeout,))
+    def start(self, timeout):
+        self.thread = threading.Thread(target = self.wait, args = (timeout,))
         self.thread.daemon = True
         self.thread.name = 'Timeout watcher'
         self.thread.start()
@@ -236,7 +236,7 @@ class RESTService(object):
             if not retry_on_error or self.last_errorcode == 400:
                 break
 
-            LOG.info('Exception "%s" occurred in %s. Trying again in %.1f seconds.', str(self.last_exception), url, wait)
+            LOG.info('Exception "%s" occurred in %s. Trying again in %.1f seconds.', str(self.last_exception), request.get_full_url(), wait)
 
             time.sleep(wait)
             wait *= 1.5
@@ -325,7 +325,7 @@ class RESTService(object):
 
         if timeout > 0:
             watcher = RequestWatcher('Webservice (%s)' % request.get_full_url())
-            watcher.start()
+            watcher.start(timeout)
 
         response = opener.open(request)
 

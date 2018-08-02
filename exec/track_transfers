@@ -29,34 +29,41 @@ sys.argv = []
 
 from dynamo.dataformat import Configuration, HistoryRecord, Block, ObjectError
 from dynamo.utils.parallel import Map
-from dynamo.core.executable import read_only, make_standard_logger
+from dynamo.core.executable import authorized, inventory, make_standard_logger
 
 ## Configuration
 
 config = Configuration(args.config)
-dealer_config = Configuration(config.dealer_config).dealer
 
 ## Logger
 
-LOG = make_standard_logger(config.log_level)
+LOG = make_standard_logger(config.get('log_level', 'info'))
+
+## Parallelizer
+
+parallelizer = Map(config.get('parallel', Configuration()))
 
 ## Data source
 
-from dynamo.history.history import TransactionHistoryInterface
+from dynamo.dealer.history import DealerHistoryBase
 from dynamo.operation.copy import CopyInterface
 
-if 'history' in config:
-    history = TransactionHistoryInterface.get_instance(config.history.module, config.history.config)
+history = DealerHistoryBase(config.get('history', None))
+if 'copy' in config:
+    copy = CopyInterface.get_instance(config['copy'].module, config['copy'].config)
 else:
-    history = TransactionHistoryInterface.get_instance()
+    copy = CopyInterface.get_instance()
 
-copy = CopyInterface.get_instance(dealer_config.copy_op.module, dealer_config.copy_op.config)
+if not authorized:
+    # not that we'll do any write operations
+    history.set_read_only()
+    copy.set_read_only()
 
 ## Paths
 
 rrd_dir = config.rrd_path_base + '/track_transfers'
 
-if not read_only:
+if authorized:
     try:
         os.makedirs(rrd_dir)
     except OSError:
@@ -112,7 +119,7 @@ totals = {} # {site: tallies}
 ongoing_totals = {} # {site: tallies}
 
 def get_copy_status(record):
-    return record, copy.copy_status(record.operation_id)
+    return record, copy.copy_status(record, inventory)
 
 def is_transfer_stuck(rrd_file):
     try:
@@ -146,7 +153,7 @@ for sitename, site_records in records.iteritems():
     # Create a directory for the site
     site_rrd_dir = rrd_dir + '/' + sitename
 
-    if not read_only:
+    if authorized:
         try:
             os.mkdir(site_rrd_dir)
         except OSError:
@@ -167,18 +174,18 @@ for sitename, site_records in records.iteritems():
 
     dataset_details = []
 
-    status_list = Map(config.parallel).execute(get_copy_status, site_records)
+    status_list = parallelizer.execute(get_copy_status, site_records)
 
     for record, status in status_list:
-        LOG.info('Transfer request ID: %d', record.operation_id)
+        LOG.info('Copy operation ID: %d', record.operation_id)
    
         if len(status) == 0:
             # old transfer. seems to not exist anymore. Call it complete and just update the history DB.
             for replica in record.replicas:
                 replica.status = HistoryRecord.ST_COMPLETE
 
-            if not read_only:
-                history.update_copy_entry(record)
+            if authorized:
+                history.update_entry(record)
 
             continue
 
@@ -241,7 +248,7 @@ for sitename, site_records in records.iteritems():
                 replica_record.status = HistoryRecord.ST_COMPLETE
                 update_record = True
 
-                if not read_only:
+                if authorized:
                     # We don't need to keep the RRD file any more
                     try:
                         os.unlink(rrd_file)
@@ -253,7 +260,7 @@ for sitename, site_records in records.iteritems():
 
                 incomplete_replicas_rrd.add(rrd_file)
 
-                if not read_only and not os.path.exists(rrd_file):
+                if authorized and not os.path.exists(rrd_file):
                     # RRD does not exist yet
                     create_rrd(rrd_file)
 
@@ -268,7 +275,7 @@ for sitename, site_records in records.iteritems():
                 except:
                     lasttime = 0
 
-                if not read_only and timestamp != lasttime:
+                if authorized and timestamp != lasttime:
                     rrdtool.update(rrd_file, '%d:%d:%d' % (timestamp, copied, total))
                 
                 # Tally up this tranfsfer
@@ -288,13 +295,13 @@ for sitename, site_records in records.iteritems():
                 })
             
         # Update the history DB
-        if update_record and not read_only:
+        if update_record and authorized:
             LOG.info('Updating history record %d', record.operation_id)
-            history.update_copy_entry(record)
+            history.update_entry(record)
 
     dataset_details.sort(key = lambda x: x['total'])
 
-    if not read_only:
+    if authorized:
         with open("%s/filelist.txt" % site_rrd_dir, "w") as csvfilelist:
             fieldnames = ["id", "name", "copied", "total", "stuck"]
     
@@ -306,7 +313,7 @@ for sitename, site_records in records.iteritems():
 
 ## Create overview files
 
-if not read_only:
+if authorized:
     with open("%s/overview.txt" % rrd_dir, "w") as overview:
         fieldnames = ["sitename", "ongoing", "total", "copied", "total_stuck", "copied_stuck"]
     
@@ -325,10 +332,10 @@ total_volume = sum(t['total_volume'] for s, t in totals.iteritems())
 copied_volume = sum(t['copied_volume'] for s, t in totals.iteritems())
 
 total_rrdfile = rrd_dir + '/total.rrd'
-if not read_only and not os.path.exists(total_rrdfile):
+if authorized and not os.path.exists(total_rrdfile):
     create_rrd(total_rrdfile)
 
-if not read_only:
+if authorized:
     timestamp = int(time.time()) / interval * interval
     try:
         rrdtool.update(total_rrdfile, '%d:%d:%d' % (timestamp, copied_volume, total_volume))
@@ -350,41 +357,6 @@ if not read_only:
         
         for existing_rrd in existing_rrds:
             filetime = datetime.fromtimestamp(os.path.getmtime(existing_rrd))
-            if not read_only and existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
+            if authorized and existing_rrd not in incomplete_replicas_rrd and filetime < older_than:
                 # Delete pngs and rrd files
                 os.unlink(existing_rrd)
-
-    ## Copy rrds to the /var/www location
-
-    target_dir = config.rrd_publish_target + '/monitoring'
-    try:
-        os.makedirs(target_dir)
-    except OSError:
-        pass
-    
-    for entry in os.listdir(target_dir):
-        if entry.startswith('T'):
-            target = target_dir + '/' + entry
-            try:
-                shutil.rmtree(target)
-            except OSError:
-                pass
-    
-    try:
-        os.unlink(target_dir + '/total.rrd')
-    except OSError:
-        pass
-    
-    try:
-        os.unlink(target_dir + '/overview.txt')
-    except OSError:
-        pass
-    
-    for entry in os.listdir(rrd_dir):
-        if entry.startswith('T'):
-            source = rrd_dir + '/' + entry
-            target = target_dir + '/' + entry
-            shutil.copytree(source, target)
-    
-    shutil.copy(rrd_dir + '/total.rrd', target_dir)
-    shutil.copy(rrd_dir + '/overview.txt', target_dir)

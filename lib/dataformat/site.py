@@ -1,10 +1,13 @@
+import copy
+import re
+
 from exceptions import ObjectError, IntegrityError
 from sitepartition import SitePartition
 
 class Site(object):
     """Represents a site. Owns lists of dataset and block replicas, which are organized into partitions."""
 
-    __slots__ = ['_name', 'id', 'host', 'storage_type', 'backend', 'status',
+    __slots__ = ['_name', 'id', 'host', 'storage_type', 'backend', 'status', 'filename_mapping',
         '_dataset_replicas', 'partitions']
 
     _storage_types = ['disk', 'mss', 'buffer', 'unknown']
@@ -44,12 +47,59 @@ class Site(object):
     def name(self):
         return self._name
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN, sid = 0):
+    class FileNameMapping(object):
+        def __init__(self, chains):
+            """
+            @param chains  List of chains. A chain is a list of 2-tuples (lfn pattern, pfn replacement)
+                           PFN replacement can contain {n} placeholders to match the captured re patterns
+                           (starting with n = 0).
+            """
+            # remember the original texts for comparison
+            self._chains = copy.deepcopy(chains)
+            # compiled versions for actual use
+            self._re_chains = []
+            for chain in chains:
+                re_chain = []
+                for lfnpat, pfnpat in chain:
+                    re_chain.append((re.compile(lfnpat), pfnpat))
+
+                self._re_chains.append(re_chain)
+
+        def __eq__(self, other):
+            return self._chains == other._chains
+
+        def __ne__(self, other):
+            return self._chains != other._chains
+
+        def __repr__(self):
+            return repr(self._chains)
+
+        def map(self, lfn):
+            for chain in self._re_chains:
+                source = lfn
+                for source_re, dest_pat in chain:
+                    matches = source_re.match(source)
+                    if matches is None:
+                        break
+
+                    source = dest_pat.format(*tuple(matches.group(i + 1) for i in xrange(source_re.groups)))
+                else:
+                    # could go through the entire chain - source is the mapped pfn
+                    return source
+
+            return None
+
+
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN, filename_mapping = {}, sid = 0):
         self._name = name
         self.host = host
         self.storage_type = Site.storage_type_val(storage_type)
         self.backend = backend
         self.status = Site.status_val(status)
+
+        self.filename_mapping = {}
+        for protocol, chains in filename_mapping.iteritems():
+            self.filename_mapping[protocol] = Site.FileNameMapping(chains)
 
         self.id = sid
 
@@ -62,13 +112,13 @@ class Site(object):
             (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status), self.id)
 
     def __repr__(self):
-        return 'Site(%s,%s,\'%s\',%s,\'%s\',%d)' % \
-            (repr(self._name), repr(self.host), Site.storage_type_name(self.storage_type), repr(self.backend), Site.status_name(self.status), self.id)
+        return 'Site(%s,%s,\'%s\',%s,\'%s\',%s,%d)' % \
+            (repr(self._name), repr(self.host), Site.storage_type_name(self.storage_type), repr(self.backend), Site.status_name(self.status), repr(self.filename_mapping), self.id)
 
     def __eq__(self, other):
         return self is other or \
             (self._name == other._name and self.host == other.host and self.storage_type == other.storage_type and \
-            self.backend == other.backend and self.status == other.status)
+            self.backend == other.backend and self.status == other.status and self.filename_mapping == other.filename_mapping)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -80,6 +130,9 @@ class Site(object):
         self.storage_type = other.storage_type
         self.backend = other.backend
         self.status = other.status
+        self.filename_mapping = {}
+        for protocol, mapping in other.filename_mapping.iteritems():
+            self.filename_mapping[protocol] = Site.FileNameMapping(mapping._chains)
 
     def embed_into(self, inventory, check = False):
         updated = False
@@ -310,8 +363,9 @@ class Site(object):
                     site_partition.replicas[dataset_replica] = block_replicas
 
     def to_pfn(self, lfn, protocol):
-        # for now return backend + lfn, need a proper mapping mechanism here
-        return self.backend + lfn
+        try:
+            mapping = self.filename_mapping[protocol]
+        except KeyError:
+            return None
 
-    def to_lfn(self, pfn, protocol):
-        return pfn.replace(self.backend, '')
+        return mapping.map(lfn)

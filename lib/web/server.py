@@ -10,7 +10,7 @@ import collections
 import warnings
 import multiprocessing
 import cStringIO
-from cgi import FieldStorage
+from cgi import parse_qs, escape
 from flup.server.fcgi_fork import WSGIServer
 
 import dynamo.core.serverutils as serverutils
@@ -163,27 +163,35 @@ class WebServer(object):
             log_handler.setFormatter(logging.Formatter(fmt = '%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
             root_logger.addHandler(log_handler)
 
-        # Ignore one specific warning issued by accident when a web page crashes and dumps a stack trace
-        # cgitb scans all exception attributes with dir(exc) + getattr(exc, attr) which results in accessing
-        # exception.message, a deprecated attribute.
-        warnings.filterwarnings('ignore', 'BaseException.message.*', DeprecationWarning, '.*cgitb.*', 173)
+        # If the inventory loads super-fast in the main server, we get reset while loading the defaults
+        # Block the terminate signal to avoid KeyboardInterrupt error messages
+        try:
+            # Ignore one specific warning issued by accident when a web page crashes and dumps a stack trace
+            # cgitb scans all exception attributes with dir(exc) + getattr(exc, attr) which results in accessing
+            # exception.message, a deprecated attribute.
+            warnings.filterwarnings('ignore', 'BaseException.message.*', DeprecationWarning, '.*cgitb.*', 173)
 
-        # Set up module defaults
-        # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
-        for key, config in self.dynamo_server.defaults_config.items():
-            try:
-                myconf = config['fullauth']
-            except KeyError:
+            load_modules()
+    
+            # Set up module defaults
+            # Using the same piece of code as serverutils, but only picking up fullauth or all configurations
+            for key, config in self.dynamo_server.defaults_config.items():
                 try:
-                    myconf = config['all']
+                    myconf = config['fullauth']
                 except KeyError:
-                    continue
+                    try:
+                        myconf = config['all']
+                    except KeyError:
+                        continue
+        
+                modname, clsname = key.split(':')
+                module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
+                cls = getattr(module, clsname)
+        
+                cls.set_default(myconf)
     
-            modname, clsname = key.split(':')
-            module = __import__('dynamo.' + modname, globals(), locals(), [clsname])
-            cls = getattr(module, clsname)
-    
-            cls.set_default(myconf)
+        except KeyboardInterrupt:
+            os._exit(0)
 
         try:
             self.wsgi_server.run()
@@ -199,12 +207,13 @@ class WebServer(object):
         with self.active_count.get_lock():
             self.active_count.value += 1
 
-        try:
-            agent = environ['HTTP_USER_AGENT']
-        except KeyError:
-            agent = 'Unknown'
+            try:
+                agent = environ['HTTP_USER_AGENT']
+            except KeyError:
+                agent = 'Unknown'
 
-        LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], agent)
+            # Log file is a shared resource - write within the lock
+            LOG.info('%s-%s %s (%s:%s %s)', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], agent)
 
         # Then immediately switch to logging to a buffer
         root_logger = logging.getLogger()
@@ -226,6 +235,7 @@ class WebServer(object):
             self.headers = [] # list of header tuples
             self.callback = None # set to callback function name if this is a JSONP request
             self.message = '' # string
+            self.phedex_request = '' # backward compatibility
 
             content = self._main(environ)
 
@@ -244,13 +254,34 @@ class WebServer(object):
                 status = 'Service Unavailable'
 
             if self.content_type == 'application/json':
-                json_data = {'result': status, 'message': self.message}
-                if content is not None:
-                    json_data['data'] = content
+                if self.phedex_request != '':
+                    if type(content) is not dict:
+                        self.code == 500
+                        status = 'Internal Server Error'
+                    else:
+                        url = '%s://%s' % (environ['REQUEST_SCHEME'], environ['HTTP_HOST'])
+                        if (environ['REQUEST_SCHEME'] == 'http' and environ['SERVER_PORT'] != '80') or \
+                           (environ['REQUEST_SCHEME'] == 'https' and environ['SERVER_PORT'] != '443'):
+                            url += '%s' % environ['SERVER_PORT']
+                        url += environ['REQUEST_URI']
+    
+                        json_data = {'phedex': {'call_time': 0, 'instance': 'prod', 'request_call': self.phedex_request,
+                                                'request_date': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()), 'request_timestamp': time.time(),
+                                                'request_url': url, 'request_version': '2.2.1'}}
+                        json_data['phedex'].update(content)
+    
+                        content = json.dumps(json_data)
 
-                content = json.dumps(json_data)
-                if self.callback is not None:
-                    content = self.callback + '(' + content + ')'
+                else:
+                    json_data = {'result': status, 'message': self.message}
+                    if content is not None:
+                        json_data['data'] = content
+    
+                    # replace content with the json string
+                    if self.callback is not None:
+                        content = '%s(%s)' % (self.callback, json.dumps(json_data))
+                    else:
+                        content = json.dumps(json_data)
 
             headers = [('Content-Type', self.content_type)] + self.headers
 
@@ -267,10 +298,13 @@ class WebServer(object):
 
             delim = '--------------'
             log_tmp = stream.getvalue().strip()
-            log = ''.join('  %s\n' % line for line in log_tmp.split('\n'))
-            LOG.info('%s-%s %s (%s:%s) return:\n%s\n%s%s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], delim, log, delim)
+            if len(log_tmp) == 0:
+                log = 'empty log'
+            else:
+                log = 'return:\n%s\n%s%s' % (delim, ''.join('  %s\n' % line for line in log_tmp.split('\n')), delim)
 
             with self.active_count.get_lock():
+                LOG.info('%s-%s %s (%s:%s) %s', environ['REQUEST_SCHEME'], environ['REQUEST_METHOD'], environ['REQUEST_URI'], environ['REMOTE_ADDR'], environ['REMOTE_PORT'], log)
                 self.active_count.value -= 1
 
     def _main(self, environ):
@@ -340,10 +374,14 @@ class WebServer(object):
                 return content
 
         ## Step 3
-        if mode != 'data' and mode != 'web':
+        if mode != 'data' and mode != 'web' and mode != 'registry' and mode != 'phedexdata': # registry and phedexdata for backward compatibility
             self.code = 404
             self.message = 'Invalid request %s.' % mode
             return
+
+        if mode == 'phedexdata':
+            mode = 'data'
+            self.phedex_request = environ['PATH_INFO'][1:]
 
         module, _, command = environ['PATH_INFO'][1:].partition('/')
 
@@ -363,6 +401,11 @@ class WebServer(object):
             provider = cls(self.modules_config)
         except:
             return self._internal_server_error()
+
+        if provider.must_authenticate and user is None:
+            self.code = 400
+            self.message = 'Resource only available with HTTPS.'
+            return
 
         if provider.write_enabled:
             self.dynamo_server.manager.master.lock()
@@ -391,42 +434,83 @@ class WebServer(object):
 
             provider.authorizer = authorizer
 
+        if provider.require_appmanager:
+            provider.appmanager = self.dynamo_server.manager.master.create_appmanager()
+
         try:
             ## Step 4
-            if 'CONTENT_TYPE' in environ and environ['CONTENT_TYPE'] == 'application/json':
+            post_request = None
+
+            if environ['REQUEST_METHOD'] == 'POST':
                 try:
-                    request = json.loads(environ['wsgi.input'].read())
+                    content_type = environ['CONTENT_TYPE']
+                except KeyError:
+                    content_type = 'application/x-www-form-urlencoded'
+
+                # In principle we should grab CONTENT_LENGTH from environ and only read as many bytes as given, but wsgi.input seems to know where the EOF is
+                try:
+                    content_length = environ['CONTENT_LENGTH']
+                except KeyError:
+                    # length -1: rely on wsgi.input having an EOF at the end
+                    content_length = -1
+
+                post_data = environ['wsgi.input'].read(content_length)
+
+                # Even though our default content type is URL form, we check if this is a JSON
+                try:
+                    json_data = json.loads(post_data)
                 except:
-                    self.code = 400
-                    self.message = 'Could not parse input.'
-                    return
-            else:
-                # Use FieldStorage to parse URL-encoded GET and POST requests
-                fstorage = FieldStorage(fp = environ['wsgi.input'], environ = environ, keep_blank_values = True)
-                if fstorage.list is None:
-                    self.code = 400
-                    self.message = 'Could not parse input.'
-                    return 
+                    if content_type == 'application/json':
+                        self.code = 400
+                        self.message = 'Could not parse input.'
+                        return
+                else:
+                    content_type = 'application/json'
+                    provider.input_data = json_data
+                    unicode2str(provider.input_data)
 
-                request = {}
-                for item in fstorage.list:
-                    if item.name.endswith('[]'):
-                        key = item.name[:-2]
-                        try:
-                            request[key].append(item.value)
-                        except KeyError:
-                            request[key] = [item.value]
+                if content_type == 'application/x-www-form-urlencoded':
+                    try:
+                        post_request = parse_qs(post_data)
+                    except:
+                        self.code = 400
+                        self.message = 'Could not parse input.'
+                elif content_type != 'application/json':
+                    self.code = 400
+                    self.message = 'Unknown Content-Type %s.' % content_type
+
+            get_request = parse_qs(environ['QUERY_STRING'])
+
+            if post_request is not None:
+                for key, value in post_request.iteritems():
+                    if key in get_request:
+                        # return dict of parse_qs is {key: list}
+                        get_request[key].extend(post_request[key])
                     else:
-                        request[item.name] = item.value
+                        get_request[key] = post_request[key]
 
-            unicode2str(request)
-    
+            unicode2str(get_request)
+
+            request = {}
+            for key, value in get_request.iteritems():
+                if key.endswith('[]'):
+                    key = key[:-2]
+                    request[key] = map(escape, value)
+                else:
+                    if len(value) == 1:
+                        request[key] = escape(value[0])
+                    else:
+                        request[key] = map(escape, value)
+
             ## Step 5
             caller = WebServer.User(user, dn, user_id, authlist)
 
-            inventory = self.dynamo_server.inventory.create_proxy()
-            if provider.write_enabled:
-                inventory._update_commands = []
+            if self.dynamo_server.inventory.loaded:
+                inventory = self.dynamo_server.inventory.create_proxy()
+                if provider.write_enabled:
+                    inventory._update_commands = []
+            else:
+                inventory = DummyInventory()
 
             content = provider.run(caller, request, inventory)
 
@@ -436,6 +520,10 @@ class WebServer(object):
         except (exceptions.AuthorizationError, exceptions.ResponseDenied, exceptions.MissingParameter,
                 exceptions.ExtraParameter, exceptions.IllFormedRequest, exceptions.InvalidRequest) as ex:
             self.code = 400
+            self.message = str(ex)
+            return
+        except exceptions.TryAgain as ex:
+            self.code = 503
             self.message = str(ex)
             return
         except:
@@ -463,3 +551,11 @@ class WebServer(object):
             return response
         else:
             return 'Internal server error! (' + exc_type.__name__ + ': ' + str(exc) + ')\n'
+
+class DummyInventory(object):
+    """
+    Inventory placeholder that just throws a 503. To be used when inventory is not loaded yet.
+    We start the web server even before the inventory is loaded because not all web modules use inventory.
+    """
+    def __getattr__(self, attr):
+        raise exceptions.TryAgain('Dynamo server is starting. Please try again in a few moments.')

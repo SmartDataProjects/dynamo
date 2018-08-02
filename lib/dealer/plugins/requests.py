@@ -64,6 +64,7 @@ class CopyRequestsHandler(BaseHandler):
 
         for request in active_requests.itervalues():
             updated = False
+            to_be_activated = False
 
             for action in request.actions:
                 if action.status != RequestAction.ST_NEW:
@@ -97,12 +98,14 @@ class CopyRequestsHandler(BaseHandler):
                         if existing_replica.is_complete():
                             action.status = RequestAction.ST_COMPLETED
                         else:
+                            # it was queued by someone
                             action.status = RequestAction.ST_QUEUED
                         action.last_update = now
                         updated = True
 
                     else:
                         activation_list.append((dataset, site))
+                        to_be_activated = True
     
                 else:
                     # action.item is a block name
@@ -135,9 +138,13 @@ class CopyRequestsHandler(BaseHandler):
 
                     else:
                         activation_list.append((block, site))
+                        to_be_activated = True
 
             if updated:
                 self.request_manager.update_request(request)
+
+            if to_be_activated:
+                self.activated_requests.append(request)
 
         self.request_manager.unlock()
 
@@ -217,6 +224,9 @@ class CopyRequestsHandler(BaseHandler):
             if request.status == Request.ST_REJECTED:
                 continue
 
+            # list of (item, site) to be activated (not necessarily proposed to dealer - there can be another request for the same item-site)
+            activation_list = []
+            # list of dealer proposals
             new_dealer_requests = []
 
             # find destinations (request.n times) for each item
@@ -263,7 +273,7 @@ class CopyRequestsHandler(BaseHandler):
 
                         dealer_request = DealerRequest(proto_request.item(), destination = destination)
 
-                        # consider copies proposed by other requests as complete
+                        # copies proposed by other requests -> just activate
                         try:
                             proposed_blocks = blocks_to_propose[destination][dealer_request.dataset]
                         except KeyError:
@@ -272,14 +282,19 @@ class CopyRequestsHandler(BaseHandler):
                             if dealer_request.blocks is not None:
                                 if set(dealer_request.blocks) <= proposed_blocks:
                                     num_new -= 1
+                                    for block in dealer_request.blocks:
+                                        activation_list.append((block.full_name(), dealer_request.destination.name, now))
+
                                     continue
 
                             else:
                                 if dealer_request.dataset.blocks == proposed_blocks:
                                     num_new -= 1
+                                    activation_list.append((dealer_request.item_name(), dealer_request.destination.name, now))
+
                                     continue
 
-                        # if the item already exists, it's a complete copy too
+                        # if the item already exists, it's a complete copy - don't activate, don't propose
                         if exists == 2:
                             num_new -= 1
                         elif exists == 1:
@@ -315,15 +330,13 @@ class CopyRequestsHandler(BaseHandler):
             if request.status == Request.ST_REJECTED:
                 continue
 
-            if len(new_dealer_requests) == 0:
+            if len(new_dealer_requests) == 0 and len(activation_list) == 0:
                 # nothing to do
                 request.status = Request.ST_COMPLETED
                 self.request_manager.update_request(request)
                 continue
 
             # finally add to the returned requests
-            activation_list = []
-
             for dealer_request in new_dealer_requests:
                 try:
                     site_blocks = blocks_to_propose[dealer_request.destination]

@@ -73,9 +73,18 @@ class ObjectRepository(object):
         if result is None:
             return None
 
-        # Not capturing exceptions because there shouldn't be anything raised
-        # If there is, that means we have a really bad desynch between the inventory and the store.
-        return self.datasets[result[0]].find_block(result[1], must_find = True).find_file(lfn, must_find = True)
+        try:
+            dataset = self.datasets[result[0]]
+        except KeyError:
+            # Can happen if the dataset was deleted from the inventory in this process
+            return None
+            
+        block = dataset.find_block(result[1])
+        if block is None:
+            # Similarly, can happen if the block is gone
+            return None
+            
+        return block.find_file(lfn)
 
 
 class DynamoInventoryProxy(ObjectRepository):
@@ -86,6 +95,8 @@ class DynamoInventoryProxy(ObjectRepository):
         self.datasets = inventory.datasets
         self.partitions = inventory.partitions
         self._store = inventory.new_store_handle()
+        self._store.server_side = False
+        df.Block.inventory_store = self._store
 
         # When the user application is authorized to change the inventory state, all updated
         # and deleted objects are kept in this list until the end of execution.
@@ -182,8 +193,9 @@ class DynamoInventory(ObjectRepository):
             self._store.close()
 
         self._store = InventoryStore.get_instance(module, config)
+        self._store.server_side = True
 
-        df.Block._inventory_store = self._store
+        df.Block.inventory_store = self._store
 
     def clone_store(self, module, config):
         source = InventoryStore.get_instance(module, config)

@@ -1,0 +1,51 @@
+#summaryTable {
+    width: 40%;
+    border-collapse: collapse;
+    border: 1px solid black;
+}
+
+td, th {
+    border: 1px solid #ddd;
+}
+
+#summaryTable tr {
+    height: 30px;
+}
+
+#destination {
+    width: 20%;
+}
+
+col.counter {
+    width: 20%;
+}
+
+#siteDetails {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid black;
+}
+
+#subid {
+    width: 10%;
+}
+
+#filename {
+    width: 50%;
+}
+
+#subdest {
+    width: 10%;
+}
+
+#holdReason {
+    width: 10%;
+}
+
+#subsource {
+    width: 10%;
+}
+
+#exitCode {
+    width: 10%;
+}

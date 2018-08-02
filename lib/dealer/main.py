@@ -58,7 +58,7 @@ class Dealer(object):
         """
 
         # fetch the deletion cycle number
-        cycle_number = self.history.new_cycle(self.policy.partition_name, self.policy.version, comment = comment, test = self.test_run)
+        cycle_number = self.history.new_cycle(self.policy.partition_name, comment = comment, test = self.test_run)
 
         LOG.info('Dealer cycle %d for %s starting', cycle_number, self.policy.partition_name)
 
@@ -154,7 +154,7 @@ class Dealer(object):
         for plugin in self._plugin_priorities.keys():
             attr_names.update(plugin.required_attrs)
 
-        self.attr_producers = get_producers(attr_names, config.attrs).values()
+        self.attr_producers = list(set(get_producers(attr_names, config.attrs).itervalues()))
 
     def _collect_requests(self, inventory):
         """
@@ -184,6 +184,12 @@ class Dealer(object):
         # Flattened list of (DealerRequest, plugin)
         requests = []
 
+        # Collect the requests based on plugin priority
+        reject_stats = {
+            'No source replica available': 0,
+            'Dataset is not valid': 0
+        }
+
         while len(reqlists) != 0:
             # Classic weighted random-picking algorithm
             plugins = reqlists.keys()
@@ -206,28 +212,33 @@ class Dealer(object):
                 reqlists.pop(plugin)
 
             # check that there is at least one source (allow it to be incomplete - could be in production)
+            no_source = False
             if request.block is not None:
                 if len(request.block.replicas) == 0:
-                    continue
+                    no_source = True
+
             elif request.blocks is not None:
                 if len(request.blocks) == 0:
-                    continue
+                    no_source = True
+                else:
+                    # all blocks must have at least one copy
+                    for block in request.blocks:
+                        if len(block.replicas) == 0:
+                            no_source = True
+                            break
 
-                no_source = False
-
-                for block in request.blocks:
-                    if len(block.replicas) == 0:
-                        no_source = True
-                        break
-
-                # all blocks must have at least one copy
-                if no_source:
-                    continue
             elif request.dataset is not None:
                 if len(request.dataset.replicas) == 0:
-                    continue
+                    no_source = True
+
+            if no_source:
+                LOG.debug('%s has no source', request.item_name())
+                reject_stats['No source replica available'] += 1
+                continue
 
             if request.dataset.status not in (Dataset.STAT_PRODUCTION, Dataset.STAT_VALID):
+                LOG.debug('Dataset of %s is not valid', request.item_name())
+                reject_stats['Dataset is not valid'] += 1
                 continue
 
             # set the group here
@@ -276,11 +287,17 @@ class Dealer(object):
             'Not allowed': 0,
             'Destination is full': 0,
             'Invalid request': 0,
-            'No destination available': 0
+            'No destination available': 0,
+            'Source files missing': 0
         }
 
         # now go through all requests
         for request, plugin in requests:
+            # make sure we have all blocks complete somewhere
+            if not self.policy.validate_source(request):
+                reject_stats['Source files missing'] += 1
+                continue
+
             if request.destination is None:
                 # Randomly choose the destination site with probability proportional to free space
                 # request.destination will be set in the function

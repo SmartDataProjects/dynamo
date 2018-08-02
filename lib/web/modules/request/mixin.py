@@ -12,6 +12,10 @@ class ParseInputMixin(object):
         self.params = {}
 
     def parse_input(self, request, inventory, allowed_fields, required_fields = tuple()):
+        # JSON could have been uploaded
+        if self.input_data is not None:
+            request.update(self.input_data)
+
         # Check we have the right request fields
 
         input_fields = set(request.keys())
@@ -80,7 +84,11 @@ class ParseInputMixin(object):
                     raise InvalidRequest('Invalid block name %s' % item)
 
         if 'site' in self.params:
+            self.params['site_orig'] = []
+
             for site in list(self.params['site']):
+                self.params['site_orig'].append(site)
+
                 # Wildcard allowed
                 if '*' in site or '?' in site or '[' in site:
                     self.params['site'].remove(site)

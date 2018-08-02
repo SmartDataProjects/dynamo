@@ -75,6 +75,22 @@ class CurrentFileTransferListStatic(WebModule, HTMLMixin):
 
         return self.form_html()
 
+class HeldTransferList(WebModule, HTMLMixin):
+    """
+    Open the file transfer list HTML and let monitor.js take care of data loading.
+    """
+
+    def __init__(self, config):
+        WebModule.__init__(self, config)
+        HTMLMixin.__init__(self, 'Suspended file transfers', 'transfers/held.html')
+
+        self.stylesheets = ['/css/transfers/held.css']
+        self.scripts = ['/js/utils.js', '/js/transfers/held.js']
+
+    def run(self, caller, request, inventory):
+        self.header_script = '$(document).ready(function() { initPage(); });'
+        return self.form_html()
+
 from dynamo.web.modules.transfers.history import FileTransferHistory
 
 class HistoryFileTransferListStatic(WebModule, HTMLMixin):
@@ -117,5 +133,6 @@ export_web = {
     'list': FileTransferList,
     'sizes': FileTransferSizes,
     'current_list': CurrentFileTransferListStatic,
-    'history_list': HistoryFileTransferListStatic
+    'history_list': HistoryFileTransferListStatic,
+    'held': HeldTransferList
 }

@@ -1,7 +1,7 @@
 import logging
 
 from dynamo.dataformat import Site
-from base import BaseHandler
+from base import BaseHandler, DealerRequest
 from dynamo.detox.history import DetoxHistoryBase
 
 LOG = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ class Undertaker(BaseHandler):
         BaseHandler.__init__(self, 'Undertaker')
 
         self.manual_evacuation_sites = list(config.get('additional_sites', []))
-        self.detoxhistory = DetoxHistoryBase(config.detox_history)
+        self.detoxhistory = DetoxHistoryBase(config.get('detox_history', None))
 
     def get_requests(self, inventory, policy): # override
         latest_cycles = self.detoxhistory.get_cycles(policy.partition_name)

@@ -25,10 +25,8 @@ CONFIG_PATH=$($READCONF paths.config_path)
 ARCHIVE_PATH=$($READCONF paths.archive_path)
 SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
-POLICY_PATH=$($READCONF paths.policy_path)
 CLIENT_PATH=$($READCONF paths.client_path)
 WEBSERVER=$($READCONF web.enabled)
-APPSERVER=$($READCONF applications.enabled)
 FILEOP=$($READCONF file_operations.enabled)
 
 ### Delete files ###
@@ -68,14 +66,25 @@ fi
 
 rm -rf $INSTAL_PATH
 rm -rf $SPOOL_PATH
-rm -rf $POLICY_PATH
-rm $CLIENT_PATH/dynamo
 
-if [ "$WEBSERVER" = "true" ]
-then
-  CONTENTS_PATH=$($READCONF web.contents_path)
-  rm -rf $CONTENTS_PATH
-fi
+for FILE in dynamo dynamo-inject dynamo-request
+do
+  rm $CLIENT_PATH/dynamo
+done
+
+for FILE in dynamod dynamo-exec-auth dynamo-fileopd dynamo-user-auth
+do
+  rm $SYSBIN_PATH/$FILE
+done
+
+for PYPATH in $(python -c 'import sys; print " ".join(sys.path)')
+do
+  if [[ $PYPATH =~ ^/usr/lib/python.*/site-packages$ ]]
+  then
+    rm -rf $PYPATH/dynamo
+    break
+  fi
+done
 
 # NRPE PLUGINS
 if [ -d /usr/lib64/nagios/plugins ]

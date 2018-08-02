@@ -43,6 +43,18 @@ class HistoryDatabase(object):
         if get_ids:
             return self.db.select_many('users', ('id',), 'dn', [u[1] for u in user_list])
 
+    def save_user_services(self, service_names, get_ids = False):
+        if self._read_only:
+            if get_ids:
+                return [0] * len(service_names)
+            else:
+                return
+
+        self.db.insert_many('user_services', ('name',), MySQL.make_tuple, service_names, do_update = True)
+
+        if get_ids:
+            return self.db.select_many('user_services', ('id',), 'name', service_names)
+
     def save_partitions(self, partition_names, get_ids = False):
         if self._read_only:
             if get_ids:
@@ -132,3 +144,15 @@ class HistoryDatabase(object):
 
         if get_ids:
             return ids
+
+    def save_files(self, file_data, get_ids = False):
+        if self._read_only:
+            if get_ids:
+                return [0] * len(file_data)
+            else:
+                return
+
+        self.db.insert_many('files', ('name', 'size'), None, file_data, do_update = True)
+
+        if get_ids:
+            return self.db.select_many('files', ('id',), 'name', [f[0] for f in file_data])

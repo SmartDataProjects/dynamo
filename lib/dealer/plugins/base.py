@@ -155,7 +155,7 @@ class DealerRequest(object):
         group = None
 
         if self.block is not None:
-            replica = self.destination.find_block_replica(block)
+            replica = self.destination.find_block_replica(self.block)
             if replica is not None:
                 group = replica.group
 
@@ -169,7 +169,7 @@ class DealerRequest(object):
                         return None
 
         else:
-            replica = self.destination.find_dataset_replica(dataset)
+            replica = self.destination.find_dataset_replica(self.dataset)
             if replica is not None:
                 owners = set(brep.group for brep in replica.block_replicas)
                 if len(owners) == 1:

@@ -17,6 +17,10 @@ class DeletionRequestBase(WebModule, ParseInputMixin):
 
 
 class MakeDeletionRequest(DeletionRequestBase):
+    def __init__(self, config):
+        DeletionRequestBase.__init__(self, config)
+        self.must_authenticate = True
+
     def run(self, caller, request, inventory):
         self.parse_input(request, inventory, ('item', 'site'), ('item', 'site'))
 

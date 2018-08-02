@@ -2,7 +2,7 @@ import time
 import logging
 
 from dynamo.operation.copy import CopyInterface
-from dynamo.dataformat import DatasetReplica, BlockReplica
+from dynamo.dataformat import DatasetReplica, BlockReplica, HistoryRecord
 
 LOG = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 import logging
 
 from dynamo.operation.history import CopyHistoryDatabase
-from dynamo.dataformat.history import HistoryRecord
+from dynamo.dataformat.history import HistoryRecord, CopiedReplica
 from dynamo.utils.interface.mysql import MySQL
 
 LOG = logging.getLogger(__name__)
@@ -19,25 +19,25 @@ class DealerHistoryBase(CopyHistoryDatabase):
         @return list of HistoryRecords
         """
 
-        sql = 'SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), h.`approved`, d.`name`, s.`name`, c.`size`'
+        sql = 'SELECT h.`id`, UNIX_TIMESTAMP(h.`timestamp`), d.`name`, s.`name`, c.`size`'
         sql += ' FROM `copied_replicas` AS c'
         sql += ' INNER JOIN `copy_operations` AS h ON h.`id` = c.`copy_id`'
-        sql += ' INNER JOIN `cycle_copy_operations` AS cc ON cc.`operation_id` = c.`id`'
-        sql += ' INNER JOIN `cycles` AS r ON r.`id` = cc.`cycle_id`'
+        sql += ' INNER JOIN `cycle_copy_operations` AS cc ON cc.`operation_id` = h.`id`'
+        sql += ' INNER JOIN `copy_cycles` AS r ON r.`id` = cc.`cycle_id`'
         sql += ' INNER JOIN `partitions` AS p ON p.`id` = r.`partition_id`'
         sql += ' INNER JOIN `datasets` AS d ON d.`id` = c.`dataset_id`'
         sql += ' INNER JOIN `sites` AS s ON s.`id` = h.`site_id`'
-        sql += ' WHERE h.`id` > 0 AND p.`name` LIKE \'%s\' AND c.`status` = \'enroute\' AND cc.`cycle_id` > 0' % partition
+        sql += ' WHERE h.`id` > 0 AND p.`name` = %s AND c.`status` = \'enroute\' AND cc.`cycle_id` > 0'
         sql += ' ORDER BY h.`id`'
 
         records = []
 
         _copy_id = 0
         record = None
-        for copy_id, timestamp, approved, dataset_name, site_name, size in self.db.xquery(sql):
+        for copy_id, timestamp, dataset_name, site_name, size in self.db.xquery(sql, partition):
             if copy_id != _copy_id:
                 _copy_id = copy_id
-                record = HistoryRecord(HistoryRecord.OP_COPY, copy_id, site_name, timestamp = timestamp, approved = approved)
+                record = HistoryRecord(HistoryRecord.OP_COPY, copy_id, site_name, timestamp = timestamp)
                 records.append(record)
 
             record.replicas.append(CopiedReplica(dataset_name = dataset_name, size = size, status = HistoryRecord.ST_ENROUTE))
@@ -60,7 +60,7 @@ class DealerHistoryBase(CopyHistoryDatabase):
 
         partition_id = result[0]
 
-        sql = 'SELECT `id` FROM `cycles` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'copy\', \'copy_test\')' % partition_id
+        sql = 'SELECT `id` FROM `copy_cycles` WHERE `partition_id` = %d AND `time_end` NOT LIKE \'0000-00-00 00:00:00\' AND `operation` IN (\'copy\', \'copy_test\')' % partition_id
 
         if first >= 0:
             sql += ' AND `id` >= %d' % first
@@ -76,11 +76,10 @@ class DealerHistoryBase(CopyHistoryDatabase):
 
 
 class DealerHistory(DealerHistoryBase):
-    def new_cycle(self, partition, policy_version, comment = '', test = False):
+    def new_cycle(self, partition, comment = '', test = False):
         """
         Set up a new copy cycle for the partition.
         @param partition        partition name string
-        @param policy_version   string for policy version
         @param comment          comment string
         @param test             if True, create a copy_test cycle.
 
@@ -97,9 +96,9 @@ class DealerHistory(DealerHistoryBase):
         else:
             operation_str = 'copy'
 
-        columns = ('operation', 'partition_id', 'policy_version', 'comment', 'time_start')
-        values = (operation_str, part_id, policy_version, comment, MySQL.bare('NOW()'))
-        return self.db.insert_get_id('cycles', columns = columns, values = values)
+        columns = ('operation', 'partition_id', 'comment', 'time_start')
+        values = (operation_str, part_id, comment, MySQL.bare('NOW()'))
+        return self.db.insert_get_id('copy_cycles', columns = columns, values = values)
 
     def close_cycle(self, cycle_number):
         """
@@ -110,7 +109,7 @@ class DealerHistory(DealerHistoryBase):
         if self._read_only:
             return
 
-        self.db.query('UPDATE `cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)
+        self.db.query('UPDATE `copy_cycles` SET `time_end` = NOW() WHERE `id` = %s', cycle_number)
 
     def make_cycle_entry(self, cycle_number, site):
         history_record = self.make_entry(site.name)

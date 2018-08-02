@@ -4,6 +4,28 @@ import json
 
 from dynamo.utils.transform import unicode2str
 
+def parse_config(value):
+    if type(value) is str:
+        matches = re.findall('\$\(([^\)]+)\)', value)
+        for match in matches:
+            value = value.replace('$(%s)' % match, os.environ[match])
+
+        return value
+
+    elif type(value) is dict or type(value) is Configuration:
+        return Configuration(value)
+
+    elif type(value) is list:
+        result = []
+        for item in value:
+            result.append(parse_config(item))
+
+        return result
+
+    else:
+        return value
+
+
 class Configuration(dict):
     """
     Configuration object. Basically a dict, but allows access to elements with getattr.
@@ -26,15 +48,7 @@ class Configuration(dict):
         config.update(kwd)
 
         for key, value in config.iteritems():
-            if type(value) is str:
-                matches = re.findall('\$\(([^\)]+)\)', value)
-                for match in matches:
-                    value = value.replace('$(%s)' % match, os.environ[match])
-        
-            if type(value) is dict or type(value) is Configuration:
-                self[key] = Configuration(value)
-            else:
-                self[key] = value
+            self[key] = parse_config(value)
 
     def __getattr__(self, attr):
         return self[attr]

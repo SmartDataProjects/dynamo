@@ -3,9 +3,9 @@ import sys
 import shutil
 import time
 import logging
-import socket
 import signal
 import code
+import hashlib
 import multiprocessing
 import threading
 import Queue
@@ -13,13 +13,12 @@ import traceback
 import shlex
 
 from dynamo.core.inventory import DynamoInventory
-from dynamo.core.manager import ServerManager, OutOfSyncError
+from dynamo.core.manager import ServerManager
 import dynamo.core.serverutils as serverutils
 from dynamo.core.components.appserver import AppServer
-from dynamo.core.components.host import ServerHost
+from dynamo.core.components.host import ServerHost, OutOfSyncError
 from dynamo.core.components.appmanager import AppManager
 from dynamo.web.server import WebServer
-from dynamo.fileop.rlfsm import RLFSM
 from dynamo.utils.log import log_exception, reset_logger
 from dynamo.utils.signaling import SignalBlocker
 from dynamo.dataformat import Configuration
@@ -32,9 +31,6 @@ class DynamoServer(object):
 
     def __init__(self, config):
         LOG.info('Initializing Dynamo server %s.', __file__)
-
-        ## User name
-        self.user = config.user
 
         ## Create the inventory
         self.inventory_config = config.inventory.clone()
@@ -68,12 +64,6 @@ class DynamoServer(object):
         else:
             self.webserver = None
 
-        ## File Operations Manager
-        if config.file_operations.enabled:
-            self.fom = RLFSM(config.file_operations.manager)
-        else:
-            self.fom = None
-
         ## Server status (and application) poll interval
         self.poll_interval = config.status_poll_interval
 
@@ -93,8 +83,6 @@ class DynamoServer(object):
         self.notification_recipient = config.notification_recipient
 
     def load_inventory(self):
-        self.inventory = DynamoInventory(self.inventory_config)
-
         ## Wait until there is no write process
         while self.manager.master.get_writing_process_id() is not None:
             LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
@@ -111,9 +99,12 @@ class DynamoServer(object):
             if not self.inventory.has_store:
                 raise RuntimeError('No persistent inventory storage is available.')
         else:
+            # find_remote_store raises a RuntimeError if no source is found
+            hostname, module, config, version = self.manager.find_remote_store()
+
             if self.inventory.has_store:
                 # Clone the content from a remote store
-                hostname, module, config, version = self.manager.find_remote_store()
+
                 # No server will be updating because write process is blocked while we load
                 if version == self.inventory.store_version():
                     LOG.info('Local persistency store is up to date.')
@@ -122,7 +113,8 @@ class DynamoServer(object):
                     LOG.info('Cloning inventory content from persistency store at %s', hostname)
                     self.inventory.clone_store(module, config)
             else:
-                self._setup_remote_store()
+                # Use this remote store as mine (read-only)
+                self._setup_remote_store(hostname, module, config)
 
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
@@ -138,6 +130,11 @@ class DynamoServer(object):
         while True:
             # Lock write activities by other servers
             self.manager.set_status(ServerHost.STAT_STARTING)
+
+            self.inventory = DynamoInventory(self.inventory_config)
+
+            if self.webserver:
+                self.webserver.start()
 
             self.load_inventory()
 
@@ -157,10 +154,7 @@ class DynamoServer(object):
             self.manager.set_status(ServerHost.STAT_ONLINE)
 
             if self.webserver:
-                self.webserver.start()
-
-            if self.fom:
-                self.fom.start(self.inventory)
+                self.webserver.restart()
 
             try:
                 # Actual stuff happens here
@@ -200,9 +194,6 @@ class DynamoServer(object):
                 if self.webserver:
                     self.webserver.stop()
 
-                if self.fom:
-                    self.fom.stop()
-
         self.manager.disconnect()
 
     def check_status_and_connection(self):
@@ -212,7 +203,8 @@ class DynamoServer(object):
         if self.inventory is not None and not self.inventory.check_store():
             # We lost connection to the remote persistency store. Try another server.
             # If there is no server to connect to, this method raises a RuntimeError
-            self._setup_remote_store()
+            hostname, module, config, version = self.manager.find_remote_store()
+            self._setup_remote_store(hostname, module, config)
 
     def _run_application_cycles(self):
         """
@@ -268,8 +260,21 @@ class DynamoServer(object):
     
                 ## Step 1: Poll
                 LOG.debug('Polling for applications.')
-    
-                app = self.manager.get_next_application()
+
+                self.manager.master.lock()
+                try:
+                    # Cannot run a write process if
+                    #  . I am supposed to be updating my inventory
+                    #  . There is a server starting
+                    #  . There is already a write process
+                    read_only = self.manager.master.inhibit_write()
+
+                    app = self.manager.master.get_next_application(read_only)
+                    if app is not None:
+                        self.manager.master.update_application(app['appid'], status = AppManager.STAT_ASSIGNED, hostname = self.manager.hostname)
+        
+                finally:
+                    self.manager.master.unlock()
     
                 if app is None:
                     if len(child_processes) == 0 and first_wait:
@@ -286,17 +291,21 @@ class DynamoServer(object):
                 do_sleep = False
 
                 if not os.path.exists(app['path'] + '/exec.py'):
-                    LOG.info('Application %s from %s@%s (write request: %s) not found.', app['title'], app['user_name'], app['user_host'], app['write_request'])
+                    LOG.info('Application %s from %s@%s (auth level: %s) not found.', app['title'], app['user_name'], app['user_host'], AppManager.auth_level_name(app['auth_level']))
                     self.manager.master.update_application(app['appid'], status = AppManager.STAT_NOTFOUND)
                     self.appserver.notify_synch_app(app['appid'], {'status': AppManager.STAT_NOTFOUND})
                     continue
     
-                LOG.info('Found application %s from %s (AID %s, write request: %s)', app['title'], app['user_name'], app['appid'], app['write_request'])
+                LOG.info('Found application %s from %s (AID %s, auth level: %s)', app['title'], app['user_name'], app['appid'], AppManager.auth_level_name(app['auth_level']))
 
-                is_local = (app['user_host'] == socket.gethostname())
+                is_local = (app['user_host'] == self.manager.hostname)
     
-                if app['write_request']:
-                    if not self.manager.check_write_auth(app['title'], app['user_name'], app['path']):
+                if app['auth_level'] == AppManager.LV_WRITE:
+                    # check authorization
+                    with open(app['path'] + '/exec.py') as source:
+                        checksum = hashlib.md5(source.read()).hexdigest()
+
+                    if not self.manager.master.check_application_auth(app['title'], app['user_name'], checksum):
                         LOG.warning('Application %s from %s is not authorized for write access.', app['title'], app['user_name'])
                         # TODO send a message
     
@@ -315,7 +324,7 @@ class DynamoServer(object):
     
                 LOG.info('Started application %s (%s) from %s@%s (AID %d PID %d).', app['title'], app['path'], app['user_name'], app['user_host'], app['appid'], proc.pid)
     
-                child_processes.append((app['appid'], proc, app['user_name'], app['user_host'], app['path'], time.time()))
+                child_processes.append((app['appid'], proc, time.time()))
 
         except KeyboardInterrupt:
             if len(child_processes) != 0:
@@ -344,8 +353,19 @@ class DynamoServer(object):
             # in the child. Child processes have to always ignore SIGINT and be killed only from
             # SIGTERM sent by the line below.
 
-            for app_id, proc, user_name, user_host, path, time_start in child_processes:
-                LOG.warning('Terminating %s (%s) from %s@%s (AID %d PID %d)', proc.name, path, user_name, user_host, app_id, proc.pid)
+            for app_id, proc, time_start in child_processes:
+                try:
+                    apps = self.manager.master.get_applications(app_id = app_id)
+                except:
+                    apps = []
+
+                if len(apps) == 0:
+                    id_str = '%s from unknown (AID %d PID %d)' % (proc.name, app_id, proc.pid)
+                else:
+                    id_str = '%s (%s) from %s@%s (AID %d PID %d)' % (proc.name, apps[0]['path'], \
+                        apps[0]['user_name'], apps[0]['user_host'], app_id, proc.pid)
+
+                LOG.warning('Terminating %s', id_str)
 
                 serverutils.killproc(proc, LOG)
 
@@ -394,12 +414,9 @@ class DynamoServer(object):
 
             raise
 
-    def _setup_remote_store(self, hostname = ''):
-        # find_remote_store raises a RuntimeError if not source is found
-        hostname, module, config, version = self.manager.find_remote_store(hostname = hostname)
+    def _setup_remote_store(self, hostname, module, config):
         LOG.info('Using persistency store at %s', hostname)
         self.manager.register_remote_store(hostname)
-
         self.inventory.init_store(module, config)
 
     def _collect_processes(self, child_processes):
@@ -420,18 +437,30 @@ class DynamoServer(object):
 
         ichild = 0
         while ichild != len(child_processes):
-            app_id, proc, user_name, user_host, path, time_start = child_processes[ichild]
-
-            id_str = '%s (%s) from %s@%s (AID %d PID %d)' % (proc.name, path, user_name, user_host, app_id, proc.pid)
+            app_id, proc, time_start = child_processes[ichild]
 
             apps = self.manager.master.get_applications(app_id = app_id)
             if len(apps) == 0:
                 status = AppManager.STAT_KILLED
+                id_str = '%s from unknown (AID %d PID %d)' % (proc.name, app_id, proc.pid)
+
+                timeout = 0
             else:
                 status = apps[0]['status']
+                id_str = '%s (%s) from %s@%s (AID %d PID %d)' % (proc.name, apps[0]['path'], \
+                    apps[0]['user_name'], apps[0]['user_host'], app_id, proc.pid)
 
-            # Kill processes running for too long (timeout given in seconds)
-            if time_start < time.time() - self.applications_config.timeout:
+                timeout = apps[0]['timeout']
+
+            # Kill processes running for too long (server default timeout given in seconds)
+            if timeout == 0:
+                min_start_time = time.time() - self.applications_config.timeout
+            elif timeout < 0:
+                min_start_time = 0
+            else:
+                min_start_time = time.time() - timeout * 3600
+
+            if time_start < min_start_time:
                 LOG.warning('Application %s timed out.', id_str)
                 status = AppManager.STAT_KILLED
 
@@ -518,7 +547,7 @@ class DynamoServer(object):
                     return 1, update_commands
 
     def _collect_updates_from_web(self):
-        if self.manager.master.get_writing_process_id() != 0 or self.manager.master.get_writing_process_host() != socket.gethostname():
+        if self.manager.master.get_writing_process_id() != 0 or self.manager.master.get_writing_process_host() != self.manager.hostname:
             return
 
         read_state, update_commands = self._collect_updates()
@@ -554,7 +583,7 @@ class DynamoServer(object):
             LOG.debug('Cleaning up %s (%s).', app['title'], app['path'])
 
             if os.path.isdir(app['path']):
-                if app['user_host'] != socket.gethostname():
+                if app['user_host'] != self.manager.hostname:
                     # First make sure all mounts are removed.
                     serverutils.clean_remote_request(app['path'])
     
@@ -619,7 +648,7 @@ class DynamoServer(object):
         return num_updates, num_deletes
 
     def _start_subprocess(self, app, is_local):
-        proc_args = (app['path'], app['args'], is_local, not app['write_request'])
+        proc_args = (app['path'], app['args'], is_local, app['auth_level'])
 
         proc = multiprocessing.Process(target = self.run_script, name = app['title'], args = proc_args)
         proc.daemon = True
@@ -627,14 +656,14 @@ class DynamoServer(object):
 
         return proc
 
-    def run_script(self, path, args, is_local, read_only):
+    def run_script(self, path, args, is_local, auth_level):
         """
         Main function for script execution.
         @param path            Path to the work area of the script. Will be the root directory in read-only processes.
         @param args            Script command-line arguments.
         @param is_local        True if script is requested from localhost.
         @param defaults_config A Configuration object specifying the global defaults for various tools
-        @param read_only       Boolean
+        @param auth_level      AppManager.LV_*
         """
     
         old_stdout = sys.stdout
@@ -647,7 +676,7 @@ class DynamoServer(object):
         # Create an inventory proxy object used as "the" inventory within the subprocess
         inventory = self.inventory.create_proxy()
 
-        path = self._pre_execution(path, is_local, read_only, inventory)
+        path = self._pre_execution(path, is_local, auth_level, inventory)
     
         # Set argv
         sys.argv = [path + '/exec.py']
@@ -665,7 +694,7 @@ class DynamoServer(object):
             if exc_type is SystemExit:
                 # sys.exit used in the script
                 if exc.code == 0:
-                    if not read_only:
+                    if auth_level == AppManager.LV_WRITE:
                         self._send_updates(inventory)
                 else:
                     raise
@@ -685,7 +714,7 @@ class DynamoServer(object):
                 sys.exit(1)
     
         else:
-            if not read_only:
+            if auth_level == AppManager.LV_WRITE:
                 self._send_updates(inventory)
                 # Queue stays available on the other end even if we terminate the process
     
@@ -718,7 +747,7 @@ class DynamoServer(object):
         sys.stdout = stdout
         sys.stderr = stderr
     
-        self._pre_execution(path, is_local, True, inventory)
+        self._pre_execution(path, is_local, AppManager.LV_NOAUTH, inventory)
     
         # use receive of oconn as input
         mylocals = {'__builtins__': __builtins__, '__name__': '__main__', '__doc__': None, '__package__': None, 'inventory': inventory}
@@ -731,14 +760,14 @@ class DynamoServer(object):
         sys.stdout = old_stdout
         sys.stderr = old_stderr
 
-    def _pre_execution(self, path, is_local, read_only, inventory):
+    def _pre_execution(self, path, is_local, auth_level, inventory):
         uid = os.geteuid()
         gid = os.getegid()
     
         # Set defaults
         for key, config in self.defaults_config.items():
             try:
-                if read_only:
+                if auth_level == AppManager.LV_NOAUTH:
                     myconf = config['readonly']
                 else:
                     myconf = config['fullauth']
@@ -813,13 +842,13 @@ class DynamoServer(object):
         executable.inventory = inventory
         executable.authorizer = self.manager.master.create_authorizer()
     
-        from dynamo.dataformat import Block
-        Block._inventory_store = inventory._store
-    
-        if not read_only:
-            executable.read_only = False
-            # create a list of updated and deleted objects the executable can fill
-            inventory._update_commands = []
+        if auth_level == AppManager.LV_NOAUTH:
+            pass
+        else:
+            executable.authorized = True
+            if auth_level == AppManager.LV_WRITE:
+                # create a list of updated and deleted objects the executable can fill
+                inventory._update_commands = []
     
         return path
 

@@ -16,9 +16,6 @@ log_path=/var/log/dynamo
 # Archival directory
 archive_path=/local/data/dynamo
 
-# Location of the policy package
-policy_path=/usr/share/dynamo-policies
-
 # Location of the client executable
 client_path=/usr/bin
 
@@ -34,6 +31,12 @@ user=dynamo
 # Email address to send server notifications to
 email=
 
+# Administrator DN
+admin_dn=
+
+# Administrator internal user name
+admin_user=dynamo
+
 # Server persistency store technology (leave blank if not running store)
 store=mysql
 
@@ -46,16 +49,13 @@ master=mysql
 # Configuration to be passed to $master/generate_conf.py
 master_conf={"host": "localhost", "user": "dynamosrv", "readuser": "dynamoread"}
 
-# Master server shadow technology
-shadow=mysql
-
-# Configuration to be passed to $shadow/generate_conf.py
+# Configuration to be passed to $master/generate_conf.py
 shadow_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Server update board technology
 local_board=mysql
 
-# Configuration to be passed to $local_board/generate_local_board_conf.py
+# Configuration to be passed to $local_board/generate_conf.py
 local_board_conf={"host": "localhost", "user": "dynamosrv"}
 
 # Location of the partition definition
@@ -74,12 +74,14 @@ enabled=true
 server=socketappserver:SocketAppServer
 
 # SocketAppServer server uses an OpenSSL socket to receive requests
+#  scheduler_user: An internal user name. admin_user in the server section works.
 #  certfile: Server certificate (can be self-signed)
 #  keyfile: Server private key (can be self-signed)
 #  capath: CA path for client authentication (can be a directory in python 2.7; otherwise a single file with all CA certs concatenated)
 # Cert and key files here can be generated with /etc/pki/tls/certs/make-dummy-cert if you have openssl installed in Red Hat
 server_conf={"workarea_base": "/var/spool/dynamo/work",
              "scheduler_base": "/var/spool/dynamo/scheduler",
+             "scheduler_user": "dynamo",
              "certfile": "/etc/pki/tls/certs/localhost.crt",
              "keyfile": "/etc/pki/tls/certs/localhost.crt",
              "capath": "/etc/pki/tls/certs/ca-bundle.crt"}
@@ -90,33 +92,5 @@ server_conf={"workarea_base": "/var/spool/dynamo/work",
 # Whether to run a web interface
 enabled=true
 
-# Path to the UNIX socket used to communicate with the http fronend
-socket=/var/spool/dynamo/dynamoweb.sock
-
-# Path to load the static contents (HTML, CSS, JS) from
-contents_path=/usr/local/dynamo/web
-
 # Path to the configuration file for web modules
 modules_config=/etc/dynamo/web_modules_config.json
-
-[file_operations]
-## File operation management
-
-# Whether to transfer and delete files by ourselves
-enabled=true
-
-# File operation methods (standalone: direct gfal-* calls, fts: through FTS)
-backend=standalone
-
-# Configuration JSON for the File Operations Manager
-fom_conf={"db": {"user": "dynamofod"}, "transfer": {}}
-
-# Configuration JSON for the File Operations Daemon (empty if backend=fts)
-#  max_parallel_links: Maximum number of concurrent operations within each batch
-#  transfer_timeout: Timeout for individual transfers (seconds)
-fod_conf={"max_batches": 50, "max_parallel_links": 200, "transfer_timeout": 3600}
-
-# Alternative file operations configuration
-#backend=fts
-#fom_conf={"db": {"user": "dynamofod"}, "transfer": {"fts_server": "https://fts3.example.com:8446", "fts_retry": 3}}
-#fod_conf={}

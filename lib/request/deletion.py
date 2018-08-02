@@ -55,11 +55,11 @@ class DeletionRequestManager(RequestManager):
             for rid, item in self.registry.db.xquery(sql):
                 all_requests[rid].items.append(item)
 
-            if request_id is not None:
-                # we were looking for a unique request and we found it
-                return all_requests
+        if items is not None or sites is not None:
+            self.registry.db.drop_tmp_table('ids_tmp')
 
-        if statuses is not None and (set(statuses) < set(['new', 'activated']) or set(statuses) < set([Request.ST_NEW, Request.ST_ACTIVATED])):
+        if (request_id is not None and len(all_requests) != 0) or \
+           (statuses is not None and (set(statuses) < set(['new', 'activated']) or set(statuses) < set([Request.ST_NEW, Request.ST_ACTIVATED]))):
             # there's nothing in the archive
             return all_requests
 
@@ -101,6 +101,9 @@ class DeletionRequestManager(RequestManager):
                 archived_requests[rid].items.append(df.Block.to_full_name(dataset, block))
 
         all_requests.update(archived_requests)
+
+        if items is not None or sites is not None:
+            self.history.db.drop_tmp_table('ids_tmp')
 
         return all_requests
 
@@ -150,12 +153,14 @@ class DeletionRequestManager(RequestManager):
             sql = 'UPDATE `deletion_requests` SET `status` = %s, `request_time` = FROM_UNIXTIME(%s) WHERE `id` = %s'
             self.registry.db.query(sql, request.status, request.request_time, request.request_id)
 
-            # insert or update active copies
-            fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
-            for a in request.actions:
-                values = (request.request_id, a.item, a.site, a.status, MySQL.bare('NOW()'), MySQL.bare('NOW()'))
+            if request.actions is not None:
+                # insert or update active copies
+                fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
                 update_columns = ('status', 'updated')
-                self.registry.db.insert_update('active_deletions', fields, *values, update_columns = update_columns)
+                for a in request.actions:
+                    now = time.strftime('%Y-%m-%d %H:%M:%S') # current local time
+                    values = (request.request_id, a.item, a.site, a.status, now, now)
+                    self.registry.db.insert_update('active_deletions', fields, *values, update_columns = update_columns)
 
         else:
             # terminal state

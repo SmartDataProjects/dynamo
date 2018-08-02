@@ -15,16 +15,15 @@ persistency_mod = source_conf.get('server', 'store')
 persistency_conf_args = source_conf.get('server', 'store_conf')
 master_mod = source_conf.get('server', 'master')
 master_conf_args = source_conf.get('server', 'master_conf')
-shadow_mod = source_conf.get('server', 'shadow')
 shadow_conf_args = source_conf.get('server', 'shadow_conf')
 local_board_mod = source_conf.get('server', 'local_board')
 local_board_conf_args = source_conf.get('server', 'local_board_conf')
+basedir = source_conf.get('paths', 'dynamo_base')
 logdir = source_conf.get('paths', 'log_path')
 spooldir = source_conf.get('paths', 'spool_path')
 
 serve_applications = source_conf.get('applications', 'enabled').lower()
 serve_web = source_conf.get('web', 'enabled').lower()
-serve_fileop = source_conf.get('file_operations', 'enabled').lower()
 
 class Namespace(object):
     pass
@@ -33,7 +32,7 @@ generators = {}
 
 install_source_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-for mod in [persistency_mod, master_mod, shadow_mod, local_board_mod]:
+for mod in [persistency_mod, master_mod, local_board_mod]:
     if not mod:
         continue
 
@@ -74,8 +73,8 @@ if persistency_mod:
 server_conf['inventory']['partition_def_path'] = source_conf.get('server', 'partition_def')
 
 server_conf['manager'] = OD()
-server_conf['manager']['master'] = generators[master_mod].generate_master_conf(master_conf_args)
-server_conf['manager']['shadow'] = generators[shadow_mod].generate_master_conf(shadow_conf_args)
+server_conf['manager']['master'] = generators[master_mod].generate_master_conf(master_conf_args, master = True)
+server_conf['manager']['shadow'] = generators[master_mod].generate_master_conf(shadow_conf_args, master = False)
 server_conf['manager']['board'] = generators[local_board_mod].generate_local_board_conf(local_board_conf_args)
 
 ## WebServer
@@ -84,8 +83,8 @@ server_conf['web']['enabled'] = (serve_web == 'true')
 
 if serve_web == 'true':
     web_conf = server_conf['web']
-    web_conf['socket'] = source_conf.get('web', 'socket')
-    web_conf['contents_path'] = source_conf.get('web', 'contents_path')
+    web_conf['socket'] = spooldir + '/dynamoweb.sock'
+    web_conf['contents_path'] = basedir + '/web'
     web_conf['modules_config_path'] = source_conf.get('web', 'modules_config')
     web_conf['min_idle'] = 1
     web_conf['max_idle'] = 5
@@ -103,24 +102,6 @@ if serve_applications == 'true':
 
     app_conf['timeout'] = 7200
     app_conf['retain_records_for'] = 7
-
-## RLFSM
-server_conf['file_operations'] = OD()
-server_conf['file_operations']['enabled'] = (serve_fileop == 'true')
-
-if serve_fileop == 'true':
-    server_conf['file_operations']['manager'] = generators['mysql'].generate_fom_conf(source_conf.get('file_operations', 'fom_conf'))
-    transfer_conf = server_conf['file_operations']['manager']['transfer']
-
-    backend = source_conf.get('file_operations', 'backend')
-    if backend == 'standalone':
-        transfer_conf['module'] = 'standalone:StandaloneFileOperation'
-        transfer_conf['config']['batch_size'] = 200
-    elif backend == 'fts':
-        transfer_conf['module'] = 'fts:FTSFileOperation'
-        transfer_conf['config']['batch_size'] = 4000
-
-    server_conf['file_operations']['daemon'] = json.loads(source_conf.get('file_operations', 'fod_conf'))
 
 defaults_path = source_conf.get('server', 'defaults_conf')
 if not defaults_path.startswith('/'):

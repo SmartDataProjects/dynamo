@@ -1,10 +1,14 @@
 from exceptions import ObjectError
 from block import Block
+from blockreplica import BlockReplica
+from _namespace import customize_file
 
 class File(object):
     """Represents a file. Atomic unit of data."""
 
-    __slots__ = ['_lfn', '_block', 'id', 'size']
+    __slots__ = ['_lfn', '_block', 'id', 'size', 'checksum']
+
+    checksum_algorithms = tuple() # redefined in _namespace
 
     @property
     def lfn(self):
@@ -14,23 +18,24 @@ class File(object):
     def block(self):
         return self._block
 
-    def __init__(self, lfn, block = None, size = 0, fid = 0):
+    def __init__(self, lfn, block = None, size = 0, checksum = tuple(), fid = 0):
         self._lfn = lfn
         self._block = block
         self.size = size
+        self.checksum = checksum
 
         self.id = fid
 
     def __str__(self):
-        return 'File %s (block=%s, size=%d, id=%d)' % (self._lfn, self._block_full_name(), self.size, self.id)
+        return 'File %s (block=%s, size=%d, checksum=%s, id=%d)' % (self._lfn, self._block_full_name(), self.size, str(self.checksum), self.id)
 
     def __repr__(self):
-        return 'File(%s,%s,%d,%d)' % (repr(self._lfn), repr(self._block_full_name()), self.size, self.id)
+        return 'File(%s,%s,%d,%s,%d)' % (repr(self._lfn), repr(self._block_full_name()), self.size, repr(self.checksum), self.id)
 
     def __eq__(self, other):
         return self is other or \
             (self._lfn == other._lfn and self._block_full_name() == other._block_full_name() and \
-            self.size == other.size)
+             self.size == other.size and self.checksum == other.checksum)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -52,18 +57,18 @@ class File(object):
 
         block = dataset.find_block(self._block_name(), must_find = True)
 
-        if hasattr(inventory, 'has_store'):
+        if Block.inventory_store.server_side:
             # This is the server-side main inventory which doesn't need a running image of files,
             # so we don't call block.find_file (which triggers an inventory store lookup) but simply
             # return a clone of this file linked to the proper block.
             # Also in this case the function will never be called with check = True
-            return File(self._lfn, block, self.size, self.id)
+            return File(self._lfn, block, self.size, self.checksum, self.id)
 
         # At this point (if there is any change) block must have loaded files as a non-volatile set
         lfile = block.find_file(self._lfn)
         updated = False
         if lfile is None:
-            lfile = File(self._lfn, block, self.size, self.id)
+            lfile = File(self._lfn, block, self.size, self.checksum, self.id)
             block.add_file(lfile) # doesn't change the block attributes
 
             updated = True
@@ -90,11 +95,11 @@ class File(object):
         except (KeyError, ObjectError):
             return None
 
-        if hasattr(inventory, 'has_store'):
+        if Block.inventory_store.server_side:
             # This is the server-side main inventory which doesn't need a running image of files,
             # so we don't call block.find_file (which triggers an inventory store lookup) but simply
             # return a clone of this file linked to the proper block.
-            return File(self._lfn, block, self.size, self.id)
+            return File(self._lfn, block, self.size, self.checksum, self.id)
 
         lfile = block.find_file(self._lfn)
         if lfile is None:
@@ -105,10 +110,17 @@ class File(object):
         return lfile
 
     def unlink(self):
-        if type(self._block.files) is not set:
-            self._block.files = set(self._block.files)
+        self._block.remove_file(self)
 
-        self._block.files.remove(self)
+        if BlockReplica._use_file_ids:
+            if self.id == 0:
+                fid = self.lfn
+            else:
+                fid = self.id
+    
+            for replica in self._block.replicas:
+                # this function does not raise even if file is not in the replica
+                replica.delete_file(self, full_deletion = True)
 
     def write_into(self, store):
         store.save_file(self)
@@ -149,3 +161,6 @@ class File(object):
 
     def _copy_no_check(self, other):
         self.size = other.size
+        self.checksum = other.checksum
+
+customize_file(File)

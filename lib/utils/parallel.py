@@ -1,6 +1,7 @@
 import time
 import multiprocessing
 import threading
+import Queue
 
 from dynamo.dataformat import Configuration
 
@@ -36,10 +37,11 @@ class ThreadTimeout(RuntimeError):
 
 
 class ThreadController(object):
-    def __init__(self, function, num_threads):
+    def __init__(self, function, start_sem):
         self.print_progress = False
         self.timeout = 0
         self.repeat_on_exception = False
+        self.auto_start = False
         self.logger = None
 
         # if ntotal != 0, we print progress
@@ -48,11 +50,13 @@ class ThreadController(object):
         self._ndone = 0
         self._watermark = 0
 
-        self._start_sem = threading.Semaphore(num_threads)
+        self._start_sem = start_sem
         self._done_sem = threading.Semaphore(0)
         self._target_function = function
 
         self._inputs = []
+        self._all_outputs = []
+        self._thread_defs = []
 
     def add_inputs(self, arguments, name = ''):
         """
@@ -64,59 +68,60 @@ class ThreadController(object):
 
         self._inputs.append((arguments, name))
 
+        if self.auto_start:
+            self._collect_threads()
+            while len(self._inputs) > 1 and self._start_one(blocking = False):
+                pass
+
     def execute(self):
         """Run all threads and return the full list of outputs."""
 
-        all_outputs = []
-        thread_defs = []
+        while len(self._inputs) != 0:
+            self._start_one()
+            self._collect_threads()
 
-        for arguments, name in self._inputs:
-            self._start_one(arguments, name, thread_defs)
-            self._collect_threads(thread_defs, all_outputs)
+        while len(self._thread_defs) != 0:
+            self._collect_threads(blocking = True)
 
-        while len(thread_defs) != 0:
-            self._collect_threads(thread_defs, all_outputs, blocking = True)
+        outputs = self._all_outputs
 
         self._start_time = 0
         self._ndone = 0
         self._watermark = 0
         self._inputs = []
+        self._all_outputs = []
 
-        return all_outputs
+        return outputs
 
     def iterate(self):
         """Run threads and yield the outputs as they become available."""
 
-        all_outputs = []
-        thread_defs = []
-
         while True:
             while len(self._inputs) != 0:
-                arguments, name = self._inputs[-1]
-                if self._start_one(arguments, name, thread_defs, blocking = False):
-                    self._inputs.pop()
-                else:
+                if not self._start_one(blocking = False):
+                    # could not start
                     break
 
-            if len(all_outputs) == 0:
-                if len(self._inputs) == 0 and len(thread_defs) == 0:
+            if len(self._all_outputs) == 0:
+                if len(self._inputs) == 0 and len(self._thread_defs) == 0:
                     # we are done
                     return
 
                 # otherwise block until there is a thread completed
-                self._collect_threads(thread_defs, all_outputs, blocking = True)
+                self._collect_threads(blocking = True)
 
             else:
-                yield all_outputs.pop()
+                yield self._all_outputs.pop()
 
-    def _start_one(self, arguments, name, thread_defs, blocking = True):
+    def _start_one(self, blocking = True):
         # If blocking = True, return False immediately unless there is a free slot
-
         if not blocking:
             if not self._start_sem.acquire(False):
                 return False
 
             self._start_sem.release()
+
+        arguments, name = self._inputs.pop(0)
 
         exception = ExceptionHolder()
         outputs = []
@@ -133,11 +138,11 @@ class ThreadController(object):
         if self._start_time == 0:
             self._start_time = time.time()
 
-        thread_defs.append((thread, time.time(), arguments, exception, outputs))
+        self._thread_defs.append((thread, time.time(), arguments, exception, outputs))
 
         return True
 
-    def _collect_threads(self, thread_defs, all_outputs, blocking = False):
+    def _collect_threads(self, blocking = False):
         if blocking:
             # Block until there is a completed thread
             self._done_sem.acquire()
@@ -145,11 +150,11 @@ class ThreadController(object):
             self._done_sem.release()
 
         ith = 0
-        while ith != len(thread_defs):
-            thread, start_time, arguments, exception, outputs = thread_defs[ith]
+        while ith != len(self._thread_defs):
+            thread, start_time, arguments, exception, outputs = self._thread_defs[ith]
             if self._collect_one(thread, start_time, arguments, exception):
-                thread_defs.pop(ith)
-                all_outputs.extend(outputs)
+                self._thread_defs.pop(ith)
+                self._all_outputs.extend(outputs)
                 # Reduce the semaphore count by one
                 self._done_sem.acquire()
             else:
@@ -193,6 +198,33 @@ class ThreadController(object):
 
         return True
 
+
+class AutoStarter(object):
+    def __init__(self, function, start_sem, task_per_thread):
+        self.inputs = []
+        self.controller = ThreadController(function, start_sem)
+        self.controller.auto_start = True
+        self.task_per_thread = task_per_thread
+
+    def add_input(self, args):
+        if type(args) is not tuple:
+            args = (args,)
+
+        self.inputs.append(args)
+
+        if len(self.inputs) == self.task_per_thread:
+            self.controller.add_inputs(self.inputs)
+            self.inputs = []
+
+    def close(self):
+        if len(self.inputs) != 0:
+            self.controller.add_inputs(self.inputs)
+            self.inputs = []
+
+    def get_outputs(self):
+        return self.controller.execute()
+
+    
 class Map(object):
     """
     Similar to multiprocessing.Pool.map but with threads. At each execute() call, instantiate a ThreadController
@@ -200,7 +232,7 @@ class Map(object):
     """
 
     def __init__(self, config = Configuration()):
-        self.num_threads = max(config.get('num_threads', multiprocessing.cpu_count() - 1), 1)
+        self.start_sem = threading.Semaphore(max(config.get('num_threads', multiprocessing.cpu_count() - 1), 1))
         self.task_per_thread = config.get('task_per_thread', 1)
 
         self.print_progress = config.get('print_progress', False)
@@ -223,7 +255,7 @@ class Map(object):
         if len(arguments) == 0:
             return []
 
-        controller = ThreadController(function, self.num_threads)
+        controller = ThreadController(function, self.start_sem)
        
         controller.print_progress = self.print_progress
         controller.timeout = self.timeout
@@ -251,3 +283,11 @@ class Map(object):
             return controller.iterate()
         else:
             return controller.execute()
+
+    def get_starter(self, function):
+        starter = AutoStarter(function, self.start_sem, self.task_per_thread)
+        starter.controller.timeout = self.timeout
+        starter.controller.repeat_on_exception = self.repeat_on_exception
+        starter.controller.logger = self.logger
+
+        return starter

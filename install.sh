@@ -26,23 +26,20 @@ CONFIG_PATH=$($READCONF paths.config_path)
 ARCHIVE_PATH=$($READCONF paths.archive_path)
 SPOOL_PATH=$($READCONF paths.spool_path)
 LOG_PATH=$($READCONF paths.log_path)
-POLICY_PATH=$($READCONF paths.policy_path)
 CLIENT_PATH=$($READCONF paths.client_path)
 SYSBIN_PATH=$($READCONF paths.sysbin_path)
 WEBSERVER=$($READCONF web.enabled)
 APPSERVER=$($READCONF applications.enabled)
-FILEOP=$($READCONF file_operations.enabled)
-SERVER_DB=$($READCONF server.store)
 
 ### Stop the daemons first ###
 
 if [[ $(uname -r) =~ el7 ]]
 then
   systemctl stop dynamod 2>/dev/null
-  [ "$FILEOP" = "true" ] && systemctl stop dynamo-fileopd 2> /dev/null
+  systemctl stop dynamo-fileopd 2> /dev/null
 else
   service dynamod stop 2>/dev/null
-  [ "$FILEOP" = "true" ] && service dynamo-fileopd stop 2> /dev/null
+  service dynamo-fileopd stop 2> /dev/null
 fi
 
 echo
@@ -58,7 +55,7 @@ echo
 
 echo "-> Checking dependencies.."
 
-REQUIRED="python sqlite"
+REQUIRED="python sqlite python-dateutil"
 
 if [ "$APPSERVER" = "true" ]
 then
@@ -140,6 +137,7 @@ do
   if [[ $PYPATH =~ ^/usr/lib/python.*/site-packages$ ]]
   then
     mkdir -p $PYPATH/dynamo
+    rm -rf $PYPATH/dynamo/*
     cp -r $SOURCE/lib/* $PYPATH/dynamo/
     python -m compileall $PYPATH/dynamo > /dev/null
     break
@@ -192,7 +190,6 @@ echo "-> Writing $INITSCRIPT.."
 echo "export DYNAMO_BASE=$INSTALL_PATH" > $INITSCRIPT
 echo "export DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $INITSCRIPT
 echo "export DYNAMO_SPOOL=$SPOOL_PATH" >> $INITSCRIPT
-[ $POLICY_PATH ] && echo "export DYNAMO_POLICIES=$POLICY_PATH" >> $INITSCRIPT
 
 echo " Done."
 echo
@@ -255,13 +252,43 @@ echo
 
 ### Set up the databases ###
 
-if [ $SERVER_DB ]
+STORE_DB=$($READCONF server.store)
+MASTER_DB=$($READCONF server.master)
+BOARD_DB=$($READCONF server.local_board)
+
+DBS=""
+
+if [ $STORE_DB ]
 then
-  $SOURCE/$SERVER_DB/install.sh
+  $SOURCE/$STORE_DB/install.sh
   if [ $? -ne 0 ]
   then
     echo
-    echo "DB installation failed."
+    echo "$STORE_DB installation failed."
+    exit 1
+  fi
+  DBS=$STORE_DB
+fi
+
+if ! [[ $DBS =~ $MASTER_DB ]]
+then
+  $SOURCE/$MASTER_DB/install.sh
+  if [ $? -ne 0 ]
+  then
+    echo
+    echo "$MASTER_DB installation failed."
+    exit 1
+  fi
+  DBS="$DBS $MASTER_DB"
+fi
+
+if ! [[ $DBS =~ $BOARD_DB ]]
+then
+  $SOURCE/$BOARD_DB/install.sh
+  if [ $? -ne 0 ]
+  then
+    echo
+    echo "$BOARD_DB installation failed."
     exit 1
   fi
 fi
@@ -284,12 +311,15 @@ then
   echo '#############################'
   echo
   
-  CONTENTS_PATH=$($READCONF web.contents_path)
-  mkdir -p $CONTENTS_PATH
+  mkdir -p $INSTALL_PATH/web
   
-  cp -r $SOURCE/web/html $CONTENTS_PATH/html
-  cp -r $SOURCE/web/js $CONTENTS_PATH/js
-  cp -r $SOURCE/web/css $CONTENTS_PATH/css
+  cp -r $SOURCE/web/html $INSTALL_PATH/web/
+  cp -r $SOURCE/web/js $INSTALL_PATH/web/
+  cp -r $SOURCE/web/css $INSTALL_PATH/web/
+
+  # temporary
+  cp -r $SOURCE/web/js /var/www/lighttpd/
+  cp -r $SOURCE/web/css /var/www/lighttpd/
 fi
 
 ### Install the daemons ###
@@ -311,7 +341,6 @@ then
   echo "DYNAMO_BASE=$INSTALL_PATH" > $ENV
   echo "DYNAMO_ARCHIVE=$ARCHIVE_PATH" >> $ENV
   echo "DYNAMO_SPOOL=$SPOOL_PATH" >> $ENV
-  [ $POLICY_PATH ] && echo "DYNAMO_POLICIES=$POLICY_PATH" >> $ENV
 
   systemctl daemon-reload
 else
@@ -321,24 +350,23 @@ else
   chmod +x /etc/init.d/dynamod
 fi
 
-FILEOP_BACKEND=$($READCONF file_operations.backend)
-
-if [ "$FILEOP" = "true" ] && [ "$FILEOP_BACKEND" = "standalone" ]
+if [[ $(uname -r) =~ el7 ]]
 then
-  if [[ $(uname -r) =~ el7 ]]
-  then
-    # systemd daemon
-    cp $SOURCE/daemon/dynamo-fileopd.systemd /usr/lib/systemd/system/dynamo-fileopd.service
-    sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /usr/lib/systemd/system/dynamo-fileopd.service
-  
-    systemctl daemon-reload
-  else
-    cp $SOURCE/daemon/dynamo-fileopd.sysv /etc/init.d/dynamo-fileopd
-    sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /etc/init.d/dynamo-fileopd
-    sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-fileopd
-    chmod +x /etc/init.d/dynamo-fileopd
-  fi
+  # systemd daemon
+  cp $SOURCE/daemon/dynamo-fileopd.systemd /usr/lib/systemd/system/dynamo-fileopd.service
+  sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /usr/lib/systemd/system/dynamo-fileopd.service
+
+  systemctl daemon-reload
+else
+  cp $SOURCE/daemon/dynamo-fileopd.sysv /etc/init.d/dynamo-fileopd
+  sed -i "s|_SYSBINPATH_|$SYSBIN_PATH|" /etc/init.d/dynamo-fileopd
+  sed -i "s|_INSTALLPATH_|$INSTALL_PATH|" /etc/init.d/dynamo-fileopd
+  chmod +x /etc/init.d/dynamo-fileopd
 fi
+
+### Set up the admin user ###
+
+dynamo-user-auth --dn "$($READCONF server.admin_dn)" --user $($READCONF server.admin_user) --role admin --yes
 
 echo " Done."
 echo

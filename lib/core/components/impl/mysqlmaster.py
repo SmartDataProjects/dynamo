@@ -1,9 +1,10 @@
 import time
 import json
 import socket
+import MySQLdb
 
 from dynamo.core.components.master import MasterServer
-from dynamo.core.components.host import ServerHost
+from dynamo.core.components.host import ServerHost, OutOfSyncError
 from .mysqlauthorizer import MySQLAuthorizer
 from .mysqlappmanager import MySQLAppManager
 from dynamo.utils.interface.mysql import MySQL
@@ -15,13 +16,15 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         MySQLAppManager.__init__(self, config)
         MasterServer.__init__(self, config)
 
+        self._host = self._mysql.hostname()
+
         self._server_id = 0
         
         # we'll be using table locks
         self._mysql.reuse_connection = True
 
     def _connect(self): #override
-        if self.get_master_host() == 'localhost' or self.get_master_host() == socket.gethostname():
+        if self._host == 'localhost' or self._host == socket.gethostname():
             # This is the master server; wipe the table clean
             self._mysql.query('DELETE FROM `servers`')
             self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
@@ -37,8 +40,8 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
     def _do_unlock(self): #override
         self._mysql.unlock_tables()
 
-    def get_master_host(self): #override
-        return self._mysql.hostname()
+    def get_host(self): #override
+        return self._host
 
     def set_status(self, status, hostname): #override
         self._mysql.query('UPDATE `servers` SET `status` = %s WHERE `hostname` = %s', ServerHost.status_name(status), hostname)
@@ -65,7 +68,7 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
 
         return self._mysql.query(sql)
 
-    def copy(self, remote_master):
+    def copy(self, remote_master): #override
         # List of servers
         self._mysql.query('DELETE FROM `servers`')
         self._mysql.query('ALTER TABLE `servers` AUTO_INCREMENT = 1')
@@ -226,19 +229,34 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
         return inserted != 0
 
     def authorize_user(self, user, role, target): #override
+        user_info = self.identify_user(name = user)
+        if user_info is None:
+            raise RuntimeError('Unknown user %s' % user)
+
+        user_id = user_info[1]
+
         if role is None:
             role_id = 0
         else:
-            try:
-                role_id = self._mysql.query('SELECT `id` FROM `roles` WHERE `name` = %s', role)[0]
-            except IndexError:
+            role_info = self.identify_role(role)
+            if role_info is None:
                 raise RuntimeError('Unknown role %s' % role)
 
-        sql = 'INSERT INTO `user_authorizations` (`user_id`, `role_id`, `target`)'
-        sql += ' SELECT u.`id`, %s, %s FROM `users` AS u WHERE u.`name` = %s'
+            role_id = role_info[1]
+
+        targets = self.list_authorization_targets()
+
+        sql = 'INSERT INTO `user_authorizations` (`user_id`, `role_id`, `target`) VALUES '
+        if target is None:
+            sql += ', '.join('(%d, %d, \'%s\')' % (user_id, role_id, target) for target in targets)
+        else:
+            if target not in targets:
+                raise RuntimeError('Unknown target %s' % target)
+            sql += '(%d, %d, \'%s\')' % (user_id, role_id, target)
+
         sql += ' ON DUPLICATE KEY UPDATE `user_id` = `user_id`'
 
-        inserted = self._mysql.query(sql, role_id, target, user)
+        inserted = self._mysql.query(sql)
         return inserted != 0
 
     def revoke_user_authorization(self, user, role, target): #override
@@ -280,3 +298,25 @@ class MySQLMasterServer(MySQLAuthorizer, MySQLAppManager, MasterServer):
     def disconnect(self): #override
         self._mysql.query('DELETE FROM `servers` WHERE `id` = %s', self._server_id)
         self._mysql.close()
+
+    def _make_wrapper(self, method): #override
+        # Refine _make_wrapper of MasterServer by specifying that the "connection loss" error
+        # must be an OperationalError with code 2003.
+
+        def wrapper(*args, **kwd):
+            with self._master_server_lock:
+                try:
+                    return method(*args, **kwd)
+
+                except MySQLdb.OperationalError as ex:
+                    if ex.args[0] == 2003:
+                        # 2003: Can't connect to server
+                        if self._host == 'localhost' or self._host == socket.gethostname():
+                            raise
+
+                        self.connected = False
+                        raise OutOfSyncError('Lost connection to remote master MySQL')
+                    else:
+                        raise
+
+        return wrapper

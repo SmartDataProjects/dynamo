@@ -84,7 +84,7 @@ class BlockReplica(object):
                 # some iterable
                 tmplist = []
                 for fid in file_ids:
-                    if type(fid) is str:
+                    if type(self._block) is not str and type(fid) is str:
                         tmplist.append(self._block.find_file(fid, must_find = True).id)
                     else:
                         tmplist.append(fid)
@@ -116,6 +116,10 @@ class BlockReplica(object):
     def __eq__(self, other):
         if BlockReplica._use_file_ids:
             # check len() first to avoid having to create sets for no good reason
+            if (self.file_ids is None and other.file_ids is not None) or \
+               (self.file_ids is not None and other.file_ids is None):
+                return False
+
             file_ids_match = (self.file_ids == other.file_ids) or ((len(self.file_ids) == len(other.file_ids)) and (set(self.file_ids) == set(other.file_ids)))
         else:
             file_ids_match = self.file_ids == other.file_ids
@@ -228,6 +232,14 @@ class BlockReplica(object):
         self._block.replicas.remove(self)
 
     def write_into(self, store):
+        if BlockReplica._use_file_ids and self.file_ids is not None:
+            for fid in self.file_ids:
+                try:
+                    fid += 0
+                except TypeError:
+                    # was some string
+                    raise ObjectError('Cannot write %s into store because one of the files %s %s is not known yet' % (str(self), fid, type(fid).__name__))
+
         store.save_blockreplica(self)
 
     def delete_from(self, store):
@@ -252,11 +264,37 @@ class BlockReplica(object):
         if self.file_ids is None:
             return set(block_files)
         else:
-            return set(f for f in block_files if f.id in self.file_ids)
+            by_id = dict((f.id, f) for f in block_files if f.id != 0)
+            result = set()
+            for fid in self.file_ids:
+                try:
+                    fid += 0
+                except TypeError:
+                    # fid is lfn
+                    result.add(self._block.find_file(fid))
+                else:
+                    result.add(by_id[fid])
+
+            return result
+
+    def has_file(self, lfile):
+        if lfile.block is not self.block:
+            return False
+
+        if self.file_ids is None:
+            return True
+
+        if lfile.id == 0:
+            for f in self.files():
+                if f.lfn == lfile.lfn:
+                    return True
+
+            return False
+
+        else:
+            return lfile.id in self.file_ids
 
     def add_file(self, lfile):
-        # Note: cannot be used with a file that is just created - it doesn't have an ID until it's registered with the inventory store!
-
         if lfile.block != self.block:
             raise ObjectError('Cannot add file %s (block %s) to %s', lfile.lfn, lfile.block.full_name(), str(self))
 
@@ -267,9 +305,20 @@ class BlockReplica(object):
             else:
                 file_ids = set(self.file_ids)
 
-            file_ids.add(lfile.id)
+            if lfile.id == 0:
+                if lfile.lfn in file_ids:
+                    return
+                if lfile.lfn in set(f.lfn for f in self.files()):
+                    return
+                file_ids.add(lfile.lfn)
+            else:
+                if lfile.id in file_ids:
+                    return
+                file_ids.add(lfile.id)
+
+            self.size += lfile.size
     
-            if len(file_ids) == self.block.num_files:
+            if self.size == self.block.size and len(file_ids) == self.block.num_files:
                 self.file_ids = None
             else:
                 self.file_ids = tuple(file_ids)
@@ -277,28 +326,47 @@ class BlockReplica(object):
         else:
             self.file_ids += 1
 
-        self.size += lfile.size
+    def delete_file(self, lfile, full_deletion = False):
+        """
+        Delete a file from the replica.
+        @param  lfile          A File object
+        @param  full_deletion  Set to True if the file is being deleted from the block as well.
 
-    def delete_file(self, lfile):
-        # Note: cannot be used with a file that is just created - it doesn't have an ID until it's registered with the inventory store!
+        @return  True if the file is in the replica.
+        """
 
         if lfile.block != self.block:
             raise ObjectError('Cannot delete file %s (block %s) from %s', lfile.lfn, lfile.block.full_name(), str(self))
 
         if BlockReplica._use_file_ids:
+            if lfile.id == 0:
+                identifier = lfile.lfn
+            else:
+                identifier = lfile.id
+
             if self.file_ids is None:
-                file_ids = [f.id for f in self.block.files]
+                if full_deletion:
+                    # file is being deleted from the block as well. Full replica remains full.
+                    self.size -= lfile.size
+                    return True
+                else:                    
+                    file_ids = [(f.id if f.id != 0 else f.lfn) for f in self.block.files]
+
+            elif identifier not in self.file_ids:
+                return False
+
             else:
                 file_ids = list(self.file_ids)
 
-            # Let remove() raise ValueError if the file id is not found
-            file_ids.remove(lfile.id)
+            file_ids.remove(identifier)
             self.file_ids = tuple(file_ids)
 
         else:
             self.file_ids -= 1
 
         self.size -= lfile.size
+
+        return True
 
     def _block_full_name(self):
         if type(self._block) is str:
@@ -346,6 +414,22 @@ class BlockReplica(object):
             if other.file_ids is None:
                 self.file_ids = None
             else:
-                self.file_ids = tuple(other.file_ids)
+                tmplist = []
+                for fid in other.file_ids:
+                    try:
+                        fid += 0
+                    except TypeError:
+                        lfn = fid
+                        fid = Block.inventory_store.get_file_id(lfn)
+                        if fid is None:
+                            # file not in store yet
+                            tmplist.append(lfn)
+                        else:
+                            tmplist.append(fid)
+                    else:
+                        tmplist.append(fid)
+    
+                self.file_ids = tuple(tmplist)
+
         else:
             self.file_ids = other.file_ids

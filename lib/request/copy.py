@@ -56,11 +56,11 @@ class CopyRequestManager(RequestManager):
             for rid, item in self.registry.db.xquery(sql):
                 all_requests[rid].items.append(item)
 
-            if request_id is not None:
-                # we were looking for a unique request and we found it
-                return all_requests
+        if items is not None or sites is not None:
+            self.registry.db.drop_tmp_table('ids_tmp')
 
-        if statuses is not None and (set(statuses) < set(['new', 'activated']) or set(statuses) < set([Request.ST_NEW, Request.ST_ACTIVATED])):
+        if (request_id is not None and len(all_requests) != 0) or \
+           (statuses is not None and (set(statuses) <= set(['new', 'activated']) or set(statuses) <= set([Request.ST_NEW, Request.ST_ACTIVATED]))):
             # there's nothing in the archive
             return all_requests
 
@@ -104,9 +104,12 @@ class CopyRequestManager(RequestManager):
 
         all_requests.update(archived_requests)
 
+        if items is not None or sites is not None:
+            self.history.db.drop_tmp_table('ids_tmp')
+
         return all_requests
 
-    def create_request(self, caller, items, sites, group, ncopies):
+    def create_request(self, caller, items, sites, sites_original, group, ncopies):
         now = int(time.time())
 
         if self._read_only:
@@ -124,7 +127,7 @@ class CopyRequestManager(RequestManager):
 
         # Make an entry in history
         history_user_ids = self.history.save_users([(caller.name, caller.dn)], get_ids = True)
-        history_site_ids = self.history.save_sites(sites, get_ids = True)
+        history_site_ids = self.history.save_sites(sites_original, get_ids = True)
         history_group_ids = self.history.save_groups([group], get_ids = True)
         history_dataset_ids, history_block_ids = self._save_items(items)
 
@@ -152,12 +155,14 @@ class CopyRequestManager(RequestManager):
             sql = 'UPDATE `copy_requests` SET `status` = %s, `group` = %s, `num_copies` = %s, `last_request_time` = FROM_UNIXTIME(%s), `request_count` = %s WHERE `id` = %s'
             self.registry.db.query(sql, request.status, request.group, request.n, request.last_request, request.request_count, request.request_id)
 
-            # insert or update active copies
-            fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
-            for a in request.actions:
-                values = (request.request_id, a.item, a.site, a.status, MySQL.bare('NOW()'), MySQL.bare('NOW()'))
+            if request.actions is not None:
+                # insert or update active copies
+                fields = ('request_id', 'item', 'site', 'status', 'created', 'updated')
                 update_columns = ('status', 'updated')
-                self.registry.db.insert_update('active_copies', fields, *values, update_columns = update_columns)
+                for a in request.actions:
+                    now = time.strftime('%Y-%m-%d %H:%M:%S') # current local time
+                    values = (request.request_id, a.item, a.site, a.status, now, now)
+                    self.registry.db.insert_update('active_copies', fields, *values, update_columns = update_columns)
 
         else:
             # terminal state
@@ -174,6 +179,8 @@ class CopyRequestManager(RequestManager):
         """
 
         now = int(time.time())
+
+        incomplete_replicas = ([], [])
 
         self.lock()
 
@@ -250,6 +257,7 @@ class CopyRequestManager(RequestManager):
                             action.last_update = now
                             updated = True
                         else:
+                            incomplete_replicas[0].append(replica)
                             LOG.debug('%s incomplete', replica)
                 
                     else:
@@ -277,6 +285,7 @@ class CopyRequestManager(RequestManager):
                             action.last_update = now
                             updated = True
                         else:
+                            incomplete_replicas[1].append(replica)
                             LOG.debug('%s incomplete', replica)
 
                 n_complete = sum(1 for a in request.actions if a.status in (RequestAction.ST_COMPLETED, RequestAction.ST_FAILED))
@@ -289,3 +298,5 @@ class CopyRequestManager(RequestManager):
 
         finally:
             self.unlock()
+
+        return incomplete_replicas

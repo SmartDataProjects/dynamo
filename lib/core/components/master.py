@@ -5,7 +5,7 @@ import types
 
 from dynamo.core.components.authorizer import Authorizer
 from dynamo.core.components.appmanager import AppManager
-from dynamo.core.components.host import ServerHost
+from dynamo.core.components.host import ServerHost, OutOfSyncError
 from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
@@ -15,7 +15,8 @@ class MasterServer(Authorizer, AppManager):
     An interface to the master server that coordinates server activities. The single instance of the MasterServer
     owned by the ServerManager (owned by DynamoServer) is used by DynamoServer, WebServer, and the subprocesses of the
     WebServer. To avoid interference, all public methods of the instance of the MasterServer is decorated with a wrapper
-    that locks the execution.
+    that locks the execution. A secondary Dynamo server has two instances of MasterServer: one connected to the primary
+    server, and the other as a local shadow.
     """
 
     @staticmethod
@@ -25,12 +26,6 @@ class MasterServer(Authorizer, AppManager):
         # Decorate all public methods of MasterServer with the lock. Without this, the lock() method is meaningless.
         # Subclasses may have its own lock placed on the actual shared resource (e.g. database) by _do_lock, in which
         # case this class-level lock is redundant.
-        def make_wrapper(obj, mthd):
-            def wrapper(*args, **kwd):
-                with obj._master_server_lock:
-                    return mthd(*args, **kwd)
-
-            return wrapper
         
         for name in dir(instance):
             if name == 'lock' or name == 'unlock' or name.startswith('_'):
@@ -38,7 +33,7 @@ class MasterServer(Authorizer, AppManager):
 
             mthd = getattr(instance, name)
             if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
-                setattr(instance, name, make_wrapper(instance, mthd))
+                setattr(instance, name, instance._make_wrapper(mthd))
 
         return instance
 
@@ -61,8 +56,7 @@ class MasterServer(Authorizer, AppManager):
         try:
             self._connect()
     
-            master_host = self.get_master_host()
-            if master_host == 'localhost' or master_host == socket.gethostname():
+            if self.get_host() == 'localhost' or self.get_host() == socket.gethostname():
                 # This is the master host; make sure there are no dangling web writes
                 writing = self.get_writing_process_id()
                 if writing == 0:
@@ -75,7 +69,7 @@ class MasterServer(Authorizer, AppManager):
 
         self.connected = True
 
-        LOG.info('Master host: %s', master_host)
+        LOG.info('Master host: %s', self.get_host())
 
     def lock(self):
         self._master_server_lock.acquire()
@@ -85,11 +79,11 @@ class MasterServer(Authorizer, AppManager):
         self._do_unlock()
         self._master_server_lock.release()
 
-    def get_master_host(self):
+    def get_host(self):
         """
-        @return  Current master server host name.
+        @return  Name of the host this instance is connected to. Must not raise.
         """
-        raise NotImplementedError('get_master_host')
+        raise NotImplementedError('get_host')
 
     def set_status(self, status, hostname):
         raise NotImplementedError('set_status')
@@ -195,7 +189,7 @@ class MasterServer(Authorizer, AppManager):
         Revoke authorization on target from (user, role).
         @param user    User name.
         @param role    Role (role) name user is acting in. If None, authorize the user under all roles.
-        @param target  Authorization target. If None, authorize the user for all targets.
+        @param target  Authorization target. If None, revoke for all targets.
 
         @return True if success, False if not.
         """
@@ -216,3 +210,25 @@ class MasterServer(Authorizer, AppManager):
     def inhibit_write(self):
         return len(self.get_host_list(status = ServerHost.STAT_STARTING)) != 0 or \
             self.get_writing_process_id() is not None
+
+    def _make_wrapper(self, method):
+        """
+        Return a wrapper function with operations that should be applied to all public methods of this class.
+        In this default implementation, we place a process lock and try executing the method. If an exception
+        is thrown, check the connection to the master server (unless this instance is the master), and raise
+        an OutOfSyncError if the connection is lost.
+        """
+
+        def wrapper(*args, **kwd):
+            with self._master_server_lock:
+                try:
+                    return method(*args, **kwd)
+                except:
+                    if self.get_host() == 'localhost' or self.get_host() == socket.gethostname():
+                        raise
+                    elif not self.check_connection():
+                        raise OutOfSyncError('Lost connection to remote master')
+                    else:
+                        raise
+
+        return wrapper

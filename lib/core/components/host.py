@@ -1,3 +1,6 @@
+class OutOfSyncError(Exception):
+    pass
+
 class ServerHost(object):
     _statuses = ['initial', 'starting', 'online', 'updating', 'outofsync']
     STAT_INITIAL, STAT_STARTING, STAT_ONLINE, STAT_UPDATING, STAT_ERROR, STAT_OUTOFSYNC = range(1, 7)

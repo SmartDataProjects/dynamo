@@ -7,14 +7,14 @@ from dynamo.fileop.rlfsm import RLFSM
 
 LOG = logging.getLogger(__name__)
 
-class FODDeletionInterface(DeletionInterface):
+class RLFSMDeletionInterface(DeletionInterface):
     """
-    DeletionInterface using the Dynamo FOD.
+    DeletionInterface using the Dynamo RLFSM.
     """
 
     def __init__(self, config = None):
         DeletionInterface.__init__(self, config)
-        self.rlfsm = RLFSM(config.get('fod', None))
+        self.rlfsm = RLFSM(config.get('rlfsm', None))
 
     def set_read_only(self, value = True): #override
         self._read_only = value
@@ -38,7 +38,8 @@ class FODDeletionInterface(DeletionInterface):
                 to_delete = block_replicas
 
             for block_replica in to_delete:
-                self.rlfsm.desubscribe_files(block_replica.site, block_replica.files())
+                for lfile in block_replica.files():
+                    self.rlfsm.desubscribe_file(block_replica.site, lfile)
 
             # No external dependency -> all operations are successful
 

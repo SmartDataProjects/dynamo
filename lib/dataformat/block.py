@@ -3,7 +3,7 @@ import collections
 import threading
 import weakref
 
-from exceptions import ObjectError, IntegrityError
+from exceptions import ObjectError, IntegrityError, OperationalError
 from _namespace import customize_block
 
 class Block(object):
@@ -13,10 +13,13 @@ class Block(object):
 
     __slots__ = ['_name', '_dataset', 'id', '_size', '_num_files', 'is_open', 'replicas', 'last_update', '_files']
 
+    # Container for the file-set "originals" - Block._files will normally be a weakref pointing to a value of this dict
     _files_cache = collections.OrderedDict()
     _files_cache_lock = threading.Lock()
-    _MAX_FILES_CACHE_DEPTH = 100
-    _inventory_store = None
+    _MAX_FILES_CACHE_DEPTH = 1000
+
+    # Pointer to inventory._store
+    inventory_store = None
 
     # Regular expression object (from re.compile) of the block name format, if there is any.
     name_pattern = None
@@ -190,7 +193,7 @@ class Block(object):
         """
         Add a file to self._files. This function does *not* increment _num_files or _size.
         """
-        # make self._files a non-volatile set
+        # make self._files a non-volatile set and add the file to it
         self._check_and_load_files(cache = False)
         self._files.add(lfile)
 
@@ -201,7 +204,7 @@ class Block(object):
         if lfile not in self.files:
             return
 
-        # make self._files a non-volatile set
+        # make self._files a non-volatile set and remove the file from it
         self._check_and_load_files(cache = False)
         self._files.remove(lfile)
 
@@ -228,7 +231,11 @@ class Block(object):
         if type(self._files) is set:
             return self._files
 
-        with Block._files_cache_lock:
+        if not Block.inventory_store.server_side:
+            # if server side we won't be using any caching
+            Block._files_cache_lock.acquire()
+
+        try:
             if cache:
                 if self._files is not None:
                     # self._files is either a real set (if _files was directly set), a valid weak proxy to a frozenset,
@@ -240,15 +247,23 @@ class Block(object):
                         self._files = None
     
                 if self._files is None:
+                    files = frozenset(self._load_files())
+                    
+                    if Block.inventory_store.server_side:
+                        # In server side inventory, we don't keep the files in memory
+                        return files
+
                     while len(Block._files_cache) >= Block._MAX_FILES_CACHE_DEPTH:
                         # Keep _files_cache FIFO to Block._MAX_FILES_CACHE_DEPTH
                         Block._files_cache.popitem(last = False)
 
-                    files = frozenset(self._load_files())
                     Block._files_cache[self] = files
                     self._files = weakref.proxy(files)
 
             else:
+                if Block.inventory_store.server_side:
+                    raise OperationalError('Block.files should not be loaded as non-cache on the server side.')
+
                 if type(self._files) is weakref.ProxyType:
                     try:
                         self._files = set(self._files)
@@ -264,13 +279,17 @@ class Block(object):
                 if self._files is None:
                     self._files = self._load_files()
 
-            return self._files
+        finally:
+            if not Block.inventory_store.server_side:
+                Block._files_cache_lock.release()
+
+        return self._files
 
     def _load_files(self):
         if self.id == 0:
             return set()
 
-        files = Block._inventory_store.get_files(self)
+        files = Block.inventory_store.get_files(self)
 
         if len(files) != self._num_files:
             raise IntegrityError('Number of files mismatch in %s: predicted %d, loaded %d' % (str(self), self._num_files, len(files)))

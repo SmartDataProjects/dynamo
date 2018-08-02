@@ -1,4 +1,5 @@
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import Configuration
 
 class UserInfoSource(object):
     """
@@ -6,8 +7,21 @@ class UserInfoSource(object):
     """
 
     @staticmethod
-    def get_instance(module, config):
+    def get_instance(module = None, config = None):
+        if module is None:
+            module = UserInfoSource._module
+        if config is None:
+            config = UserInfoSource._config
+
         return get_instance(UserInfoSource, module, config)
+
+    _module = ''
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        UserInfoSource._module = config.module
+        UserInfoSource._config = config.config
         
     def __init__(self, config):
         pass
