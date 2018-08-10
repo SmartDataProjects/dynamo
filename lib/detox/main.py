@@ -555,7 +555,7 @@ class Detox(object):
 
         if len(blocks_to_hand_over) != 0:
             if replica in reowned:
-                reowned[replica].extend(blocks_to_hand_over)
+                reowned[replica].update(blocks_to_hand_over)
             else:
                 reowned[replica] = blocks_to_hand_over
 
