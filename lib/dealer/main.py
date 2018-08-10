@@ -166,7 +166,7 @@ class Dealer(object):
         # Default group for newly created replicas
         default_group = inventory.groups[self.policy.group_name]
 
-        reqlists = {} # {plugin: reqlist} reqlist is [(item, destination)]
+        reqlists = {} # {plugin: reqlist} reqlist is [DealerRequest]
 
         for plugin, priority in self._plugin_priorities.items():
             if priority == 0:

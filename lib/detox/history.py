@@ -3,6 +3,7 @@ import re
 import sqlite3
 import lzma
 import hashlib
+import signal
 import logging
 
 from dynamo.utils.interface.mysql import MySQL
@@ -516,7 +517,25 @@ class DetoxHistory(DetoxHistoryBase):
 
         LOG.info('Creating snapshot SQLite3 DB %s', db_file_name)
 
-        snapshot_db = sqlite3.connect(db_file_name)
+        # For some unknown reason, we observed sqlite3.connect hanging - employing alarm mechanism to time out
+        class Timeout(Exception):
+            pass
+
+        def timeout_handler(signum, frame):
+            raise Timeout()
+
+        signal.signal(signal.SIGALRM, timeout_handler)
+
+        signal.alarm(5)
+
+        for att in range(3):
+            try:
+                snapshot_db = sqlite3.connect(db_file_name)
+            except Timeout:
+                continue
+            else:
+                break
+
         snapshot_cursor = snapshot_db.cursor()
 
         # Make enum mapping tables

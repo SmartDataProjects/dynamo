@@ -244,21 +244,28 @@ class CopyRequestManager(RequestManager):
 
                         replica = site.find_dataset_replica(dataset)
                         if replica is None:
-                            LOG.debug('Replica %s:%s not created yet', site.name, dataset.name)
-                            continue
+                            if action.last_update > now - 1800: # 30 minutes grace period to avoid race condition with dealer
+                                continue
 
-                        if not replica.growing or replica.group is not group:
-                            LOG.error('%s is not a growing replica owned by %s.', replica, group)
-                            continue
-                
-                        if replica.is_complete():
-                            LOG.debug('%s complete', replica)
-                            action.status = RequestAction.ST_COMPLETED
+                            LOG.info('Replica %s:%s disappeared. Resetting the status to new.', site.name, dataset.name)
+                            action.status = RequestAction.ST_NEW
                             action.last_update = now
                             updated = True
+
                         else:
-                            incomplete_replicas[0].append(replica)
-                            LOG.debug('%s incomplete', replica)
+                            if not replica.growing or replica.group is not group:
+                                LOG.error('%s is not a growing replica owned by %s. Resetting action status to new.', replica, group)
+                                action.status = RequestAction.ST_NEW
+                                action.last_update = now
+                                updated = True
+                            elif replica.is_complete():
+                                LOG.debug('%s complete', replica)
+                                action.status = RequestAction.ST_COMPLETED
+                                action.last_update = now
+                                updated = True
+                            else:
+                                incomplete_replicas[0].append(replica)
+                                LOG.debug('%s incomplete', replica)
                 
                     else:
                         block = dataset.find_block(block_name)
@@ -272,21 +279,28 @@ class CopyRequestManager(RequestManager):
                 
                         replica = site.find_block_replica(block)
                         if replica is None:
-                            LOG.debug('Replica %s:%s not created yet', site.name, block.full_name())
-                            continue
-                
-                        if replica.group != group:
-                            LOG.error('%s is not owned by %s.', replica, group)
-                            continue
-                
-                        if replica.is_complete():
-                            LOG.debug('%s complete', replica)
-                            action.status = RequestAction.ST_COMPLETED
+                            if action.last_update > now - 1800: # 30 minutes grace period to avoid race condition with dealer
+                                continue
+
+                            LOG.info('Replica %s:%s disappeared. Resetting the status to new.', site.name, block.full_name())
+                            action.status = RequestAction.ST_NEW
                             action.last_update = now
                             updated = True
+
                         else:
-                            incomplete_replicas[1].append(replica)
-                            LOG.debug('%s incomplete', replica)
+                            if replica.group != group:
+                                LOG.error('%s is not owned by %s.', replica, group)
+                                action.status = RequestAction.ST_NEW
+                                action.last_update = now
+                                updated = True
+                            elif replica.is_complete():
+                                LOG.debug('%s complete', replica)
+                                action.status = RequestAction.ST_COMPLETED
+                                action.last_update = now
+                                updated = True
+                            else:
+                                incomplete_replicas[1].append(replica)
+                                LOG.debug('%s incomplete', replica)
 
                 n_complete = sum(1 for a in request.actions if a.status in (RequestAction.ST_COMPLETED, RequestAction.ST_FAILED))
                 if n_complete == len(request.actions):
