@@ -78,7 +78,7 @@ do
     TABLE=$(echo $SQL | sed 's/.sql//')
 
     # Get the CREATE TABLE command. If the table does not exist, return code is nonzero
-    python $THISDIR/get_schema.py $MYSQLOPT $DB $TABLE > /tmp/.schema.$$ 2>&1
+    python $THISDIR/get_schema.py $MYSQLOPT $DB $TABLE > /tmp/.schema.$$
 
     if [ $? -ne 0 ]
     then

@@ -278,10 +278,13 @@ class WebServer(object):
                         json_data['data'] = content
     
                     # replace content with the json string
+                    start = time.time()
                     if self.callback is not None:
                         content = '%s(%s)' % (self.callback, json.dumps(json_data))
                     else:
                         content = json.dumps(json_data)
+
+                    root_logger.info('Make JSON: %s seconds', time.time() - start)
 
             headers = [('Content-Type', self.content_type)] + self.headers
 
