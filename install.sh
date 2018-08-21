@@ -303,7 +303,7 @@ then
   
   if which getsebool > /dev/null 2>&1 && [[ $(getsebool httpd_setrlimit) =~ off ]]
   then
-    setsebool httpd_setrlimit 1
+    setsebool -P httpd_setrlimit 1
   fi
   
   echo '#############################'
