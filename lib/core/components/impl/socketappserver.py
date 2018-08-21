@@ -164,7 +164,7 @@ def bind_socket(tmpsocket):
             LOG.error('Failed to bind to port %d.', port)
             raise
 
-    tmpsocket.listen(5)
+        tmpsocket.listen(5)
 
     return port
     
