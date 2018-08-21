@@ -135,40 +135,37 @@ class Transfers(Operations):
         # derive basic characteristics
         (nbins,dt) = histogram_binning(tmin,tmax)
 
-        # sites to order by
-        n_sites = {}
-        if entity == 'dest' or entity == 'link':
-            n_sites = self.n_targets
-        elif entity == 'src':
-            n_sites = self.n_sources
+        # implement a dictionary with each time series
+        series = {}
+        for transfer in self.list:
 
-        # loop through the list of relevant sites separately
-        for site in n_sites:
-
-            # what should we expect
-            if entity == 'src':
-                LOG.info(" Source: %s,  n_transfers: %d"%(site,n_sites[site]))
+            if entity == 'dest':
+               key = transfer.target
+            elif entity == 'src':
+               key = transfer.source
             else:
-                LOG.info(" Target: %s,  n_transfers: %d"%(site,n_sites[site]))
+               key = "%s->%s"%(transfer.source,transfer.target)
 
-            # initialize
-            times = []
-            sizes = []
-   
-            # get the times and sizes of the transfers
-            for transfer in self.list:
-                if ((entity == 'dest' or entity == 'link') and transfer.target == site) or \
-                   (entity == 'src' and transfer.source == site):
-                    size = transfer.size
-                    times.append(transfer.end)
-                    sizes.append(transfer.size)
-    
+            if key in series:
+                pass
+            else:
+                series[key] = {'times': [], 'sizes': []}
+            
+            serie = series[key]
+            serie['times'].append(transfer.end)
+            serie['sizes'].append(transfer.size)
+
+        # loop through all different requested time series
+        for key in series:
+
+            # get the time serie
+            serie = series[key]
 
             # use matplotlib to extract histogram information
-            hist,bins,p = plt.hist(times,nbins,range=(tmin,tmax),weights=sizes)
+            hist,bins,p = plt.hist(serie['times'],nbins,range=(tmin,tmax),weights=serie['sizes'])
 
             # now generate the serializable object
-            name = site
+            name = key
             cs = 0
             datum = { 'name': name, 'data': [] }
             for t,s in zip(bins,hist):
@@ -183,5 +180,57 @@ class Transfers(Operations):
 
             # append the full site information
             data.append(datum)
+#
+#
+#
+#
+#        # sites to order by
+#        n_sites = {}
+#        if entity == 'dest' or entity == 'link':
+#            n_sites = self.n_targets
+#        elif entity == 'src':
+#            n_sites = self.n_sources
+#
+#        # loop through the list of relevant sites separately
+#        for site in n_sites:
+#
+#            # what should we expect
+#            if entity == 'src':
+#                LOG.info(" Source: %s,  n_transfers: %d"%(site,n_sites[site]))
+#            else:
+#                LOG.info(" Target: %s,  n_transfers: %d"%(site,n_sites[site]))
+#
+#            # initialize
+#            times = []
+#            sizes = []
+#   
+#            # get the times and sizes of the transfers
+#            for transfer in self.list:
+#                if ((entity == 'dest' or entity == 'link') and transfer.target == site) or \
+#                   (entity == 'src' and transfer.source == site):
+#                    size = transfer.size
+#                    times.append(transfer.end)
+#                    sizes.append(transfer.size)
+#    
+#
+#            # use matplotlib to extract histogram information
+#            hist,bins,p = plt.hist(times,nbins,range=(tmin,tmax),weights=sizes)
+#
+#            # now generate the serializable object
+#            name = site
+#            cs = 0
+#            datum = { 'name': name, 'data': [] }
+#            for t,s in zip(bins,hist):
+#
+#                size = s
+#                if   graph[0] == 'c':         # cumulative volume
+#                    cs += s
+#                    size = cs
+#                elif graph[0] == 'r':         # rate (volume per time)
+#                    size = s/dt
+#                datum['data'].append({'time': t, 'size': size })
+#
+#            # append the full site information
+#            data.append(datum)
 
         return data

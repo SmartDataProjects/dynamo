@@ -20,11 +20,23 @@ function initPage(graph,entity,src_filter,dest_filter,no_mss,period,upto)
 
 function displayHistogram(graph,entity,data)
 {
-  // extract all other property information from the data block
-  var dt = data[0].data[1].time*1000 - data[0].data[0].time*1000;
-  var timing_string = data[0].timing_string;
+  // defaults
+  var dt = 3600000; // 1 hour in milliseconds
+  var timing_string = 'undefined';
+  var title = 'undefined';
+  var subtitle = 'undefined';
 
-  // get the plot data first
+  // get information out of the container
+  if ("0" in data) {
+    timing_string = data[0].timing_string;
+    title =  data[0].title;
+    subtitle =  data[0].subtitle;
+    if ("data" in data[0]) {
+      dt = data[0].data[1].time*1000 - data[0].data[0].time*1000;
+    }
+  }
+
+  // get the plot data
   var plot_data = [];
   for (var i_site in data) {
     var site_data = data[i_site].data;
@@ -33,7 +45,7 @@ function displayHistogram(graph,entity,data)
       y: [],
       name: data[i_site].name,
       marker: {
-  	opacity: 0.6,
+  	opacity: 1.0,
   	line: {
   	  color: 'rbg(107,48,107)',
   	  width: 1.5,
@@ -57,18 +69,18 @@ function displayHistogram(graph,entity,data)
   // define the basic plot layout
   var basic_layout = {
     autosize: false, width: 900, height: 600,
-    margin: { l: 80, r: 10, t: 40, b: 80 },
+    margin: { l: 80, r: 10, t: 60, b: 80 },
     title: '',
-    titlefont: { family: 'Arial, sans-serif', size: 20, color: 'green' },
+    titlefont: { family: 'Arial, sans-serif', size: 28, color: '#444444' },
     showlegend: true,
     xaxis: {
       title: 'Time Axis',
-      titlefont: { family: 'Arial, sans-serif', size: 24, color: 'black' },
+      titlefont: { family: 'Arial, sans-serif', size: 24, color: '#444444' },
       tickfont: { family: 'Arial, sans-serif',  size: 16, color: 'black' },
     },	
     yaxis: {
       title: 'undefined plot',
-      titlefont: { family: 'Arial, sans-serif', size: 24, color: 'black' },
+      titlefont: { family: 'Arial, sans-serif', size: 24, color: '#444444' },
       tickfont: { family: 'Arial, sans-serif',  size: 20, color: 'black' },
       ticklen: 0.5,
     },
@@ -77,12 +89,40 @@ function displayHistogram(graph,entity,data)
     annotations: [{
   	xref: 'paper',
   	yref: 'paper',
+  	xanchor: 'center',
+  	yanchor: 'bottom',
+  	x: 0.5,
+  	y: 1.05, 
+  	font: {
+  	  family: 'arial, sans-serif',
+  	  size: 30,
+  	  color: '#444444',
+  	},
+  	text: title,
+  	showarrow: false,
+      },{
+  	xref: 'paper',
+  	yref: 'paper',
+  	xanchor: 'center',
+  	yanchor: 'bottom',
+  	x: 0.5,
+  	y: 0.99, 
+  	font: {
+  	  family: 'sans-serif',
+  	  size: 16,
+  	  color: 'gray',
+  	},
+  	text: subtitle,
+  	showarrow: false,
+      },{
+  	xref: 'paper',
+  	yref: 'paper',
   	xanchor: 'left',
   	yanchor: 'bottom',
   	x: -0.12,
   	y: -0.17, 
   	font: {
-  	  family: 'sans serif',
+  	  family: 'sans-serif',
   	  size: 12,
   	  color: 'green',
   	},

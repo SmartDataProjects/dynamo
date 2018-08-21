@@ -65,11 +65,15 @@ class FileTransferHistory(WebModule):
         elapsed_processing = time.time() - start
         LOG.info('Parsed data: %7.3f sec', elapsed_processing)
 
-        # add timing information tot he plot
+        # add timing information to the plot
         if len(data) < 1:
             data.append({})
+        data[0]['title'] = \
+            'Dynamo Transfers (%s by %s)'%(graph,entity)
+        data[0]['subtitle'] = \
+            'Time period: %s -- %s'%(str(past_max).split('.')[0],str(past_min).split('.')[0])
         data[0]['timing_string'] = \
-            ' Timing -- db: %.3f sec, processing: %.3f sec'%(elapsed_db,elapsed_processing)
+            'Timing -- db: %.3f sec, processing: %.3f sec'%(elapsed_db,elapsed_processing)
 
         return data
 
@@ -93,31 +97,19 @@ class FileTransferHistory(WebModule):
                       
         return past_date
 
-
     def _add_filter_conditions(self,entity,dest_filter,src_filter,no_mss):
 
         # default string is empty (doing nothing)
         filter_string = ""
 
         # is there any filtering at all
-        if src_filter != "" or dest_filter != "":
-
-            if      entity == "dest":
-                if dest_filter != "":
-                    filter_string += " and d.name like '%s'"%(dest_filter)
-            elif entity == "src":
-                if src_filter != "":
-                    filter_string += " and s.name like '%s'"%(src_filter)
-            elif entity == "link":
-                if src_filter != "":
-                    filter_string += " and s.name like '%s'"%(src_filter)
-                if src_filter != "":
-                    filter_string += " and d.name like '%s'"%(dest_filter)
+        if src_filter != "":
+            filter_string += " and s.name like '%s'"%(src_filter)
+        if dest_filter != "":
+            filter_string += " and d.name like '%s'"%(dest_filter)
 
         if no_mss:
             filter_string += " and s.name not like '%%MSS' and d.name not like '%%MSS'"
-            
-                          
 
         return filter_string
 
