@@ -18,25 +18,68 @@ class FileTransferList(WebModule, HTMLMixin):
         self.header_script = '$(document).ready(function() { initPage(); });'
         return self.form_html()
 
-class FileTransferSizes(WebModule, HTMLMixin):
+class FileTransferActivity(WebModule, HTMLMixin):
     """
-    Open the file transfer list HTML and let monitor.js take care of data loading.
+    Open the file transfer list HTML and let activity.js take care of data loading.
     """
 
     def __init__(self, config):
         WebModule.__init__(self, config)
-        HTMLMixin.__init__(self, 'Transfer Sizes', 'transfers/sizes.html')
+        HTMLMixin.__init__(self, 'Transfer Activity', 'transfers/activity.html')
 
         self.stylesheets = ['/css/transfers/monitor.css']
-        self.scripts = ['/js/plotly-latest.min.js', '/js/utils.js', '/js/transfers/sizes.js']
+        self.scripts = ['/js/plotly-jan2018.min.js',
+                        '/js/utils.js',
+                        '/js/transfers/activity.js']
         
     def run(self, caller, request, inventory):
-        self.header_script = '$(document).ready(function() { initPage(); });'
+
+        if 'graph' in request:
+            graph = request['graph']
+        else:
+            graph = 'volume'
+
+        if 'entity' in request:
+            entity = request['entity']
+        else:
+            entity = 'dest'
+
+        if 'src_filter' in request:
+            src_filter = request['src_filter']
+        else:
+            src_filter = ''
+
+        if 'dest_filter' in request:
+            dest_filter = request['dest_filter']
+        else:
+            dest_filter = ''
+
+        if 'no_mss' in request:
+            no_mss = request['no_mss']
+        else:
+            no_mss = 't'
+
+        if 'period' in request:
+            period = request['period']
+        else:
+            period = '96h'
+
+        if 'upto' in request:
+            upto = request['upto']
+        else:
+            upto = '0h'
+
+        self.header_script = \
+            '$(document).ready(function() { initPage("'  \
+            + graph + \
+            '","' +  entity + \
+            '","' +  src_filter + \
+            '","' +  dest_filter + \
+            '","' +  no_mss + \
+            '","' +  period + \
+            '","' +  upto + \
+            '"); });'
         return self.form_html()
-
-
-
-
 
 from dynamo.web.modules.transfers.current import CurrentFileTransfers
 
@@ -131,7 +174,7 @@ class HistoryFileTransferListStatic(WebModule, HTMLMixin):
 
 export_web = {
     'list': FileTransferList,
-    'sizes': FileTransferSizes,
+    'activity': FileTransferActivity,
     'current_list': CurrentFileTransferListStatic,
     'history_list': HistoryFileTransferListStatic,
     'held': HeldTransferList

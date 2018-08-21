@@ -2,6 +2,11 @@
   "detox": {
     "deletion_per_iteration": 0.01,
     "attrs": {
+      "FilePopularity": {
+        "namespaces": [
+          ["/cms/store/user/paus", "/store/user/paus"]
+        ]
+      }
     }
   },
   "log_level": "info"
