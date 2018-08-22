@@ -116,32 +116,19 @@ def tail_follow(source_path, stream, stop_reading):
     except:
         pass
 
-def create_socket(config):    
+def create_socket(config, context, py26):    
     LOG.info('Creating new socket.')
 
-    try:
-        context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-    except AttributeError:
-        # python 2.6
-        if os.path.isdir(config.capath):
-            raise ConfigurationError('AppServer configuration parameter "capath" must point to a single file.')
-        
+    if py26:
         tmpsocket = ssl.wrap_socket(socket.socket(socket.AF_INET), server_side = True,
                                certfile = config.certfile, keyfile = config.keyfile,
                                cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.capath)
     else:
-        # python 2.7
-        context.load_cert_chain(config.certfile, keyfile = config.keyfile)
-        if os.path.isdir(config.capath):
-            context.load_verify_locations(capath = config.capath)
-        else:
-            context.load_verify_locations(cafile = config.capath)
-        context.verify_mode = ssl.CERT_REQUIRED
         tmpsocket = context.wrap_socket(socket.socket(socket.AF_INET), server_side = True)
 
     # allow reconnect to the same port even when it is in TIME_WAIT
     tmpsocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    
+
     LOG.info('Socket created successfully.')
 
     return tmpsocket
@@ -174,21 +161,43 @@ class SocketAppServer(AppServer):
     def __init__(self, dynamo_server, config):
         AppServer.__init__(self, dynamo_server, config)
 
-        self._sock = create_socket(config)
-
         try:
             port = int(os.environ['DYNAMO_SERVER_PORT'])
         except:
             port = SERVER_PORT
         
-        bind_socket(self._sock, dynamo_server, port)
         self._port = port
+        self._dynamo_server = dynamo_server
+        self._config = config
+
+        self._py26 = False
+        try:
+            self._context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        except AttributeError:
+            # python 2.6
+            self._py26 = True
+            if os.path.isdir(config.capath):
+                raise ConfigurationError('AppServer configuration parameter "capath" must point to a single file.')
+        else:
+            # python 2.7
+            self._context.load_cert_chain(config.certfile, keyfile = config.keyfile)
+            if os.path.isdir(config.capath):
+                self._context.load_verify_locations(capath = config.capath)
+            else:
+                self._context.load_verify_locations(cafile = config.capath)
+            self._context.verify_mode = ssl.CERT_REQUIRED
+
+        self._sock = create_socket(config, self._context, self._py26)
+        bind_socket(self._sock, dynamo_server, port)
+
 
     def _accept_applications(self): #override
         while True:
             # blocks until there is a connection
             # keeps blocking when socket is closed
             try:
+                if subprocess.call("netstat -pantu | grep %s" % str(self._port), shell=True) == 1:                    
+                    raise Exception('Port is not found.')
                 conn, addr = self._sock.accept()
             except Exception as ex:
                 if self._stop_flag.is_set():
@@ -205,17 +214,13 @@ class SocketAppServer(AppServer):
 
                     # Create new socket if old one died
                     if subprocess.call("netstat -pantu | grep %s" % str(self._port), shell=True) == 1:
-                        try:
-                            del self._sock
-                            LOG.error('Old socket deleted.')
-                        except:
-                            pass
                         LOG.error('Trying to create new socket.')
 
-                        self._sock = create_socket(dynamo_server, config)
-                        bind_socket(self._sock, self._port)
-
+                        self._sock = create_socket(self._config, self._context, self._py26)
                         LOG.error('New socket created.')
+
+                        bind_socket(self._sock, self._dynamo_server, self._port)
+                        LOG.error('New socket bound.')
                         
                     continue
 
