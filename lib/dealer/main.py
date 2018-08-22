@@ -50,7 +50,7 @@ class Dealer(object):
         self.test_run = config.get('test_run', False)
         if self.test_run:
             for site in inventory.sites.itervalues():
-                self.copy_op[site.name].set_read_only(site.name)
+                self.copy_op[site.name].set_read_only(site.name, True)
 
         self._setup_plugins(config)
 
