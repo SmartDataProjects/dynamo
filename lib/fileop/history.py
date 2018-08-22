@@ -10,6 +10,8 @@ from dynamo.history.history import HistoryDatabase
 
 LOG = logging.getLogger(__name__)
 
+G_BTGB = 1./1000./1000./1000.
+
 def histogram_binning(tmin,tmax):
     nbins = int((tmax-tmin)/84600.)
     if nbins < 10:
@@ -156,18 +158,26 @@ class Transfers(Operations):
             serie['sizes'].append(transfer.size)
 
         # loop through all different requested time series
+        total_hist = []
         for key in series:
 
             # get the time serie
             serie = series[key]
-
             # use matplotlib to extract histogram information
             hist,bins,p = plt.hist(serie['times'],nbins,range=(tmin,tmax),weights=serie['sizes'])
+            if total_hist == []:
+                total_hist = hist
+            else:
+                i = 0
+                for value in hist:
+                    total_hist[i] += values
+                    i += 1
 
             # now generate the serializable object
             name = key
             cs = 0
             datum = { 'name': name, 'data': [] }
+            i = 0
             for t,s in zip(bins,hist):
 
                 size = s
@@ -178,59 +188,22 @@ class Transfers(Operations):
                     size = s/dt
                 datum['data'].append({'time': t, 'size': size })
 
+                # make sure to keep our histogram up to speed for later use
+                hist[i] = size
+                i += 1
+
             # append the full site information
             data.append(datum)
-#
-#
-#
-#
-#        # sites to order by
-#        n_sites = {}
-#        if entity == 'dest' or entity == 'link':
-#            n_sites = self.n_targets
-#        elif entity == 'src':
-#            n_sites = self.n_sources
-#
-#        # loop through the list of relevant sites separately
-#        for site in n_sites:
-#
-#            # what should we expect
-#            if entity == 'src':
-#                LOG.info(" Source: %s,  n_transfers: %d"%(site,n_sites[site]))
-#            else:
-#                LOG.info(" Target: %s,  n_transfers: %d"%(site,n_sites[site]))
-#
-#            # initialize
-#            times = []
-#            sizes = []
-#   
-#            # get the times and sizes of the transfers
-#            for transfer in self.list:
-#                if ((entity == 'dest' or entity == 'link') and transfer.target == site) or \
-#                   (entity == 'src' and transfer.source == site):
-#                    size = transfer.size
-#                    times.append(transfer.end)
-#                    sizes.append(transfer.size)
-#    
-#
-#            # use matplotlib to extract histogram information
-#            hist,bins,p = plt.hist(times,nbins,range=(tmin,tmax),weights=sizes)
-#
-#            # now generate the serializable object
-#            name = site
-#            cs = 0
-#            datum = { 'name': name, 'data': [] }
-#            for t,s in zip(bins,hist):
-#
-#                size = s
-#                if   graph[0] == 'c':         # cumulative volume
-#                    cs += s
-#                    size = cs
-#                elif graph[0] == 'r':         # rate (volume per time)
-#                    size = s/dt
-#                datum['data'].append({'time': t, 'size': size })
-#
-#            # append the full site information
-#            data.append(datum)
 
-        return data
+        # calculate summary
+        min_value = 0
+        max_value = 0
+        avg_value = 0
+        cur_value = 0
+        if len(total_hist) > 1:  # careful Bytes -> GBytes
+            min_value = min(total_hist)*G_BTGB
+            max_value = max(total_hist)*G_BTGB
+            avg_value = sum(total_hist)/len(total_hist)*G_BTGB
+            cur_value = total_hist[-1]*G_BTGB
+
+        return (min_value,max_value,avg_value,cur_value,data)
