@@ -116,7 +116,9 @@ def tail_follow(source_path, stream, stop_reading):
     except:
         pass
 
-def create_socket(dynamo_server, config):    
+def create_socket(config):    
+    LOG.info('Creating new socket.')
+
     try:
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
     except AttributeError:
@@ -139,13 +141,16 @@ def create_socket(dynamo_server, config):
 
     # allow reconnect to the same port even when it is in TIME_WAIT
     tmpsocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    LOG.info('Socket created successfully.')
 
     return tmpsocket
 
-def bind_socket(tmpsocket, port):
+def bind_socket(tmpsocket, dynamo_server, port):
     for _ in xrange(10):
         try:
             tmpsocket.bind(('', port))
+            LOG.info('Socket bound successfully.')
             break
         except socket.error as err:
             if err.errno == 98: # address already in use
@@ -154,12 +159,12 @@ def bind_socket(tmpsocket, port):
                 # then print and retry
                 LOG.warning('Cannot bind to port %d. Retrying..', port)
                 time.sleep(5)
-        else:
-            # exhausted attempts
-            LOG.error('Failed to bind to port %d.', port)
-            raise
-
-        tmpsocket.listen(5)
+    else:
+        # exhausted attempts
+        LOG.error('Failed to bind to port %d.', port)
+        raise
+        
+    tmpsocket.listen(5)
     
 class SocketAppServer(AppServer):
     """
@@ -169,14 +174,14 @@ class SocketAppServer(AppServer):
     def __init__(self, dynamo_server, config):
         AppServer.__init__(self, dynamo_server, config)
 
-        self._sock = create_socket(dynamo_server, config)
+        self._sock = create_socket(config)
 
         try:
             port = int(os.environ['DYNAMO_SERVER_PORT'])
         except:
             port = SERVER_PORT
         
-        bind_socket(self._sock, port)
+        bind_socket(self._sock, dynamo_server, port)
         self._port = port
 
     def _accept_applications(self): #override
@@ -199,7 +204,7 @@ class SocketAppServer(AppServer):
                     LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
 
                     # Create new socket if old one died
-                    if subprocess.call("netstat -pantu | grep %s" str(self._port), shell=True) == 1:
+                    if subprocess.call("netstat -pantu | grep %s" % str(self._port), shell=True) == 1:
                         try:
                             del self._sock
                             LOG.error('Old socket deleted.')
