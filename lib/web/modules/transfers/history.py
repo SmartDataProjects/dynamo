@@ -48,7 +48,9 @@ class FileTransferHistory(WebModule):
 
         # calculate the time limits to consider
         past_min = self._get_date_before_end(datetime.datetime.now(),upto)
+        tmax = int(past_min.strftime('%s')) # epochseconds: careful max/min in t and past inverts
         past_max = self._get_date_before_end(past_min,period)
+        tmin = int(past_max.strftime('%s')) # epochseconds
 
         # get our transfer data once
         start = time.time()
@@ -61,11 +63,22 @@ class FileTransferHistory(WebModule):
 
         # parse and extract the plotting data
         start = time.time()
-        data = transfers.timeseries(graph,entity,int(past_max.strftime('%s')),int(past_min.strftime('%s')))
+        (min_value,max_value,avg_value,cur_value,data) = \
+            transfers.timeseries(graph,entity,tmin,tmax)
         elapsed_processing = time.time() - start
         LOG.info('Parsed data: %7.3f sec', elapsed_processing)
+        
+        # generate summary string
+        summary_string = "Min: %.3f GB, Max: %.3f GB, Avg: %.3f GB, Last: %.3f GB" \
+            %(min_value,max_value,avg_value,cur_value)
+        if     graph[0] == 'r':         # cumulative volume
+            summary_string = "Min: %.3f GB/s, Max: %.3f GB/s, Avg: %.3f GB/s, Last: %.3f GB/s" \
+                %(min_value,max_value,avg_value,cur_value)
+        elif   graph[0] == 'c':         # cumulative volume
+            dt = int(past_min.strftime('%s'))-int(past_max.strftime('%s'))
+            summary_string = "Total: %.3f GB, Avg Rate: %.3f GB/s"%(cur_value,cur_value/dt)
 
-        # add timing information to the plot
+        # add text graphics information to the plot
         if len(data) < 1:
             data.append({})
         data[0]['title'] = \
@@ -74,6 +87,7 @@ class FileTransferHistory(WebModule):
             'Time period: %s -- %s'%(str(past_max).split('.')[0],str(past_min).split('.')[0])
         data[0]['timing_string'] = \
             'db:%.2fs, processing:%.2fs'%(elapsed_db,elapsed_processing)
+        data[0]['summary_string'] = summary_string
 
         return data
 

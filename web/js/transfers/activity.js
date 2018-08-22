@@ -34,12 +34,14 @@ function displayHistogram(graph,entity,data)
 {
   // defaults
   var dt = 3600000; // 1 hour in milliseconds
+  var summary_string = 'undefined';
   var timing_string = 'undefined';
   var title = 'undefined';
   var subtitle = 'undefined';
 
   // get information out of the container
   if ("0" in data) {
+    summary_string = data[0].summary_string;
     timing_string = data[0].timing_string;
     title =  data[0].title;
     subtitle =  data[0].subtitle;
@@ -81,7 +83,7 @@ function displayHistogram(graph,entity,data)
   // define the basic plot layout
   var basic_layout = {
     autosize: false, width: 900, height: 600,
-    margin: { l: 80, r: 10, t: 60, b: 80 },
+    margin: { l: 80, r: 10, t: 90, b: 80 },
     title: '',
     titlefont: { family: 'Arial, sans-serif', size: 28, color: '#444444' },
     showlegend: true,
@@ -104,10 +106,10 @@ function displayHistogram(graph,entity,data)
   	xanchor: 'center',
   	yanchor: 'bottom',
   	x: 0.5,
-  	y: 1.05, 
+  	y: 1.08, 
   	font: {
   	  family: 'arial, sans-serif',
-  	  size: 30,
+  	  size: 34,
   	  color: '#444444',
   	},
   	text: title,
@@ -118,13 +120,28 @@ function displayHistogram(graph,entity,data)
   	xanchor: 'center',
   	yanchor: 'bottom',
   	x: 0.5,
-  	y: 0.99, 
+  	y: 1.03, 
   	font: {
   	  family: 'sans-serif',
   	  size: 16,
   	  color: 'gray',
   	},
   	text: subtitle,
+  	showarrow: false,
+      },{
+  	xref: 'paper',
+  	yref: 'paper',
+  	xanchor: 'center',
+  	yanchor: 'bottom',
+  	x: 0.5,
+  	y: 0.98, 
+  	font: {
+  	  family: 'sans-serif',
+  	  size: 16,
+  	  color: '#440000',
+  	  //color: 'darkred',
+  	},
+  	text: summary_string,
   	showarrow: false,
       },{
   	xref: 'paper',
@@ -136,7 +153,8 @@ function displayHistogram(graph,entity,data)
   	font: {
   	  family: 'sans-serif',
   	  size: 12,
-  	  color: 'green',
+  	  color: '#004400',
+  	  //color: 'green',
   	},
   	text: timing_string,
   	showarrow: false,
