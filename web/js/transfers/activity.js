@@ -138,7 +138,8 @@ function displayHistogram(graph,entity,data)
   	font: {
   	  family: 'sans-serif',
   	  size: 16,
-  	  color: 'darkred',
+  	  color: '#440000',
+  	  //color: 'darkred',
   	},
   	text: summary_string,
   	showarrow: false,
@@ -152,7 +153,8 @@ function displayHistogram(graph,entity,data)
   	font: {
   	  family: 'sans-serif',
   	  size: 12,
-  	  color: 'green',
+  	  color: '#004400',
+  	  //color: 'green',
   	},
   	text: timing_string,
   	showarrow: false,
