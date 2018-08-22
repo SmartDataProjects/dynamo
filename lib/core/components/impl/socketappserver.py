@@ -142,12 +142,7 @@ def create_socket(dynamo_server, config):
 
     return tmpsocket
 
-def bind_socket(tmpsocket):
-    try:
-        port = int(os.environ['DYNAMO_SERVER_PORT'])
-    except:
-        port = SERVER_PORT
-
+def bind_socket(tmpsocket, port):
     for _ in xrange(10):
         try:
             tmpsocket.bind(('', port))
@@ -165,8 +160,6 @@ def bind_socket(tmpsocket):
             raise
 
         tmpsocket.listen(5)
-
-    return port
     
 class SocketAppServer(AppServer):
     """
@@ -177,7 +170,14 @@ class SocketAppServer(AppServer):
         AppServer.__init__(self, dynamo_server, config)
 
         self._sock = create_socket(dynamo_server, config)
-        self._port = bind_socket(self._sock)
+
+        try:
+            port = int(os.environ['DYNAMO_SERVER_PORT'])
+        except:
+            port = SERVER_PORT
+        
+        bind_socket(self._sock, port)
+        self._port = port
 
     def _accept_applications(self): #override
         while True:
@@ -199,17 +199,19 @@ class SocketAppServer(AppServer):
                     LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
 
                     # Create new socket if old one died
-                    if str(sys.exc_info()[1]) == "[Errno 22] Invalid argument" \ 
-                       and subprocess.call("netstat -pantu | grep %s" str(self._port), shell=True) == 1:
+                    if subprocess.call("netstat -pantu | grep %s" str(self._port), shell=True) == 1:
                         try:
-                            self._sock.close()
-                        except socket.error:
-                            LOG.error('Could not close socket.')
+                            del self._sock
+                            LOG.error('Old socket deleted.')
+                        except:
                             pass
                         LOG.error('Trying to create new socket.')
-                        self._sock = create_socket(dynamo_server, config)
-                        self._port = bind_socket(self._sock)
 
+                        self._sock = create_socket(dynamo_server, config)
+                        bind_socket(self._sock, self._port)
+
+                        LOG.error('New socket created.')
+                        
                     continue
 
             thread.start_new_thread(self._process_application, (conn, addr))
