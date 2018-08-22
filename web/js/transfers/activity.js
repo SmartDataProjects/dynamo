@@ -16,6 +16,18 @@ function initPage(graph,entity,src_filter,dest_filter,no_mss,period,upto)
     'async': false
   };
   $.ajax(jaxInput);
+
+  // make sure to conserve the values in the form typed in so far
+
+  // select type
+  $('#graph > option[value="' + graph + '"]').attr('selected', true);
+  $('#entity > option[value="' + entity + '"]').attr('selected', true);
+  $('#period > option[value="' + period + '"]').attr('selected', true);
+  $('#no_mss > option[value="' + no_mss + '"]').attr('selected', true);
+  // text type
+  $('#src_filter').attr('value',src_filter);
+  $('#dest_filter').attr('value',dest_filter);
+  $('#upto').attr('value',upto);
 }
 
 function displayHistogram(graph,entity,data)

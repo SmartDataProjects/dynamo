@@ -73,7 +73,7 @@ class FileTransferHistory(WebModule):
         data[0]['subtitle'] = \
             'Time period: %s -- %s'%(str(past_max).split('.')[0],str(past_min).split('.')[0])
         data[0]['timing_string'] = \
-            'Timing -- db: %.3f sec, processing: %.3f sec'%(elapsed_db,elapsed_processing)
+            'db:%.2fs, processing:%.2fs'%(elapsed_db,elapsed_processing)
 
         return data
 
