@@ -1,0 +1,62 @@
+<div id="activity" style="width:100%;">
+</div>
+<div id="contents">
+  <div id="wrap">
+    <div class="box">
+      <form method='get' action='/web/transfers/activity'>
+      <label for='graph' class='inline'>Graph: </label>
+      <select id="graph" name="graph" class="labeled">
+        <option value="volume">Transfer Volume</option>
+        <option value="rate">Transfer Rate</option>
+        <option value="cumulative">Cumulative Volume</option>
+      </select>
+      <label for='entity' class='inline'>by</label>
+      <select id="entity" name="entity" class="labeled">
+        <option value="dest">Destination</option>
+        <option value="src">Source</option>
+        <option value="link">Link</option>
+      </select>
+      <br>
+      <label class='inline'>Filters:</label>
+      <label class='inline' for='src_filter'>source</label>
+      <input id="src_filter" type="text" name="src_filter" size="15" class="labeled" title="Site name regexps (ex. T2_CH_*)." />
+      <label class='inline' for='dest_filter'>destination</label>
+      <input id="dest_filter" type="text" name="dest_filter" size="15" class="labeled" title="Site name regexps (ex. T2_CH_*).." />
+      <select id="no_mss" name="no_mss" class="labeled">
+        <option selected="selected" value="true">hide MSS nodes</option>
+        <option value="false">show MSS nodes</option>
+      </select>
+      <br/>
+      <label for='period' class='inline'>Period: </label>
+      <select id="period" name="period" class="labeled">
+        <option value="12h">Last 12 Hours</option>
+        <option value="24h">Last 24 Hours</option>
+        <option value="48h">Last 48 Hours</option>
+        <option value="72h">Last 72 Hours</option>
+        <option value="96h">Last 96 Hours</option>
+        <option value="132h">Last 132 Hours</option>
+        <option value="7d">Last 7 Days</option>
+        <option value="14d">Last 14 Days</option>
+        <option value="30d">Last 30 Days</option>
+        <option value="45d">Last 45 Days</option>
+        <option value="90d">Last 90 Days</option>
+        <option value="120d">Last 120 Days</option>
+        <option value="6w">Last 6 Weeks</option>
+        <option value="26w">Last 26 Weeks</option>
+        <option value="52w">Last 52 Weeks</option>
+        <!-- <option value="ad">Daily Since Start</option> -->
+        <!-- <option value="aw">Weekly Since Start</option> -->
+        <!-- <option value="am">Monthly Since Start</option> -->
+      </select>
+      <label class='inline' for='upto'>up to:</label>
+      <input id="upto" type="text" name="upto" size="15" class="labeled" title="YYYYMMDDZHHMM hours; YYYYMMDD days; YYYYMM months; YYYYWW weeks." />
+      <br>
+      <input type="submit" name=".submit" value="GO" class="go"/><br/>
+      </form> 
+    </div>
+    <div class="box">
+      <img src="https://amermaidstail.co.uk/wp-content/uploads/2017/02/mermaid-story-2.png" width="120">
+      <!-- <img src="https://avatars0.githubusercontent.com/u/18539873?s=400&u=a4f48f3bb15100e49cbad5309fff04b457d50b1b&v=4" width="80"> -->
+    </div>
+  </div>
+</div>

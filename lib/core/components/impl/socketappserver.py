@@ -11,6 +11,7 @@ import ssl
 import json
 import traceback
 import logging
+import subprocess
 
 from dynamo.core.components.appserver import AppServer
 from dynamo.core.components.appmanager import AppManager
@@ -115,6 +116,43 @@ def tail_follow(source_path, stream, stop_reading):
     except:
         pass
 
+def create_socket(config, context, py26):    
+    LOG.info('Creating new socket.')
+
+    if py26:
+        tmpsocket = ssl.wrap_socket(socket.socket(socket.AF_INET), server_side = True,
+                               certfile = config.certfile, keyfile = config.keyfile,
+                               cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.capath)
+    else:
+        tmpsocket = context.wrap_socket(socket.socket(socket.AF_INET), server_side = True)
+
+    # allow reconnect to the same port even when it is in TIME_WAIT
+    tmpsocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+    LOG.info('Socket created successfully.')
+
+    return tmpsocket
+
+def bind_socket(tmpsocket, dynamo_server, port):
+    for _ in xrange(10):
+        try:
+            tmpsocket.bind(('', port))
+            LOG.info('Socket bound successfully.')
+            break
+        except socket.error as err:
+            if err.errno == 98: # address already in use
+                # check the server status before retrying - could be shut down
+                dynamo_server.check_status_and_connection()
+                # then print and retry
+                LOG.warning('Cannot bind to port %d. Retrying..', port)
+                time.sleep(5)
+    else:
+        # exhausted attempts
+        LOG.error('Failed to bind to port %d.', port)
+        raise
+        
+    tmpsocket.listen(5)
+    
 class SocketAppServer(AppServer):
     """
     Sub-server owned by the main Dynamo server to serve application requests.
@@ -124,56 +162,42 @@ class SocketAppServer(AppServer):
         AppServer.__init__(self, dynamo_server, config)
 
         try:
-            context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-        except AttributeError:
-            # python 2.6
-            if os.path.isdir(config.capath):
-                raise ConfigurationError('AppServer configuration parameter "capath" must point to a single file.')
-
-            self._sock = ssl.wrap_socket(socket.socket(socket.AF_INET), server_side = True,
-                certfile = config.certfile, keyfile = config.keyfile,
-                cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.capath)
-        else:
-            # python 2.7
-            context.load_cert_chain(config.certfile, keyfile = config.keyfile)
-            if os.path.isdir(config.capath):
-                context.load_verify_locations(capath = config.capath)
-            else:
-                context.load_verify_locations(cafile = config.capath)
-            context.verify_mode = ssl.CERT_REQUIRED
-            self._sock = context.wrap_socket(socket.socket(socket.AF_INET), server_side = True)
-
-        # allow reconnect to the same port even when it is in TIME_WAIT
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        try:
             port = int(os.environ['DYNAMO_SERVER_PORT'])
         except:
             port = SERVER_PORT
+        
+        self._port = port
+        self._dynamo_server = dynamo_server
+        self._config = config
 
-        for _ in xrange(10):
-            try:
-                self._sock.bind(('', port))
-                break
-            except socket.error as err:
-                if err.errno == 98: # address already in use
-                    # check the server status before retrying - could be shut down
-                    dynamo_server.check_status_and_connection()
-                    # then print and retry
-                    LOG.warning('Cannot bind to port %d. Retrying..', port)
-                    time.sleep(5)
+        self._py26 = False
+        try:
+            self._context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        except AttributeError:
+            # python 2.6
+            self._py26 = True
+            if os.path.isdir(config.capath):
+                raise ConfigurationError('AppServer configuration parameter "capath" must point to a single file.')
         else:
-            # exhausted attempts
-            LOG.error('Failed to bind to port %d.', port)
-            raise
+            # python 2.7
+            self._context.load_cert_chain(config.certfile, keyfile = config.keyfile)
+            if os.path.isdir(config.capath):
+                self._context.load_verify_locations(capath = config.capath)
+            else:
+                self._context.load_verify_locations(cafile = config.capath)
+            self._context.verify_mode = ssl.CERT_REQUIRED
 
-        self._sock.listen(5)
+        self._sock = create_socket(config, self._context, self._py26)
+        bind_socket(self._sock, dynamo_server, port)
+
 
     def _accept_applications(self): #override
         while True:
             # blocks until there is a connection
             # keeps blocking when socket is closed
             try:
+                if subprocess.call("netstat -pantu | grep %s" % str(self._port), shell=True) == 1:                    
+                    raise Exception('Port is not found.')
                 conn, addr = self._sock.accept()
             except Exception as ex:
                 if self._stop_flag.is_set():
@@ -187,6 +211,17 @@ class SocketAppServer(AppServer):
                         pass
 
                     LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
+
+                    # Create new socket if old one died
+                    if subprocess.call("netstat -pantu | grep %s" % str(self._port), shell=True) == 1:
+                        LOG.error('Trying to create new socket.')
+
+                        self._sock = create_socket(self._config, self._context, self._py26)
+                        LOG.error('New socket created.')
+
+                        bind_socket(self._sock, self._dynamo_server, self._port)
+                        LOG.error('New socket bound.')
+                        
                     continue
 
             thread.start_new_thread(self._process_application, (conn, addr))

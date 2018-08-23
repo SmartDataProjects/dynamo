@@ -48,7 +48,15 @@ class CurrentFileTransfers(WebModule):
                 else:
                     finish = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(transfer[3]))
 
-            data.append({'id': task_id, 'from': source, 'to': destination, 'lfn': lfn, 'size': size, 'status': status, 'start': start, 'finish': finish})
+            data.append({
+                    'id': task_id,
+                    'from': source,
+                    'to': destination,
+                    'lfn': lfn,
+                    'size': size,
+                    'status': status,
+                    'start': start,
+                    'finish': finish})
 
         return data
 

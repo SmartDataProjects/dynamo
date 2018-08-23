@@ -1,3 +1,29 @@
+#wrap {
+    width: 100%;
+    margin: 0 auto;
+}
+.box{
+    float: left;
+    margin: 0 auto;
+    margin-top: 0.8em;
+    margin-left: 0.5em;
+}
+
+.labeled {
+    font-size: 0.9em;
+    -webkit-appearance: none;
+}
+.go {
+    font-size: 0.9em;
+    background-color: darkred;
+    color: white;
+    -webkit-appearance: none;
+}
+
+optgroup {
+    font-size: 0.9em;
+}
+
 #transferList {
     width: 100%;
     border-collapse: collapse;

@@ -1,7 +1,13 @@
 import time
+import datetime
+import logging
 
 from dynamo.web.modules._base import WebModule
 from dynamo.history.history import HistoryDatabase
+
+from dynamo.fileop.history import Transfers
+
+LOG = logging.getLogger(__name__)
 
 class FileTransferHistory(WebModule):
     def __init__(self, config):
@@ -10,36 +16,116 @@ class FileTransferHistory(WebModule):
         self.history = HistoryDatabase()
 
     def run(self, caller, request, inventory):
-        sql = 'SELECT ss.`name`, sd.`name`, f.`name`, f.`size`, t.`exitcode`,'
-        sql += ' UNIX_TIMESTAMP(t.`created`), UNIX_TIMESTAMP(t.`started`), UNIX_TIMESTAMP(t.`finished`), UNIX_TIMESTAMP(t.`completed`)'
-        sql += ' FROM `file_transfers` AS t'
-        sql += ' INNER JOIN `files` AS f ON f.`id` = t.`file_id`'
-        sql += ' INNER JOIN `sites` AS ss ON ss.`id` = t.`source_id`'
-        sql += ' INNER JOIN `sites` AS sd ON sd.`id` = t.`destination_id`'
-        
-        ## USING A HARD LIMIT FOR NOW - SHOULD CONTROL USING THE request DICTIONARY
-        sql += ' LIMIT 100'
-        
-        data = []
-        for source, destination, filename, size, exitcode, created, started, finished, completed in self.history.db.xquery(sql):
-            created = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(created))
-            started = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(started))
-            finished = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(finished))
-            completed = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(completed))
 
-            data.append({
-                'from': source,
-                'to': destination,
-                'lfn': filename,
-                'size': size,
-                'exitcode': exitcode,
-                'create': created,
-                'start': started,
-                'finish': finished,
-                'complete': completed
-            })
+        # give all the request dictionary
+        LOG.debug(str(request))
+
+        # defaults
+        graph = 'volume'
+        entity = 'dest'
+        src_filter = ''
+        dest_filter = ''
+        no_mss = True
+        period = '24h'
+        upto = '0h'
+
+        # reading the requests
+        if 'graph' in request:
+            graph = request['graph']
+        if 'entity' in request:
+            entity = request['entity']
+        if 'src_filter' in request:
+            src_filter = request['src_filter'].replace("%","%%")
+        if 'dest_filter' in request:
+            dest_filter = request['dest_filter'].replace("%","%%")
+        if 'no_mss' in request:
+            if request['no_mss'] == 'false':
+                no_mss = False
+        if 'period' in request:
+            period = request['period']
+        if 'upto' in request:
+            upto = request['upto']
+
+        # calculate the time limits to consider
+        past_min = self._get_date_before_end(datetime.datetime.now(),upto)
+        tmax = int(past_min.strftime('%s')) # epochseconds: careful max/min in t and past inverts
+        past_max = self._get_date_before_end(past_min,period)
+        tmin = int(past_max.strftime('%s')) # epochseconds
+
+        # get our transfer data once
+        start = time.time()
+        transfers = Transfers()
+        filter_string =  " where finished >= '%s' and finished < '%s'"%(past_max,past_min) + \
+            self._add_filter_conditions(entity,dest_filter,src_filter,no_mss)
+        transfers.read_db(condition = filter_string)
+        elapsed_db = time.time() - start
+        LOG.info('Reading transfers from db: %7.3f sec', elapsed_db)
+
+        # parse and extract the plotting data
+        start = time.time()
+        (min_value,max_value,avg_value,cur_value,data) = \
+            transfers.timeseries(graph,entity,tmin,tmax)
+        elapsed_processing = time.time() - start
+        LOG.info('Parsed data: %7.3f sec', elapsed_processing)
+        
+        # generate summary string
+        summary_string = "Min: %.3f GB, Max: %.3f GB, Avg: %.3f GB, Last: %.3f GB" \
+            %(min_value,max_value,avg_value,cur_value)
+        if     graph[0] == 'r':         # cumulative volume
+            summary_string = "Min: %.3f GB/s, Max: %.3f GB/s, Avg: %.3f GB/s, Last: %.3f GB/s" \
+                %(min_value,max_value,avg_value,cur_value)
+        elif   graph[0] == 'c':         # cumulative volume
+            dt = int(past_min.strftime('%s'))-int(past_max.strftime('%s'))
+            summary_string = "Total: %.3f GB, Avg Rate: %.3f GB/s"%(cur_value,cur_value/dt)
+
+        # add text graphics information to the plot
+        if len(data) < 1:
+            data.append({})
+        data[0]['title'] = \
+            'Dynamo Transfers (%s by %s)'%(graph,entity)
+        data[0]['subtitle'] = \
+            'Time period: %s -- %s'%(str(past_max).split('.')[0],str(past_min).split('.')[0])
+        data[0]['timing_string'] = \
+            'db:%.2fs, processing:%.2fs'%(elapsed_db,elapsed_processing)
+        data[0]['summary_string'] = summary_string
 
         return data
+
+    def _get_date_before_end(self,end,before):
+        # looking backward in time: find date a period of 'before' before the date 'end'
+        #  before ex. 10h, 5d, 10w
+
+        past_date = end
+        
+        u = before[-1]
+        n = int(before[:-1])
+
+        if   u == 'd':
+            past_date -= datetime.timedelta(days=n)
+        elif u == 'h':
+            past_date -= datetime.timedelta(hours=n)
+        elif u == 'w':
+            past_date -= datetime.timedelta(weeks=n)
+        else:
+            LOG.error('no properly defined unit (d- days, h- hours, w- weeks): %s'%(before))
+                      
+        return past_date
+
+    def _add_filter_conditions(self,entity,dest_filter,src_filter,no_mss):
+
+        # default string is empty (doing nothing)
+        filter_string = ""
+
+        # is there any filtering at all
+        if src_filter != "":
+            filter_string += " and s.name like '%s'"%(src_filter)
+        if dest_filter != "":
+            filter_string += " and d.name like '%s'"%(dest_filter)
+
+        if no_mss:
+            filter_string += " and s.name not like '%%MSS' and d.name not like '%%MSS'"
+
+        return filter_string
 
 export_data = {
     'history': FileTransferHistory
