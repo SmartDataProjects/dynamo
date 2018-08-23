@@ -301,7 +301,7 @@ class CopyRequestsHandler(BaseHandler):
                             # if the current group can be overwritten, make a request
                             # otherwise skip
                             single_owner = dealer_request.item_owned_by() # None if owned by multiple groups
-                            if single_owner in overwritten_groups:
+                            if single_owner is not None and single_owner in overwritten_groups:
                                 new_dealer_requests.append(dealer_request)
                                 num_new -= 1
                         else:
