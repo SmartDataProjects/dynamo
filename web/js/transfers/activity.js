@@ -100,6 +100,7 @@ function displayHistogram(graph,entity,data)
     },
     bargap: 0,
     barmode: 'stack',
+    hovermode: 'closest',
     annotations: [{
   	xref: 'paper',
   	yref: 'paper',
