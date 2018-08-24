@@ -491,6 +491,10 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     if c is not None:
                         exitcode = c
 
+                    # HDFS site with gridftp-hdfs gives a I/O error (500) when the file is not there
+                    if optype == 'deletion' and 'Input/output error' in message:
+                        exitcode = errno.ENOENT
+
                 if state == 'FINISHED':
                     status = FileQuery.STAT_DONE
                     exitcode = 0
