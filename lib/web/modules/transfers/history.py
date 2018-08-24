@@ -61,30 +61,33 @@ class FileTransferHistory(WebModule):
         elapsed_db = time.time() - start
         LOG.info('Reading transfers from db: %7.3f sec', elapsed_db)
 
-        # parse and extract the plotting data
+        # parse and extract the plotting data (timeseries guarantees an empty dictionary as data)
         start = time.time()
         (min_value,max_value,avg_value,cur_value,data) = \
             transfers.timeseries(graph,entity,tmin,tmax)
         elapsed_processing = time.time() - start
         LOG.info('Parsed data: %7.3f sec', elapsed_processing)
         
-        # generate summary string
+        # find bin width and time unit
+        (delta_t,dt,unit) = self._time_constants(tmin,tmax,len(data[0]))
+
+        # generate summary string and yaxis_label
+        yaxis_label = 'Transfered Volume [GB]'
         summary_string = "Min: %.3f GB, Max: %.3f GB, Avg: %.3f GB, Last: %.3f GB" \
             %(min_value,max_value,avg_value,cur_value)
         if     graph[0] == 'r':         # cumulative volume
+            yaxis_label = 'Transfered Rate [GB/sec]'
             summary_string = "Min: %.3f GB/s, Max: %.3f GB/s, Avg: %.3f GB/s, Last: %.3f GB/s" \
                 %(min_value,max_value,avg_value,cur_value)
         elif   graph[0] == 'c':         # cumulative volume
-            dt = int(past_min.strftime('%s'))-int(past_max.strftime('%s'))
-            summary_string = "Total: %.3f GB, Avg Rate: %.3f GB/s"%(cur_value,cur_value/dt)
+            yaxis_label = 'Cumulative Transfered Volume [GB]'
+            summary_string = "Total: %.3f GB, Avg Rate: %.3f GB/s"%(cur_value,cur_value/delta_t)
+        yaxis_label += unit
 
         # add text graphics information to the plot
-        if len(data) < 1:
-            data.append({})
-        data[0]['title'] = \
-            'Dynamo Transfers (%s by %s)'%(graph,entity)
-        data[0]['subtitle'] = \
-            'Time period: %s -- %s'%(str(past_max).split('.')[0],str(past_min).split('.')[0])
+        data[0]['yaxis_label'] = yaxis_label
+        data[0]['title'] = 'Dynamo Transfers (%s by %s)'%(graph,entity)
+        data[0]['subtitle'] = 'Time period: %s -- %s'%(str(past_max).split('.')[0],str(past_min).split('.')[0])
         data[0]['timing_string'] = \
             'db:%.2fs, processing:%.2fs'%(elapsed_db,elapsed_processing)
         data[0]['summary_string'] = summary_string
@@ -101,11 +104,13 @@ class FileTransferHistory(WebModule):
         n = int(before[:-1])
 
         if   u == 'd':
-            past_date -= datetime.timedelta(days=n)
+            n = n*24
+            past_date -= datetime.timedelta(hours=n)
         elif u == 'h':
             past_date -= datetime.timedelta(hours=n)
         elif u == 'w':
-            past_date -= datetime.timedelta(weeks=n)
+            n = n*24*7
+            past_date -= datetime.timedelta(hours=n)
         else:
             LOG.error('no properly defined unit (d- days, h- hours, w- weeks): %s'%(before))
                       
@@ -126,6 +131,26 @@ class FileTransferHistory(WebModule):
             filter_string += " and s.name not like '%%MSS' and d.name not like '%%MSS'"
 
         return filter_string
+
+    def _time_constants(self,tmin,tmax,nbins):
+
+        unit = ''
+        dt = -1
+
+        delta_t = tmax-tmin
+        if nbins>0:
+            dt = delta_t/nbins
+
+        if      abs(dt-604800) < 1:
+            unit = ' / week';
+        elif abs(dt-86400.) < 1:
+            unit = ' / day';
+        elif abs(dt-3600.) < 1:
+            unit = ' / hour';
+        elif abs(dt-60) < 1:
+            unit = ' / minute';
+
+        return (delta_t,dt,unit)
 
 export_data = {
     'history': FileTransferHistory
