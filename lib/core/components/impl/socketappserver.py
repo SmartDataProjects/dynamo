@@ -5,6 +5,7 @@ import time
 import thread
 import threading
 import multiprocessing
+import tempfile
 import shutil
 import code
 import ssl
@@ -116,43 +117,7 @@ def tail_follow(source_path, stream, stop_reading):
     except:
         pass
 
-def create_socket(config, context, py26):    
-    LOG.info('Creating new socket.')
 
-    if py26:
-        tmpsocket = ssl.wrap_socket(socket.socket(socket.AF_INET), server_side = True,
-                               certfile = config.certfile, keyfile = config.keyfile,
-                               cert_reqs = ssl.CERT_REQUIRED, ca_certs = config.capath)
-    else:
-        tmpsocket = context.wrap_socket(socket.socket(socket.AF_INET), server_side = True)
-
-    # allow reconnect to the same port even when it is in TIME_WAIT
-    tmpsocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    LOG.info('Socket created successfully.')
-
-    return tmpsocket
-
-def bind_socket(tmpsocket, dynamo_server, port):
-    for _ in xrange(10):
-        try:
-            tmpsocket.bind(('', port))
-            LOG.info('Socket bound successfully.')
-            break
-        except socket.error as err:
-            if err.errno == 98: # address already in use
-                # check the server status before retrying - could be shut down
-                dynamo_server.check_status_and_connection()
-                # then print and retry
-                LOG.warning('Cannot bind to port %d. Retrying..', port)
-                time.sleep(5)
-    else:
-        # exhausted attempts
-        LOG.error('Failed to bind to port %d.', port)
-        raise
-        
-    tmpsocket.listen(5)
-    
 class SocketAppServer(AppServer):
     """
     Sub-server owned by the main Dynamo server to serve application requests.
@@ -165,19 +130,22 @@ class SocketAppServer(AppServer):
             port = int(os.environ['DYNAMO_SERVER_PORT'])
         except:
             port = SERVER_PORT
-        
-        self._port = port
-        self._dynamo_server = dynamo_server
-        self._config = config
 
-        self._py26 = False
+        self._port = port
+
         try:
             self._context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         except AttributeError:
+            self._context = None
+
             # python 2.6
-            self._py26 = True
             if os.path.isdir(config.capath):
                 raise ConfigurationError('AppServer configuration parameter "capath" must point to a single file.')
+
+            self._certfile = config.certfile
+            with open(config.keyfile) as source:
+                self._keyfile_content = source.read()
+            self._capath = config.capath
         else:
             # python 2.7
             self._context.load_cert_chain(config.certfile, keyfile = config.keyfile)
@@ -187,42 +155,41 @@ class SocketAppServer(AppServer):
                 self._context.load_verify_locations(cafile = config.capath)
             self._context.verify_mode = ssl.CERT_REQUIRED
 
-        self._sock = create_socket(config, self._context, self._py26)
-        bind_socket(self._sock, dynamo_server, port)
-
+        self._create_socket()
 
     def _accept_applications(self): #override
+        class PortClosed(Exception):
+            pass
+
         while True:
             # blocks until there is a connection
             # keeps blocking when socket is closed
             try:
-                if subprocess.call("netstat -pantu | grep %s" % str(self._port), shell=True) == 1:                    
-                    raise Exception('Port is not found.')
+                if subprocess.call('which netstat > /dev/null 2>&1', shell=True) == 0:
+                    if subprocess.call("netstat -pantu | grep -q %d" % self._port, shell=True) == 1:
+                        raise PortClosed('Port is not found.')
+
                 conn, addr = self._sock.accept()
             except Exception as ex:
                 if self._stop_flag.is_set():
                     return
-                else:
-                    try:
-                        if ex.errno == 9: # Bad file descriptor -> socket is closed
-                            self.stop()
-                            break
-                    except:
-                        pass
 
-                    LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
+                try:
+                    if ex.errno == 9: # Bad file descriptor -> socket is closed
+                        self.stop()
+                        break
+                except:
+                    pass
 
+                LOG.error('Application server connection failed with error: %s.' % str(sys.exc_info()[1]))
+
+                if type(ex) is PortClosed:
                     # Create new socket if old one died
-                    if subprocess.call("netstat -pantu | grep %s" % str(self._port), shell=True) == 1:
-                        LOG.error('Trying to create new socket.')
+                    LOG.warning('Trying to create new socket.')
 
-                        self._sock = create_socket(self._config, self._context, self._py26)
-                        LOG.error('New socket created.')
+                    self._create_socket()
 
-                        bind_socket(self._sock, self._dynamo_server, self._port)
-                        LOG.error('New socket bound.')
-                        
-                    continue
+                continue
 
             thread.start_new_thread(self._process_application, (conn, addr))
 
@@ -278,7 +245,7 @@ class SocketAppServer(AppServer):
                     io.send('OK', msg)
                 else:
                     io.send('failed', msg)
-                    
+
                 return resp
 
             if command == 'poll':
@@ -319,7 +286,7 @@ class SocketAppServer(AppServer):
                     workarea = self._make_workarea()
                     if not workarea:
                         io.send('failed', 'Failed to create work area')
-    
+
                 if command == 'submit':
                     app_data['path'] = workarea
                     app_data['user_id'] = user_id
@@ -342,7 +309,7 @@ class SocketAppServer(AppServer):
 
                 elif command == 'interact':
                     self._interact(workarea, io)
-    
+
                     # cleanup
                     if 'path' not in app_data:
                         shutil.rmtree(workarea)
@@ -400,26 +367,67 @@ class SocketAppServer(AppServer):
         conns = (socket.create_connection(addr), socket.create_connection(addr))
         stdout = conns[0].makefile('w')
         stderr = conns[1].makefile('w')
-    
+
         if addr[0] == 'localhost' or addr[0] == '127.0.0.1':
             is_local = True
         else:
             is_local = (addr[0] == socket.gethostname())
-    
+
         # use the receive side of conns[0] for stdin
         make_console = lambda l: SocketConsole(conns[0], l)
-    
+
         self.dynamo_server.run_interactive(workarea, is_local, make_console, stdout, stderr)
-    
+
         stdout.close()
         stderr.close()
-    
+
         for conn in conns:
             try:
                 conn.shutdown(socket.SHUT_RDWR)
             except:
                 pass
             conn.close()
+
+    def _create_socket(self):
+        LOG.info('Creating new socket.')
+
+        if self._context is None:
+            # python 2.6
+            tmpfile = tempfile.NamedTemporaryFile()
+            tmpfile.write(self._keyfile_content)
+
+            self._sock = ssl.wrap_socket(socket.socket(socket.AF_INET), server_side = True,
+                                   certfile = self._certfile, keyfile = tmpfile.name,
+                                   cert_reqs = ssl.CERT_REQUIRED, ca_certs = self._capath)
+
+            tmpfile.close()
+        else:
+            self._sock = self._context.wrap_socket(socket.socket(socket.AF_INET), server_side = True)
+
+        # allow reconnect to the same port even when it is in TIME_WAIT
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        LOG.info('Socket created successfully.')
+
+        for _ in xrange(10):
+            try:
+                self._sock.bind(('', self._port))
+                LOG.info('Socket bound successfully.')
+                break
+            except socket.error as err:
+                if err.errno == 98: # address already in use
+                    # check the server status before retrying - could be shut down
+                    self.dynamo_server.check_status_and_connection()
+                    # then print and retry
+                    LOG.warning('Cannot bind to port %d. Retrying..', self._port)
+                    time.sleep(5)
+        else:
+            # exhausted attempts
+            LOG.error('Failed to bind to port %d.', self._port)
+            raise
+    
+        self._sock.listen(5)
+
 
 class SocketConsole(code.InteractiveConsole):
     """
@@ -434,7 +442,7 @@ class SocketConsole(code.InteractiveConsole):
         self._conn = conn
         self._lines = []
         self._last_line = ''
-        
+
         self._buffer = ''
         self._expected_length = ''
 
@@ -447,7 +455,7 @@ class SocketConsole(code.InteractiveConsole):
             sys.stderr.flush()
         except:
             pass
-        
+
     def raw_input(self, prompt = ''):
         sys.stdout.write(prompt)
         try:
@@ -464,7 +472,7 @@ class SocketConsole(code.InteractiveConsole):
                 if not chunk:
                     # socket closed
                     raise EOFError()
-    
+
                 data += chunk
 
             if len(self._buffer) == 0:
@@ -515,4 +523,4 @@ class SocketConsole(code.InteractiveConsole):
             self._expected_length = ''
 
         return self._lines.pop(0)
-                    
+
