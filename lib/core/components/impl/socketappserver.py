@@ -169,7 +169,36 @@ class SocketAppServer(AppServer):
                     if subprocess.call("netstat -pantu | grep -q %d" % self._port, shell=True) == 1:
                         raise PortClosed('Port is not found.')
 
-                conn, addr = self._sock.accept()
+                if self._context is None:
+                    # python 2.6 - we either have to save the host key to a plain-readable file or do this
+                    conn, addr = socket.socket.accept(self._sock)
+
+                    keyfile = tempfile.NamedTemporaryFile(dir = '/tmp')
+                    keyfile.write(self._keyfile_content)
+                    keyfile.flush()
+
+                    try:
+                        conn = ssl.SSLSocket(conn,
+                                             keyfile = keyfile.name,
+                                             certfile = self._sock.certfile,
+                                             server_side = True,
+                                             cert_reqs = self._sock.cert_reqs,
+                                             ssl_version = self._sock.ssl_version,
+                                             ca_certs = self._sock.ca_certs,
+                                             do_handshake_on_connect = self._sock.do_handshake_on_connect,
+                                             suppress_ragged_eofs = self._sock.suppress_ragged_eofs)
+
+                    except Exception:
+                        conn.close()
+                        raise
+
+                    finally:
+                        keyfile.close()
+
+                else:
+                    # python 2.7 - host key is saved in memory (in SSLContext)
+                    conn, addr = self._sock.accept()
+
             except Exception as ex:
                 if self._stop_flag.is_set():
                     return
@@ -393,14 +422,17 @@ class SocketAppServer(AppServer):
 
         if self._context is None:
             # python 2.6
-            tmpfile = tempfile.NamedTemporaryFile()
-            tmpfile.write(self._keyfile_content)
+            keyfile = tempfile.NamedTemporaryFile()
+            keyfile.write(self._keyfile_content)
+            keyfile.flush()
 
-            self._sock = ssl.wrap_socket(socket.socket(socket.AF_INET), server_side = True,
-                                   certfile = self._certfile, keyfile = tmpfile.name,
-                                   cert_reqs = ssl.CERT_REQUIRED, ca_certs = self._capath)
+            try:
+                self._sock = ssl.wrap_socket(socket.socket(socket.AF_INET), server_side = True,
+                                             certfile = self._certfile, keyfile = keyfile.name,
+                                             cert_reqs = ssl.CERT_REQUIRED, ca_certs = self._capath)
+            finally:
+                keyfile.close()
 
-            tmpfile.close()
         else:
             self._sock = self._context.wrap_socket(socket.socket(socket.AF_INET), server_side = True)
 
