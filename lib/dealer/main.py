@@ -37,8 +37,12 @@ class Dealer(object):
                 tmp_copyop= CopyInterface.get_instance(conf.module, conf.config)
 
                 for site in inventory.sites.itervalues():
-                    if site.name not in self.copy_op.keys() and condition.match(site):
-                        self.copy_op[site.name] = tmp_copyop
+                    if site.name not in self.copy_op.keys():
+                        if condition is not None:
+                            if condition.match(site):
+                                self.copy_op[site.name] = tmp_copyop
+                        else:
+                            self.copy_op[site.name] = tmp_copyop
         else:
             for site in inventory.sites.itervalues():
                 self.copy_op[site.name] = CopyInterface.get_instance()
