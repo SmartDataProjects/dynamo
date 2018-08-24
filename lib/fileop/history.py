@@ -13,9 +13,13 @@ LOG = logging.getLogger(__name__)
 G_BTGB = 1./1000./1000./1000.
 
 def histogram_binning(tmin,tmax):
-    nbins = int((tmax-tmin)/84600.)
+    nbins = int((tmax-tmin)/604800.)    # weeks
     if nbins < 10:
-        nbins = int((tmax-tmin)/3600.)
+        nbins = int((tmax-tmin)/86400.) # days
+    if nbins < 10:
+        nbins = int((tmax-tmin)/3600.)  # hours
+    if nbins < 10:
+        nbins = int((tmax-tmin)/60.)    # minutes
     dt = (tmax-tmin)/nbins
 
     return (nbins,dt)
@@ -165,13 +169,6 @@ class Transfers(Operations):
             serie = series[key]
             # use matplotlib to extract histogram information
             hist,bins,p = plt.hist(serie['times'],nbins,range=(tmin,tmax),weights=serie['sizes'])
-            if total_hist == []:
-                total_hist = hist
-            else:
-                i = 0
-                for value in hist:
-                    total_hist[i] += values
-                    i += 1
 
             # now generate the serializable object
             name = key
@@ -187,13 +184,25 @@ class Transfers(Operations):
                 elif graph[0] == 'r':         # rate (volume per time)
                     size = s/dt
                 datum['data'].append({'time': t, 'size': size })
-
                 # make sure to keep our histogram up to speed for later use
                 hist[i] = size
                 i += 1
 
+            # keep track of the sum of all historgrams
+            if total_hist == []:
+                total_hist = hist
+            else:
+                i = 0
+                for value in hist:
+                    total_hist[i] += value
+                    i += 1
+
             # append the full site information
             data.append(datum)
+
+        # make sure if the data array is empty to add an empty dictionary
+        if len(data) < 1:
+            data.append({})
 
         # calculate summary
         min_value = 0
