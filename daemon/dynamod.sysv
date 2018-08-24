@@ -27,6 +27,9 @@ LOCKFILE=${LOCKFILE-/var/lock/subsys/dynamod}
 EXITCODE=0
 STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
 
+# For matplotlib
+export MPLCONFIGDIR=/tmp
+
 # Start dynamo daemon (dynamod)
 start() {
   PIDS=$(ps ax | grep $EXECUTABLE | grep -v grep | grep -v 'init\.d' | awk '/^[0-9]/ {print $1}')

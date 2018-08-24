@@ -80,6 +80,7 @@ warnifnot rpm -q rrdtool-python
 warnifnot rpm -q python-fts
 warnifnot rpm -q python-requests
 warnifnot rpm -q pyliblzma
+warnifnot rpm -q python-matplotlib
 
 if $WARNING
 then
