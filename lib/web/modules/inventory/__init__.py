@@ -1,5 +1,6 @@
 import datasets
 import groups
+import sites
 import stats
 import inject
 import delete
@@ -7,6 +8,7 @@ import delete
 export_data = {}
 export_data.update(datasets.export_data)
 export_data.update(groups.export_data)
+export_data.update(sites.export_data)
 export_data.update(stats.export_data)
 export_data.update(inject.export_data)
 export_data.update(delete.export_data)

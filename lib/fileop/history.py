@@ -1,9 +1,17 @@
 import logging
 import time
 
-import matplotlib as mpl
-mpl.use('Agg')
-import matplotlib.pyplot as plt
+try:
+    import matplotlib as mpl
+    mpl.use('Agg')
+    import matplotlib.pyplot as plt
+
+except ImportError:
+    class PyPlot(object):
+        def hist(self, *args):
+            raise RuntimeError('matplotlib is not installed on this host.')
+
+    plt = PyPlot()
 
 from dynamo.dataformat.fileop import Deletion, Transfer
 from dynamo.history.history import HistoryDatabase
