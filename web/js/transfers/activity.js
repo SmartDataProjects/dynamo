@@ -1,4 +1,4 @@
-function initPage(graph,entity,src_filter,dest_filter,no_mss,period,upto)
+function initPage(graph,entity,src_filter,dest_filter,no_mss,period,upto,exit_code)
 {
   var jaxInput = {
     'url': dataPath + '/transfers/history',
@@ -8,7 +8,8 @@ function initPage(graph,entity,src_filter,dest_filter,no_mss,period,upto)
 	      'dest_filter': dest_filter,
 	      'no_mss': no_mss,
 	      'period': period,
-	      'upto': upto
+	      'upto': upto,
+	      'exit_code': exit_code
     },
     'dataType': 'json',
     'success': function (data, textStatus, jqXHR) { displayHistogram(graph,entity,data.data); },
@@ -28,6 +29,7 @@ function initPage(graph,entity,src_filter,dest_filter,no_mss,period,upto)
   $('#src_filter').attr('value',src_filter);
   $('#dest_filter').attr('value',dest_filter);
   $('#upto').attr('value',upto);
+  $('#exit_code').attr('value',exit_code);
 }
 
 function displayHistogram(graph,entity,data)

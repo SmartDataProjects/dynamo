@@ -28,6 +28,7 @@ class FileTransferHistory(WebModule):
         no_mss = True
         period = '24h'
         upto = '0h'
+        exit_code = '0'
 
         # reading the requests
         if 'graph' in request:
@@ -45,6 +46,8 @@ class FileTransferHistory(WebModule):
             period = request['period']
         if 'upto' in request:
             upto = request['upto']
+        if 'exit_code' in request:
+            exit_code = request['exit_code']
 
         # calculate the time limits to consider
         past_min = self._get_date_before_end(datetime.datetime.now(),upto)
@@ -56,7 +59,7 @@ class FileTransferHistory(WebModule):
         start = time.time()
         transfers = Transfers()
         filter_string =  " where finished >= '%s' and finished < '%s'"%(past_max,past_min) + \
-            self._add_filter_conditions(entity,dest_filter,src_filter,no_mss)
+            self._add_filter_conditions(entity,dest_filter,src_filter,no_mss,exit_code)
         transfers.read_db(condition = filter_string)
         elapsed_db = time.time() - start
         LOG.info('Reading transfers from db: %7.3f sec', elapsed_db)
@@ -116,7 +119,7 @@ class FileTransferHistory(WebModule):
                       
         return past_date
 
-    def _add_filter_conditions(self,entity,dest_filter,src_filter,no_mss):
+    def _add_filter_conditions(self,entity,dest_filter,src_filter,no_mss,exit_code):
 
         # default string is empty (doing nothing)
         filter_string = ""
@@ -129,6 +132,11 @@ class FileTransferHistory(WebModule):
 
         if no_mss:
             filter_string += " and s.name not like '%%MSS' and d.name not like '%%MSS'"
+
+        if exit_code[0] == "!":
+            filter_string += " and exitcode != %s"%(exit_code)
+        else:
+            filter_string += " and exitcode = %s"%(exit_code)
 
         return filter_string
 

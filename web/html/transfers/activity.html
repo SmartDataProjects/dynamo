@@ -29,6 +29,10 @@
       <br/>
       <label for='period' class='inline'>Period: </label>
       <select id="period" name="period" class="labeled">
+        <option value="1h">Last 1 Hours</option>
+        <option value="2h">Last 2 Hours</option>
+        <option value="4h">Last 4 Hours</option>
+        <option value="8h">Last 8 Hours</option>
         <option value="12h">Last 12 Hours</option>
         <option value="24h">Last 24 Hours</option>
         <option value="48h">Last 48 Hours</option>
@@ -50,7 +54,7 @@
       </select>
       <label class='inline' for='upto'>up to:</label>
       <input id="upto" type="text" name="upto" size="15" class="labeled" title="YYYYMMDDZHHMM hours; YYYYMMDD days; YYYYMM months; YYYYWW weeks." />
-      <br>
+      [ <input id="exit_code" type="text" name="exit_code" size="15" class="labeled" title="Integer number: 0 - success" /> ]
       <input type="submit" name=".submit" value="GO" class="go"/><br/>
       </form> 
     </div>
