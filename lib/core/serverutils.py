@@ -18,7 +18,7 @@ BANNER = '''
 +++++++++++++++++++++++++++++++++++++
 '''
 
-def killproc(proc, LOG, timeout = 5):
+def killproc(proc, LOG, timeout = 30):
     try:
         proc.terminate()
     except OSError:
