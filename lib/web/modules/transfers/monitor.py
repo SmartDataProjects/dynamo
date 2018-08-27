@@ -69,6 +69,11 @@ class FileTransferActivity(WebModule, HTMLMixin):
         else:
             upto = '0h'
 
+        if 'exit_code' in request:
+            exit_code = request['exit_code']
+        else:
+            exit_code = '0'
+
         self.header_script = \
             '$(document).ready(function() { initPage("'  \
             + graph + \
@@ -78,6 +83,7 @@ class FileTransferActivity(WebModule, HTMLMixin):
             '","' +  no_mss + \
             '","' +  period + \
             '","' +  upto + \
+            '","' +  exit_code + \
             '"); });'
         return self.form_html()
 
