@@ -78,30 +78,31 @@ class ListSites(WebModule):
                 sp = site.partitions[partition]
                 quota = sp.quota
 
+                if partition.subpartitions is None:
+                    part_type = 'basic'
+                else:
+                    part_type = 'composite'
+
                 used = sp.occupancy_fraction() * quota
                 projected = sp.occupancy_fraction(physical = False) * quota
 
-                total_quota += quota
-                total_used += used
-                total_projected += projected
+                if part_type == 'basic' and quota > 0.:
+                    total_quota += quota
+                    total_used += used
+                    total_projected += projected
 
                 if partition in partitions:
-                    if partition.subpartitions is None:
-                        part_type = 'basic'
-                    else:
-                        part_type = 'composite'
-
                     data['partitions'].append({
                         'name': partition.name,
                         'type': part_type,
-                        'quota': quota,
-                        'usage': used,
-                        'projected_usage': projected
+                        'quota': quota * 1.e-12,
+                        'usage': used * 1.e-12,
+                        'projected_usage': projected * 1.e-12
                     })
 
-            data['total_quota'] = total_quota
-            data['total_usage'] = total_used
-            data['total_projected_usage'] = total_projected
+            data['total_quota'] = total_quota * 1.e-12
+            data['total_usage'] = total_used * 1.e-12
+            data['total_projected_usage'] = total_projected * 1.e-12
 
             response.append(data)
     
