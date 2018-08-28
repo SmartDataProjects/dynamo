@@ -11,9 +11,10 @@ deletion_nonerrors = {
 class DeletionPoolManager(StatefulPoolManager):
     def __init__(self, site, max_concurrent, proxy):
         opformat = '{0}'
-        PoolManager.__init__(self, site, 'deletion', opformat, max_concurrent, proxy)
+        PoolManager.__init__(self, site, 'deletion', opformat, DeletionPoolManager.task, max_concurrent, proxy)
 
-    def task(self, task_id, pfn):
+    @staticmethod
+    def task(task_id, pfn):
         """
         Deletion task worker process
         @param task_id        Task id in the queue.
@@ -33,9 +34,10 @@ class DeletionPoolManager(StatefulPoolManager):
 class UnmanagedDeletionPoolManager(PoolManager):
     def __init__(self, site, max_concurrent, proxy):
         opformat = '{0}'
-        PoolManager.__init__(self, site, 'unmanaged_deletion', opformat, max_concurrent, proxy)
+        PoolManager.__init__(self, site, 'unmanaged_deletion', opformat, UnmanagedDeletionPoolManager.task, max_concurrent, proxy)
 
-    def task(self, task_id, url):
+    @staticmethod
+    def task(task_id, url):
         """
         Deletion task worker process
         @param task_id        Task id in the queue.

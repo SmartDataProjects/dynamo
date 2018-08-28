@@ -13,9 +13,10 @@ class TransferPoolManager(StatefulPoolManager):
     def __init__(self, src, dest, max_concurrent, proxy):
         name = '%s-%s' % (src, dest)
         opformat = '{0} -> {1}'
-        PoolManager.__init__(self, name, 'transfer', opformat, max_concurrent, proxy)
+        PoolManager.__init__(self, name, 'transfer', opformat, TransferPoolManager.task, max_concurrent, proxy)
 
-    def task(self, task_id, src_pfn, dest_pfn, params_config):
+    @staticmethod
+    def task(task_id, src_pfn, dest_pfn, params_config):
         """
         Transfer task worker process
         @param task_id         Task id in the queue.

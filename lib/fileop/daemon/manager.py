@@ -18,17 +18,19 @@ class PoolManager(object):
     ## Need to have a global signal converter that subprocesses can unset blocking
     signal_converter = None
 
-    def __init__(self, name, optype, opformat, max_concurrent, proxy):
+    def __init__(self, name, optype, opformat, task, max_concurrent, proxy):
         """
         @param name           Name of the instance. Used in logging.
         @param optype         'transfer' or 'deletion'.
         @param opformat       Format string used in logging.
+        @param task           Task function to run
         @param max_concurrent Maximum number of concurrent processes in the pool.
         @param proxy          X509 proxy
         """
 
         self.name = name
         self.optype = optype
+        self.task = task
         self.opformat = opformat
         self.proxy = proxy
 

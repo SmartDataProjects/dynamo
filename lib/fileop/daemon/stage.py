@@ -8,7 +8,7 @@ LOG = logging.getLogger(__name__)
 class StagingPoolManager(PoolManager):
     def __init__(self, site, max_concurrent, proxy):
         opformat = '{0}'
-        PoolManager.__init__(self, site, 'staging', opformat, max_concurrent, proxy)
+        PoolManager.__init__(self, site, 'staging', opformat, StagingPoolManager.task, max_concurrent, proxy)
 
     def process_result(self, result_tuple):
         delim = '--------------'
@@ -29,7 +29,8 @@ class StagingPoolManager(PoolManager):
 
         PoolManager.db.query(sql, tid)
 
-    def task(self, task_id, pfn, token):
+    @staticmethod
+    def task(task_id, pfn, token):
         """
         Staging task worker process
         @param task_id        Task id in the queue.
