@@ -275,6 +275,7 @@ class AppServer(object):
             sql += '`command` TINYINT NOT NULL,'
             sql += '`title` TEXT DEFAULT NULL,'
             sql += '`arguments` TEXT DEFAULT NULL,'
+            sql += '`timeout` INTEGER DEFAULT NULL,'
             sql += '`criticality` TINYINT DEFAULT NULL,'
             sql += '`auth_level` SMALLINT DEFAULT NULL,'
             sql += '`app_id` INTEGER DEFAULT NULL'
@@ -283,8 +284,8 @@ class AppServer(object):
 
             for iline, action in enumerate(sequence):
                 if action[0] == AppServer.EXECUTE:
-                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `auth_level`)'
-                    sql += ' VALUES (?, ?, ?, ?, ?, ?)'
+                    sql = 'INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `timeout`, `criticality`, `auth_level`)'
+                    sql += ' VALUES (?, ?, ?, ?, ?, ?, ?)'
                     cursor.execute(sql, (iline,) + action)
 
                 elif action[0] == AppServer.WAIT:
@@ -450,7 +451,7 @@ class AppServer(object):
                 db = sqlite3.connect(work_dir + '/sequence.db')
                 cursor = db.cursor()
                 try:
-                    cursor.execute('SELECT `line`, `command`, `title`, `arguments`, `criticality`, `auth_level`, `app_id` FROM `sequence` ORDER BY `id` LIMIT 1')
+                    cursor.execute('SELECT `line`, `command`, `title`, `arguments`, `criticality`, `app_id` FROM `sequence` ORDER BY `id` LIMIT 1')
                     row = cursor.fetchone()
                     if row is None:
                         raise RuntimeError('Sequence is empty')
@@ -460,7 +461,7 @@ class AppServer(object):
 
                 db.close()
 
-                iline, command, title, arguments, criticality, _, app_id = row
+                iline, command, title, arguments, criticality, app_id = row
 
                 if command == AppServer.EXECUTE:
                     if app_id is None:
@@ -532,7 +533,7 @@ class AppServer(object):
                 self._do_stop_sequence(sequence_name)
                 return
                 
-            sid, iline, command, title, arguments, criticality, auth_level = row
+            sid, iline, command, title, arguments, timeout, criticality, auth_level = row
 
             db = sqlite3.connect(work_dir + '/sequence.db')
             cursor = db.cursor()
@@ -541,13 +542,13 @@ class AppServer(object):
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
                 with open(work_dir + '/log.out', 'a') as out:
                     out.write('++++ %s: %s\n' % (timestamp, title))
-                    out.write('%s/%s %s\n\n' % (work_dir, title, arguments))
+                    out.write('%s/%s %s (timeout %sh)\n\n' % (work_dir, title, arguments, timeout))
 
                 with open(work_dir + '/log.err', 'a') as out:
                     out.write('++++ %s: %s\n' % (timestamp, title))
-                    out.write('%s/%s %s\n\n' % (work_dir, title, arguments))
+                    out.write('%s/%s %s (timeout %sh)\n\n' % (work_dir, title, arguments, timeout))
 
-                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.scheduler_user_id, socket.gethostname(), auth_level, 0)
+                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.scheduler_user_id, socket.gethostname(), auth_level, timeout)
                 cursor.execute('UPDATE `sequence` SET `app_id` = ? WHERE `id` = ?', (app_id, sid))
                 LOG.info('[Scheduler] Scheduled %s/%s %s (AID %s).', sequence_name, title, arguments, app_id)
 
@@ -636,7 +637,7 @@ class AppServer(object):
                 # Sequence application step definitions
                 # {title} options  ...  Elevated privilege (but no inventory write) execution
                 # <title> options  ...  Write-request execution
-                matches = re.match('(\^|\&|\|) +({\S+}|<\S+>)\s*(.*)', line)
+                matches = re.match('(\^|\&|\|)(|\[[0-9]+\]) +({\S+}|<\S+>)\s*(.*)', line)
                 if matches:
                     if matches.group(1) == '^':
                         criticality = AppServer.REPEAT_SEQ
@@ -644,11 +645,17 @@ class AppServer(object):
                         criticality = AppServer.REPEAT_LINE
                     else:
                         criticality = AppServer.PASS
+
+                    enclosed_timeout = matches.group(2)
+                    if enclosed_timeout:
+                        timeout = int(enclosed_timeout[1:-1])
+                    else:
+                        timeout = 0
         
-                    enclosed_title = matches.group(2)
+                    enclosed_title = matches.group(3)
                     title = enclosed_title[1:-1]
                     write_request = (enclosed_title[0] == '<')
-                    arguments = matches.group(3)
+                    arguments = matches.group(4)
         
                     if write_request:
                         if title not in writer_applications:
@@ -665,7 +672,7 @@ class AppServer(object):
         
                     LOG.debug('Execute %s %s (line %d)', title, arguments, iline)
         
-                    sequence.append((AppServer.EXECUTE, title, arguments, criticality, auth_level))
+                    sequence.append((AppServer.EXECUTE, title, arguments, timeout, criticality, auth_level))
                     continue
         
                 matches = re.match('WAIT\s+(.*)', line)
@@ -682,7 +689,7 @@ class AppServer(object):
                     continue
         
                 if line == 'TERMINATE':
-                    sequence.append([AppServer.TERMINATE])
+                    sequence.append((AppServer.TERMINATE,))
 
         return sequences, sequences_with_restart, app_paths
 
@@ -709,7 +716,7 @@ class AppServer(object):
             looped_once = False
             
             while True:
-                cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `criticality`, `auth_level` FROM `sequence` ORDER BY `id`')
+                cursor.execute('SELECT `id`, `line`, `command`, `title`, `arguments`, `timeout`, `criticality`, `auth_level` FROM `sequence` ORDER BY `id`')
                 for row in cursor.fetchall():
                     if row[1] == iline:
                         return row
@@ -718,7 +725,7 @@ class AppServer(object):
         
                     if not terminates:
                         # this sequence is an infinite loop; move the entry to the bottom
-                        cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `criticality`, `auth_level`) VALUES (?, ?, ?, ?, ?, ?)', row[1:])
+                        cursor.execute('INSERT INTO `sequence` (`line`, `command`, `title`, `arguments`, `timeout`, `criticality`, `auth_level`) VALUES (?, ?, ?, ?, ?, ?, ?)', row[1:])
 
                 db.commit()
 
