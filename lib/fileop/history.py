@@ -155,11 +155,15 @@ class Transfers(Operations):
             if key in series:
                 pass
             else:
-                series[key] = {'times': [], 'sizes': []}
+                series[key] = {'times': [], 'y_values': []}
             
             serie = series[key]
             serie['times'].append(transfer.end)
-            serie['sizes'].append(transfer.size)
+
+            if graph[0] == 'n': # just the number of transfers -> no weights (size)
+                serie['y_values'].append(1)                               # number of transfers                
+            else:
+                serie['y_values'].append(transfer.size/1000./1000./1000.) # in GB
 
         # loop through all different requested time series
         total_hist = []
@@ -168,24 +172,24 @@ class Transfers(Operations):
             # get the time serie
             serie = series[key]
             # use matplotlib to extract histogram information
-            hist,bins,p = plt.hist(serie['times'],nbins,range=(tmin,tmax),weights=serie['sizes'])
+            hist,bins,p = plt.hist(serie['times'],nbins,range=(tmin,tmax),weights=serie['y_values'])
 
             # now generate the serializable object
             name = key
             cs = 0
             datum = { 'name': name, 'data': [] }
             i = 0
-            for t,s in zip(bins,hist):
+            for t,y in zip(bins,hist):
 
-                size = s
+                yval = y
                 if   graph[0] == 'c':         # cumulative volume
-                    cs += s
-                    size = cs
+                    cs += y
+                    yval = cs
                 elif graph[0] == 'r':         # rate (volume per time)
-                    size = s/dt
-                datum['data'].append({'time': t, 'size': size })
+                    yval = y/dt
+                datum['data'].append({'time': t, 'y_value': yval })
                 # make sure to keep our histogram up to speed for later use
-                hist[i] = size
+                hist[i] = yval
                 i += 1
 
             # keep track of the sum of all historgrams
