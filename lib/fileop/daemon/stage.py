@@ -5,10 +5,24 @@ from dynamo.fileop.daemon.gfal_exec import gfal_exec
 
 LOG = logging.getLogger(__name__)
 
+def stage(task_id, pfn, token):
+    """
+    Staging task worker process
+    @param task_id        Task id in the queue.
+    @param pfn            PFN
+    @param token          Gfal2 staging token
+
+    @return  boolean (True if staged)
+    """
+
+    status = gfal_exec('bring_online_poll', (pfn, token), return_value = True)
+
+    return status == 1
+
 class StagingPoolManager(PoolManager):
     def __init__(self, site, max_concurrent, proxy):
         opformat = '{0}'
-        PoolManager.__init__(self, site, 'staging', opformat, StagingPoolManager.task, max_concurrent, proxy)
+        PoolManager.__init__(self, site, 'staging', opformat, stage, max_concurrent, proxy)
 
     def process_result(self, result_tuple):
         delim = '--------------'
@@ -28,18 +42,3 @@ class StagingPoolManager(PoolManager):
         sql = 'UPDATE `standalone_transfer_tasks` SET `status` = \'staged\' WHERE `id` = %s'
 
         PoolManager.db.query(sql, tid)
-
-    @staticmethod
-    def task(task_id, pfn, token):
-        """
-        Staging task worker process
-        @param task_id        Task id in the queue.
-        @param pfn            PFN
-        @param token          Gfal2 staging token
-    
-        @return  boolean (True if staged)
-        """
-    
-        status = gfal_exec('bring_online_poll', (pfn, token), return_value = True)
-
-        return status == 1
