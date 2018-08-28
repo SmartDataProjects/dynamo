@@ -30,10 +30,6 @@ import logging
 import logging.handlers
 import gfal2
 
-## Need to have a global signal converter that subprocesses can unset blocking
-from dynamo.utils.signaling import SignalConverter
-signal_converter = SignalConverter()
-
 if __name__ == '__main__':
     ## Raise the process maximums to accommodate large number of subprocs and pipes
     import resource
@@ -45,6 +41,7 @@ if __name__ == '__main__':
     from dynamo.core.serverutils import BANNER
     from dynamo.utils.log import log_exception
     from dynamo.utils.interface.mysql import MySQL
+    from dynamo.utils.signaling import SignalConverter
 
     config_path = os.getenv('DYNAMO_SERVER_CONFIG', '/etc/dynamo/server_config.json')    
     config = Configuration(config_path)
@@ -75,19 +72,19 @@ if __name__ == '__main__':
         LOG.warning('Cannot switch uid to %s (%d).', config.user, pwd.getpwnam(config.user).pw_uid)
 
     ## File operations config
-    fileop_config = config.file_operations
+    daemon_config = config.file_operations.daemon
     
     ## Set up operational parameters
     # We want to make these parameters dynamic in the future
     # (which means we'll have to create a new table that records the site names for each batch)
-    max_concurrent = fileop_config.daemon.max_parallel_links
-    transfer_timeout = fileop_config.daemon.transfer_timeout
-    overwrite = fileop_config.daemon.get('overwrite', False)
-    x509_proxy = fileop_config.daemon.get('x509_proxy', '')
-    staging_x509_proxy = fileop_config.daemon.get('staging_x509_proxy', x509_proxy)
+    max_concurrent = daemon_config.max_parallel_links
+    transfer_timeout = daemon_config.transfer_timeout
+    overwrite = daemon_config.get('overwrite', False)
+    x509_proxy = daemon_config.get('x509_proxy', '')
+    staging_x509_proxy = daemon_config.get('staging_x509_proxy', x509_proxy)
 
-    if 'gfal2_verbosity' in fileop_config.daemon:
-        gfal2.set_verbose(getattr(gfal2.verbose_level, fileop_config.daemon.gfal2_verbosity.lower()))
+    if 'gfal2_verbosity' in daemon_config:
+        gfal2.set_verbose(getattr(gfal2.verbose_level, daemon_config.gfal2_verbosity.lower()))
 
     params_config = {
         'transfer_nstreams': 1,
@@ -102,17 +99,19 @@ if __name__ == '__main__':
     from dynamo.fileop.daemon.stage import StagingPoolManager
 
     ## Set up a handle to the DB
-    db = MySQL(fileop_config.manager.db.db_params)
+    db = MySQL(daemon_config.db_params)
   
     ## Convert SIGTERM and SIGHUP into KeyboardInterrupt (SIGINT already is)
-    signal_converter._logger = LOG
-    signal_converter.set(signal.SIGTERM)
-    signal_converter.set(signal.SIGHUP)
+    PoolManager.signal_converter = SignalConverter()
+    PoolManager.signal_converter._logger = LOG
+    PoolManager.signal_converter.set(signal.SIGTERM)
+    PoolManager.signal_converter.set(signal.SIGHUP)
 
     ## Collect PoolManagers
     transfer_managers = {}
     staging_managers = {}
     deletion_managers = {}
+    unmanaged_deletion_managers = {}
 
     ## Flag to stop the managers
     stop_flag = threading.Event()

@@ -2,7 +2,7 @@ import stat
 import errno
 
 from dynamo.fileop.daemon.manager import PoolManager, StatefulPoolManager
-from dynamo.fileop.gfal_exec import gfal_exec
+from dynamo.fileop.daemon.gfal_exec import gfal_exec
 
 deletion_nonerrors = {
     errno.ENOENT: 'Target file does not exist.'
@@ -44,6 +44,8 @@ class UnmanagedDeletionPoolManager(PoolManager):
         @return  (0, start time, finish time, error message, log string)
                  note: all results are considered success
         """
+
+        PoolManager.db.query('DELETE FROM `unmanaged_deletions` WHERE `id` = %s', task_id)
 
         try:
             stat_result = gfal_exec('stat', (url,), return_value = True)

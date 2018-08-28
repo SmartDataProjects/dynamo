@@ -2,7 +2,7 @@ import errno
 import gfal2
 
 from dynamo.fileop.daemon.manager import PoolManager, StatefulPoolManager
-from dynamo.fileop.gfal_exec import gfal_exec
+from dynamo.fileop.daemon.gfal_exec import gfal_exec
 
 transfer_nonerrors = {
     errno.EEXIST: 'Destination file exists.' # for a transfer task, 17 means that file exists at the destination

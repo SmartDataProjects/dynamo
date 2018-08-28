@@ -15,6 +15,8 @@ class PoolManager(object):
 
     db = None
     stop_flag = None
+    ## Need to have a global signal converter that subprocesses can unset blocking
+    signal_converter = None
 
     def __init__(self, name, optype, opformat, max_concurrent, proxy):
         """
@@ -119,8 +121,8 @@ class PoolManager(object):
                 return
 
     def _pre_exec(self):
-        signal_converter.unset(signal.SIGTERM)
-        signal_converter.unset(signal.SIGHUP)
+        PoolManager.signal_converter.unset(signal.SIGTERM)
+        PoolManager.signal_converter.unset(signal.SIGHUP)
         
         if self.proxy:
             os.environ['X509_USER_PROXY'] = self.proxy

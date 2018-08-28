@@ -1,7 +1,7 @@
 import logging
 
 from dynamo.fileop.daemon.manager import PoolManager
-from dynamo.fileop.gfal_exec import gfal_exec
+from dynamo.fileop.daemon.gfal_exec import gfal_exec
 
 LOG = logging.getLogger(__name__)
 
