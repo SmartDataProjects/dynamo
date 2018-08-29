@@ -78,6 +78,7 @@ class FileTransferHistory(WebModule):
         yaxis_label = 'Transfered Volume [GB]'
         summary_string = "Min: %.3f GB, Max: %.3f GB, Avg: %.3f GB, Last: %.3f GB" \
             %(min_value,max_value,avg_value,cur_value)
+
         if     graph[0] == 'r':         # cumulative volume
             yaxis_label = 'Transfered Rate [GB/sec]'
             summary_string = "Min: %.3f GB/s, Max: %.3f GB/s, Avg: %.3f GB/s, Last: %.3f GB/s" \
@@ -85,6 +86,10 @@ class FileTransferHistory(WebModule):
         elif   graph[0] == 'c':         # cumulative volume
             yaxis_label = 'Cumulative Transfered Volume [GB]'
             summary_string = "Total: %.3f GB, Avg Rate: %.3f GB/s"%(cur_value,cur_value/delta_t)
+        elif   graph[0] == 'n':         # number of transfers
+            yaxis_label = 'Number of Transfers'
+            summary_string = "Min: %.3f, Max: %.3f, Avg: %.3f, Last: %.3f" \
+                %(min_value,max_value,avg_value,cur_value)
         yaxis_label += unit
 
         # add text graphics information to the plot
@@ -133,8 +138,10 @@ class FileTransferHistory(WebModule):
         if no_mss:
             filter_string += " and s.name not like '%%MSS' and d.name not like '%%MSS'"
 
-        if exit_code[0] == "!":
-            filter_string += " and exitcode != %s"%(exit_code)
+        if   exit_code[0] == "*":
+            pass                  # no further filtering
+        elif exit_code[0] == "!":
+            filter_string += " and exitcode != %s"%(exit_code[1:])
         else:
             filter_string += " and exitcode = %s"%(exit_code)
 

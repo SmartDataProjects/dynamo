@@ -77,9 +77,9 @@ function displayHistogram(graph,entity,data)
       date = date.getTime() + dt/2;
 
       var dateX = new Date(date);
-      var size = row.size/1000/1000/1000;
+      var yval = row.y_value;
       plot_datum.x.push(dateX);
-      plot_datum.y.push(size);
+      plot_datum.y.push(yval);
     }
     plot_data.push(plot_datum);
   }
