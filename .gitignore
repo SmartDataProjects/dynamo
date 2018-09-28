@@ -1,3 +1,11 @@
 *~
 *.pyc
 policies/
+
+# These files may be needed when mounting working directory inside test container
+defaults.json
+dynamo.cfg
+mysql/grants.json
+
+# Generated when inside test container
+test/.coverage
