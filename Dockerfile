@@ -11,6 +11,7 @@ RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.n
 RUN yum -y install \
     initscripts \
     lighttpd \
+    lighttpd-fastcgi \
     mariadb \
     mariadb-server \
     fetch-crl \
@@ -29,3 +30,7 @@ RUN printf "mysql_install_db --user=mysql\nmysqld_safe &\nsleep 5\nmysqladmin -u
 
 # Stuff below is not used by dynamo, but useful for tests
 RUN pip install -U 'pip==18.0' 'cmstoolbox==0.11.0'
+
+# Set up lighttpd
+RUN sed -i 's/#server.bind = "localhost"/server.bind = "0.0.0.0"/g' /etc/lighttpd/lighttpd.conf
+COPY test/lighttpd/modules.conf /etc/lighttpd/

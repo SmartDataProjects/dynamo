@@ -16,16 +16,15 @@ pipeline {
                 // Start MySQL
                 sh '''
                    mysqld_safe &
-                   sleep 3
+                   sleep 2
                    '''
 
-                // Certificates
                 sh '''
                    /etc/pki/tls/certs/make-dummy-cert /etc/pki/tls/certs/localhost.crt
                    chmod +r /etc/pki/tls/certs/localhost.crt
 
                    # Create a certificate for dynamo user
-                   printf "US\nMass\nBahston\nDynamo\ntest\nlocalhost\nddm-dynamo@mit.edu\n" | \
+                   printf "US\nMass\nBahston\nDynamo\ntest\nlocalhost\n\n" | \
                        openssl req -new -newkey rsa:1024 -days 365 -nodes -x509 -keyout /tmp/x509up_u500 -out /tmp/x509up_u500
                    chown dynamo:dynamo /tmp/x509up_u500
 
@@ -51,13 +50,19 @@ pipeline {
                 // Need environment for whole thing
                 sh '''
                    source /usr/local/dynamo/etc/profile.d/init.sh
-                   yes | dynamo-user-auth --user dynamo --dn "/C=US/ST=Mass/L=Bahston/O=Dynamo/OU=test/CN=localhost/" --role admin
+                   yes | dynamo-user-auth --user dynamo --dn "/C=US/ST=Mass/L=Bahston/O=Dynamo/OU=test/CN=localhost" --role admin
                    dynamo-user-auth --user dynamo --role admin --target inventory
 
                    # Start server
                    dynamod &
-                   sleep 5
+                   sleep 3
                    '''
+
+                 // Start lighttpd
+                 sh '''
+                    lighttpd -D -f /etc/lighttpd/lighttpd.conf &
+                    sleep 2
+                    '''
             }
         }
 
