@@ -2,6 +2,8 @@
 
 import unittest
 
+import teardown_inv
+
 from dynamo import dataformat
 from dynamo.core.executable import inventory
 
@@ -52,10 +54,7 @@ class TestDynamoInventory(unittest.TestCase):
                          {None: dataformat.Group.null_group})
 
     def tearDown(self):
-        for attr in ['sites', 'datasets', 'groups']:
-            for key, obj in getattr(self.inv, attr).items():
-                if key is not None:
-                    self.inv.delete(obj)
+        teardown_inv.main(self.inv)
 
     # Test things that need cleaning up after
     def test_addsite(self):
