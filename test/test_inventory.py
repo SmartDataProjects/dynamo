@@ -54,11 +54,7 @@ class TestDynamoInventory(unittest.TestCase):
                          {None: dataformat.Group.null_group})
 
     def tearDown(self):
-<<<<<<< HEAD
-        teardown_inv.main(self.inv)
-=======
         dynamo_teardown.main(self.inv)
->>>>>>> docker-test
 
     # Test things that need cleaning up after
     def test_addsite(self):
