@@ -37,9 +37,9 @@ do
 
     touch $PYPATH/dynamo/__init__.py
 
-    cp -r $SOURCE/dynamo/client/* $PYPATH/dynamo/client
-    cp -r $SOURCE/dynamo/utils/* $PYPATH/dynamo/utils
-    cp -r $SOURCE/dynamo/dataformat/* $PYPATH/dynamo/dataformat
+    cp -r $SOURCE/lib/client/* $PYPATH/dynamo/client
+    cp -r $SOURCE/lib/utils/* $PYPATH/dynamo/utils
+    cp -r $SOURCE/lib/dataformat/* $PYPATH/dynamo/dataformat
     python -m compileall $PYPATH/dynamo > /dev/null
 
     break
