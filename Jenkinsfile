@@ -93,10 +93,10 @@ pipeline {
             }
         }
 
-        stage ('Report Results') {
-            steps {
-                sh 'copy-coverage-html /html/coverage/${JOB_NAME}/${BUILD_NUMBER}'
-            }
-        }
+//        stage ('Report Results') {
+//            steps {
+//                sh 'copy-coverage-html /html/coverage/${JOB_NAME}/${BUILD_NUMBER}'
+//            }
+//        }
     }
 }
