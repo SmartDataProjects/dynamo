@@ -29,4 +29,4 @@ RUN yum -y install \
 RUN printf "mysql_install_db --user=mysql\nmysqld_safe &\nsleep 5\nmysqladmin -u root password 'test'\nkill %%1\n" | bash
 
 # Stuff below is not used by dynamo, but useful for tests
-RUN pip install -U 'pip==18.0' 'cmstoolbox==0.11.0'
+RUN pip install -U 'pip==18.0' 'cmstoolbox==0.11.2'

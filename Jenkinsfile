@@ -86,17 +86,17 @@ pipeline {
 
         stage ('Unit Tests') {
             steps {
-                sh 'opsspace-test'
+                sh 'cover=dynamo opsspace-test'
 
                 // Look at the results for debugging/confirmation
                 sh 'cat /var/log/dynamo/server.log'
             }
         }
 
-//        stage ('Report Results') {
-//            steps {
-//                sh 'copy-coverage-html /html/coverage/${JOB_NAME}/${BUILD_NUMBER}'
-//            }
-//        }
+        stage ('Report Results') {
+            steps {
+                sh 'copy-coverage-html dynamo /html/coverage/${JOB_NAME}/${BUILD_NUMBER}'
+            }
+        }
     }
 }
