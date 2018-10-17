@@ -121,11 +121,11 @@ ongoing_totals = {} # {site: tallies}
 def get_copy_status(record):
     return record, copy.copy_status(record, inventory)
 
-def is_transfer_stuck(rrd_file):
+def is_transfer_stuck(rrd_file, ndays):
     try:
         # LAST returns a tuple ((start, end, something), something, records)
         lasttime = rrdtool.fetch(rrd_file, "LAST")[0][1]
-        firsttime = lasttime - 6*24*3600
+        firsttime = lasttime - (ndays+1)*24*3600
         result = rrdtool.fetch(rrd_file, "LAST", '-s', str(firsttime), '-e', str(lasttime))
     except:
         return 0
@@ -136,11 +136,11 @@ def is_transfer_stuck(rrd_file):
     while len(rows) != 0 and rows[-1][1] is None:
         rows.pop()
 
-    if len(rows) > 480:
-        if rows[-1][0] is None or rows[-481][0] is None:
+    if len(rows) > 96*ndays:
+        if rows[-1][0] is None or rows[-1*(96*ndays+1)][0] is None:
             # Copied is None - you can't tell if the transfer is stuck..
             return 0
-        elif (rows[-1][0] - rows[-481][0])/rows[-1][1] < 0.01:
+        elif (rows[-1][0] - rows[-1*(96*ndays+1)][0])/rows[-1][1] < 0.01:
             return 1
 
     return 0
@@ -168,8 +168,10 @@ for sitename, site_records in records.iteritems():
         "ongoing": 0., # number of ongoing transfers
         "total": 0., # total of datasets that are not 100%
         "total_stuck": 0., # out of which is stuck
+        "total_really_stuck": 0., # out of which is really stuck
         "copied": 0., # copied volume, out of datasets that are not 100%
-        "copied_stuck": 0. # out of which is stuck
+        "copied_stuck": 0., # out of which is stuck
+        "copied_really_stuck": 0. # out of which is really stuck
     }
 
     dataset_details = []
@@ -209,18 +211,34 @@ for sitename, site_records in records.iteritems():
             except ObjectError:
                 dataset_name = item
 
-            try:
-                current_total, current_copied = status_map[dataset_name]
-            except KeyError:
-                status_map[dataset_name] = (total, copied)
+            updated_total = 0
+
+            if dataset_name not in inventory.datasets:
+                continue
+
+            dsetObj = inventory.datasets[dataset_name]        
+            drepObj = inventory.sites[sitename].find_dataset_replica(dsetObj, must_find = False)
+
+            if drepObj is None:
+                continue
             else:
-                status_map[dataset_name] = (total + current_total, copied + current_copied)
+                target_size = drepObj.size(physical = False)
+                if total != target_size:
+                    LOG.info('Correcting the target size for copy record %d and dataset %s from %i to %i' % (record.operation_id, dataset_name, total, target_size))
+                    total = target_size
+            
+            try:
+                current_total, current_copied = status_map[dataset_name + '_' + sitename]
+            except KeyError:
+                status_map[dataset_name + '_' + sitename] = (total, copied)
+            else:
+                status_map[dataset_name + '_' + sitename] = (total + current_total, copied + current_copied)
 
         update_record = False
 
         for replica_record in record.replicas:
             try:
-                total, copied = status_map[replica_record.dataset_name]
+                total, copied = status_map[replica_record.dataset_name + '_' + sitename]
             except KeyError:
                 # the copy request was cancelled
                 replica_record.status = HistoryRecord.ST_CANCELLED
@@ -264,7 +282,8 @@ for sitename, site_records in records.iteritems():
                     # RRD does not exist yet
                     create_rrd(rrd_file)
 
-                is_stuck = is_transfer_stuck(rrd_file)
+                is_stuck = is_transfer_stuck(rrd_file,5)
+                is_really_stuck = is_transfer_stuck(rrd_file,13)
 
                 # Update the RRD file
 
@@ -283,15 +302,18 @@ for sitename, site_records in records.iteritems():
                 site_ongoing_totals['ongoing'] += 1
                 site_ongoing_totals['total'] += total
                 site_ongoing_totals['total_stuck'] += is_stuck * total
+                site_ongoing_totals['total_really_stuck'] += is_really_stuck * total
                 site_ongoing_totals['copied'] += copied
                 site_ongoing_totals['copied_stuck'] += is_stuck * copied
+                site_ongoing_totals['copied_really_stuck'] += is_really_stuck * copied
 
                 dataset_details.append({
                     'id': record.operation_id,
                     'name': replica_record.dataset_name,
                     'copied': copied,
                     'total': total,
-                    'stuck': is_stuck
+                    'stuck': is_stuck,
+                    'really_stuck': is_really_stuck
                 })
             
         # Update the history DB
@@ -303,7 +325,7 @@ for sitename, site_records in records.iteritems():
 
     if authorized:
         with open("%s/filelist.txt" % site_rrd_dir, "w") as csvfilelist:
-            fieldnames = ["id", "name", "copied", "total", "stuck"]
+            fieldnames = ["id", "name", "copied", "total", "stuck", "really_stuck"]
     
             writer = csv.DictWriter(csvfilelist, fieldnames = fieldnames)
             writer.writerow(dict(zip(fieldnames, fieldnames)))
@@ -315,7 +337,9 @@ for sitename, site_records in records.iteritems():
 
 if authorized:
     with open("%s/overview.txt" % rrd_dir, "w") as overview:
-        fieldnames = ["sitename", "ongoing", "total", "copied", "total_stuck", "copied_stuck"]
+        fieldnames = ["sitename", "ongoing", "total", "copied", \
+                      "total_stuck", "copied_stuck", "total_really_stuck", \
+                      "copied_really_stuck"]
     
         writer = csv.DictWriter(overview, fieldnames = fieldnames)
         writer.writerow(dict(zip(fieldnames, fieldnames)))
@@ -338,6 +362,7 @@ if authorized and not os.path.exists(total_rrdfile):
 if authorized:
     timestamp = int(time.time()) / interval * interval
     try:
+        LOG.info("Current total (copied) volume: %s (%s) GB" % (total_volume, copied_volume))
         rrdtool.update(total_rrdfile, '%d:%d:%d' % (timestamp, copied_volume, total_volume))
     except:
         pass
