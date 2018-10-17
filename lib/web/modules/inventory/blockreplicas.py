@@ -60,7 +60,7 @@ class ListBlockReplicas(WebModule):
                 for blockrep_obj in block_obj.replicas:
                     if 'node' in request:
                         site_name = blockrep_obj.site.name
-                        if '*' in node_name:
+                        if '*' in request['node']:
                             if not nodepat.match(site_name):
                                 continue
                         else:
@@ -102,7 +102,7 @@ class ListBlockReplicas(WebModule):
                     else:
                         subscribed = 'y'
 
-                    rephash = {'node': blkrep.site.name, 'files': blkrep.num_files, 'node_id': blkrep.site.id, 
+                    rephash = {'bytes': blkrep.size, 'node': blkrep.site.name, 'files': blkrep.num_files, 'node_id': blkrep.site.id, 
                                'se': blkrep.site.host, 'complete': self.crt(blkrep.is_complete()), 
                                'time_create': blkrep.last_update, 'time_update': blkrep.last_update,
                                'group': blkrep.group.name, 'custodial': self.crt(blkrep.is_custodial),
