@@ -32,22 +32,34 @@ class Lfn2PfnModule(WebModule):
         LOG.info(request)
 
         protocol = request['protocol']
-        node_name = request['node']
         lfn_name = request['lfn']
-        custodial = 'Null'
+        custodial = None
 
-        if node_name not in inventory.sites:
-            return {'mapping': []}
+        site_objs = []
+        node_name = request['node']
+        if '*' in node_name:
+            pattern = re.compile(fnmatch.translate(node_name))
+            for site_name in inventory.sites:
+                if pattern.match(site_name):
+                    site_objs.append(inventory.sites[site_name])
+                    
+        else:
+            try:
+                site_objs.append(inventory.sites[node_name])
+            except KeyError:
+                pass
 
-        siteObj = inventory.sites[node_name]
-        pfn_name = siteObj.to_pfn(lfn_name,protocol)
-        if pfn_name is None:
-            pfn_name = siteObj.to_pfn(lfn_name,'gfal2')
+        mapping = []
+        for siteObj in site_objs:
+            pfn_name = siteObj.to_pfn(lfn_name,protocol)
+            if pfn_name is None:
+                pfn_name = siteObj.to_pfn(lfn_name,'gfal2')
 
-        destination = 'Null'
-        space_token = 'Null'
-        return {'mapping': [{'protocol':protocol, 'custodial':custodial, 'destination':destination, 
-                             'space_token':space_token,'node':node_name, 'lfn':lfn_name, 'pfn':pfn_name }] }
+            destination = None
+            space_token = None
+            mapping.append({'protocol':protocol, 'custodial':custodial, 'destination':destination,
+                                'space_token':space_token,'node':node_name, 'lfn':lfn_name, 'pfn':pfn_name })
+        return {'mapping': mapping}
         
         
 # exported to __init__.py

@@ -37,15 +37,20 @@ class ListData(WebModule):
             if not blockrep_obj.is_complete():
                 all_files = blockrep_obj.files()
             for file_obj in all_files:
-                file_hash = {'checksum': file_obj.checksum,'node':site_name, 
-                             'lfn':file_obj.lfn, 'time_create':blockrep_obj.last_update}
+                cksum = 'alde32:' + str(file_obj.checksum[1]) + ',cksum:' + str(file_obj.checksum[0])
+                file_hash = {'checksum': cksum,'node':site_name,'lfn':file_obj.lfn,
+                             'time_create':blockrep_obj.last_update,'size':file_obj.size}
                 
                 files_json.append(file_hash)
             
-        block_hash = {'block':[{'time_update':block_obj.last_update, 'bytes':block_obj.size, 'files':block_obj.num_files,
-                                'name':block_obj.full_name(), 'is_open':block_obj.is_open,'time_create':block_obj.last_update,
-                                'file':files_json}]}
-        dset_hash = {"dataset":[{'time_update':'null','is_transient':'n','is_open':'y', 'name':dset_name, 'block':block_hash}]}
+        block_open = 'n'
+        if block_obj.is_open:
+            block_open = 'y'
+            
+        block_hash = [{'time_update':block_obj.last_update, 'bytes':block_obj.size, 'files':block_obj.num_files,
+                       'name':block_obj.full_name(), 'is_open':block_open,'time_create':block_obj.last_update,
+                       'file':files_json}]
+        dset_hash = {"dataset":[{'time_update':None,'is_transient':'n','is_open':'y', 'name':dset_name, 'block':block_hash}]}
 
         return {"dbs":[dset_hash]}
                 
