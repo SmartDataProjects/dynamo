@@ -9,6 +9,8 @@ from dynamo.request.copy import CopyRequestManager
 from dynamo.dataformat.request import Request
 from dynamo.dataformat import Dataset
 
+from dynamo.utils.interface.mysql import MySQL
+from dynamo.history.history import HistoryDatabase
 
 LOG = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ class TransferRequestList(WebModule):
         
         self.copy_manager = CopyRequestManager()
         self.copy_manager.set_read_only()
+        self.mysql_hist = HistoryDatabase(config.get('history', None))
 
 
     def run(self, caller, request, inventory):
@@ -29,6 +32,13 @@ class TransferRequestList(WebModule):
             return {'request':[]}
 
         req_id = int(request['request'])
+        sql_line = 'select operation_id from phedex_requests as pr where pr.id = ' + str(req_id)
+        LOG.info(sql_line)
+        dbRequests = self.mysql_hist.db.query(sql_line)
+        for line in dbRequests:
+            req_id = int(line)
+            break
+            
         req_hash = self.copy_manager.get_requests(request_id=req_id)
         LOG.info(req_id)
         LOG.info(req_hash)
@@ -41,8 +51,9 @@ class TransferRequestList(WebModule):
         destinations = []
         sites = req_obj.find_sites(inventory)
         for site_obj in sites:
-            destinations.append({'desided_by':{'time_decided':req_obj.last_request,'decision':'y','dn':req_obj.user_dn},
-                                 'se':site_obj.host,'name':site_obj.name,'id':site_obj.id})
+            node_json = []
+            node_json.append({'se':site_obj.host,'name':site_obj.name,'id':site_obj.id,'desided_by':{'time_decided':req_obj.last_request,'decision':'y','dn':req_obj.user_dn} } )
+            destinations.append(node_json)
 
         datasets = req_obj.find_items(inventory)
         all_bites = 0
@@ -58,7 +69,7 @@ class TransferRequestList(WebModule):
                      'group':req_obj.group,'dbs':{'dataset':dset_part}}
         
         return {'request': [{"priority":"low","time_start":'null',"move":"n","id":req_id,
-                             "data":data_part,'requested_by':request_by,'destinations':{'node':destinations}} ]}
+                             "data":data_part,'requested_by':request_by,'destinations':destinations} ]}
                 
 # exported to __init__.py
 export_data = {
