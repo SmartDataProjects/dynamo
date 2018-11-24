@@ -9,6 +9,7 @@ import json
 import re
 import logging
 import threading
+import cx_Oracle
 
 from dynamo.dataformat import Configuration, ConfigurationError
 from dynamo.utils.transform import unicode2str
@@ -167,6 +168,24 @@ class CERNSSOCookieAuthHandler(urllib2.HTTPSHandler):
             pass
 
         return urllib2.HTTPSHandler.https_request(self, request)
+
+
+class OracleService(object):
+    """
+    A class to read from Oracle databases
+    """
+    def __init__(self, config):
+        self.oracle_db_conn = cx_Oracle.connect(config.db, config.pw, config.host)
+
+    def make_request(self, query):
+        oracle_cursor = self.oracle_db_conn.cursor()
+        oracle_cursor.execute(query)
+
+        data = []
+        for item in oracle_cursor:
+            data.append(item[0])
+
+        return data
 
 
 class RESTService(object):
