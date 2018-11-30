@@ -30,3 +30,6 @@ RUN printf "mysql_install_db --user=mysql\nmysqld_safe &\nsleep 5\nmysqladmin -u
 
 # Stuff below is not used by dynamo, but useful for tests
 RUN pip install -U 'pip==18.0' 'cmstoolbox==0.11.2'
+
+# Used by dynamo
+RUN pip install 'cx_Oracle'
