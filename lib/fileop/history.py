@@ -22,6 +22,41 @@ def histogram_binning(tmin,tmax):
 
     return (nbins,dt)
 
+#class OperationFilter:
+#    """
+#    Allows to generate a sql filter string to be applied to the query of historic file
+#    operations tables.
+#    """
+#    def __init__(self,source_filter="",mss_filter=True,period='24h',upto='0h',exit_code='0'):
+#        self.source_filter = source_filter
+#        self.mss_filter = mss_filter
+#        self.period = period
+#        self.upto = upto
+#        self.exit_code = exit_code
+#
+#    def generate_filter_string(self):
+#
+#        where_sql = ""
+#
+#        return where_sql
+#
+#class DeletionFilter(OperationFilter):
+#    """
+#    Allows to generate a sql filter string to be applied to the query of historic file
+#    deletions tables.
+#    """
+#    def __init__(self,source_filter="",mss_filter=True,period='24h',upto='0h',exit_code='0'):
+#        OperationFilter.__init__(self,source_filter="",mss_filter=True,period='24h',upto='0h',exit_code='0')
+#        
+#class TransferFilter(OperationFilter):
+#    """
+#    Allows to generate a sql filter string to be applied to the query of historic file
+#    transfer tables.
+#    """
+#    def __init__(self,source_filter="",destination_filter="",mss_filter=True,period='24h',upto='0h',exit_code='0'):
+#        OperationFilter.__init__(self,source_filter="",mss_filter=True,period='24h',upto='0h',exit_code='0')
+#        self.destintation_filter = destination_filter
+
 class Sites:
     """
     Defines the sites.

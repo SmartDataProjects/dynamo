@@ -10,9 +10,9 @@ from dynamo.fileop.history import Transfers
 LOG = logging.getLogger(__name__)
 
 class FileTransferHistory(WebModule):
+
     def __init__(self, config):
         WebModule.__init__(self, config)
-
         self.history = HistoryDatabase()
 
     def run(self, caller, request, inventory):
@@ -51,7 +51,7 @@ class FileTransferHistory(WebModule):
 
         # calculate the time limits to consider
         past_min = self._get_date_before_end(datetime.datetime.now(),upto)
-        tmax = int(past_min.strftime('%s')) # epochseconds: careful max/min in t and past inverts
+        tmax = int(past_min.strftime('%s')) # epochseconds: careful max/min in t and past invert
         past_max = self._get_date_before_end(past_min,period)
         tmin = int(past_max.strftime('%s')) # epochseconds
 
@@ -66,8 +66,7 @@ class FileTransferHistory(WebModule):
 
         # parse and extract the plotting data (timeseries guarantees an empty dictionary as data)
         start = time.time()
-        (min_value,max_value,avg_value,cur_value,data) = \
-            transfers.timeseries(graph,entity,tmin,tmax)
+        (min_value,max_value,avg_value,cur_value,data) = transfers.timeseries(graph,entity,tmin,tmax)
         elapsed_processing = time.time() - start
         LOG.info('Parsed data: %7.3f sec', elapsed_processing)
         
@@ -78,7 +77,6 @@ class FileTransferHistory(WebModule):
         yaxis_label = 'Transfered Volume [GB]'
         summary_string = "Min: %.3f GB, Max: %.3f GB, Avg: %.3f GB, Last: %.3f GB" \
             %(min_value,max_value,avg_value,cur_value)
-
         if     graph[0] == 'r':         # cumulative volume
             yaxis_label = 'Transfered Rate [GB/sec]'
             summary_string = "Min: %.3f GB/s, Max: %.3f GB/s, Avg: %.3f GB/s, Last: %.3f GB/s" \
@@ -90,14 +88,15 @@ class FileTransferHistory(WebModule):
             yaxis_label = 'Number of Transfers'
             summary_string = "Min: %.0f, Max: %.0f, Avg: %.0f, Last: %.0f" \
                 %(min_value,max_value,avg_value,cur_value)
+
+        # add the unit per bin
         yaxis_label += unit
 
         # add text graphics information to the plot
         data[0]['yaxis_label'] = yaxis_label
         data[0]['title'] = 'Dynamo Transfers (%s by %s)'%(graph,entity)
         data[0]['subtitle'] = 'Time period: %s -- %s'%(str(past_max).split('.')[0],str(past_min).split('.')[0])
-        data[0]['timing_string'] = \
-            'db:%.2fs, processing:%.2fs'%(elapsed_db,elapsed_processing)
+        data[0]['timing_string'] = 'db:%.2fs, processing:%.2fs'%(elapsed_db,elapsed_processing)
         data[0]['summary_string'] = summary_string
 
         return data
@@ -156,7 +155,7 @@ class FileTransferHistory(WebModule):
         if nbins>0:
             dt = delta_t/nbins
 
-        if      abs(dt-604800) < 1:
+        if   abs(dt-604800) < 1:
             unit = ' / week';
         elif abs(dt-86400.) < 1:
             unit = ' / day';
