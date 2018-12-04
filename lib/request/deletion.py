@@ -4,6 +4,7 @@ import logging
 from dynamo.request.common import RequestManager
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat.request import Request, RequestAction, DeletionRequest
+import dynamo.dataformat as df
 
 LOG = logging.getLogger(__name__)
 

@@ -534,7 +534,10 @@ class DetoxHistory(DetoxHistoryBase):
             except Timeout:
                 continue
             else:
+                signal.alarm(0)
                 break
+        else:
+            raise RuntimeError('Failed to create %s' % db_file_name)
 
         snapshot_cursor = snapshot_db.cursor()
 

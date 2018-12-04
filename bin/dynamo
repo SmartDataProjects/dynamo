@@ -31,12 +31,8 @@ class DynamoServer(object):
     LV_NOAUTH, LV_AUTH, LV_WRITE = range(1, 4)
 
     def __init__(self, addr, certfile, keyfile):
-        try:
-            open(certfile).close()
-            open(keyfile).close()
-        except:
-            # Certificate or key not readable -> consider as an SSL error
-            raise ssl.SSLError()
+        open(certfile).close()
+        open(keyfile).close()
 
         try:
             try:

@@ -1,8 +1,11 @@
+import logging
 import time
 
 from exceptions import ObjectError
 from block import Block
 from _namespace import customize_blockreplica
+
+LOG = logging.getLogger(__name__)
 
 class BlockReplica(object):
     """Block placement at a site. Holds an attribute 'group' which can be None.
@@ -209,6 +212,7 @@ class BlockReplica(object):
         for site_partition in self._site.partitions.itervalues():
             try:
                 block_replicas = site_partition.replicas[dataset_replica]
+
             except KeyError:
                 continue
 
@@ -226,6 +230,11 @@ class BlockReplica(object):
                 site_partition.replicas.pop(dataset_replica)
 
         dataset_replica.block_replicas.remove(self)
+
+        if unlink_dataset_replica and len(dataset_replica.block_replicas) == 0:
+            # Cannot be growing in this case. We want to trigger its deletion.
+            dataset_replica.growing = False
+
         if unlink_dataset_replica and not dataset_replica.growing and len(dataset_replica.block_replicas) == 0:
             dataset_replica.unlink()
 

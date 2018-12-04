@@ -173,7 +173,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         if len(transfers) != 0:
             LOG.debug('Submit new transfer job for %d files', len(transfers))
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = verify_checksum, metadata = self.metadata_string)
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, verify_checksum = verify_checksum, metadata = self.metadata_string)
             success = self._submit_job(job, 'transfer', batch_id, dict((pfn, task.id) for pfn, task in t_pfn_to_task.iteritems()))
 
             for transfer in transfers:
@@ -278,7 +278,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             else:
                 verify_checksum = None
 
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = False, verify_checksum = verify_checksum, metadata = self.metadata_string)
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, verify_checksum = verify_checksum, metadata = self.metadata_string)
             success = self._submit_job(job, 'transfer', batch_id, pfn_to_tid)
             if success and not self._read_only:
                 self.db.delete_many('fts_staging_queue', 'id', pfn_to_tid.values())
@@ -490,6 +490,10 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                     c = find_msg_code(message)
                     if c is not None:
                         exitcode = c
+
+                    # HDFS site with gridftp-hdfs gives a I/O error (500) when the file is not there
+                    if optype == 'deletion' and 'Input/output error' in message:
+                        exitcode = errno.ENOENT
 
                 if state == 'FINISHED':
                     status = FileQuery.STAT_DONE

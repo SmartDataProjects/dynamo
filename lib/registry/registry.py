@@ -77,7 +77,7 @@ class RegistryDatabase(object):
 
             try:
                 sql = 'SELECT `id` FROM `user_services` WHERE `name` = %s'
-                service_id = self.db.query(sql, request['service'])[0]
+                service_id = self.db.query(sql, service)[0]
             except IndexError:
                 service_id = 0
 

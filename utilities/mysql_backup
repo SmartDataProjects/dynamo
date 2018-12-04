@@ -33,7 +33,7 @@ echo "FLUSH TABLES WITH READ LOCK;" >&3
 TAG=$(date +%Y%m%d%H%M%S)
 NOW=$(date +"%Y:%m:%d %H:%M:%S")
 
-for DB in dynamo dynamohistory dynamoregister
+for DB in dynamo dynamohistory dynamoregister dynamoserver
 do
   LATEST=$(ls $DYNAMO_ARCHIVE/db/${DB}_* 2>/dev/null | tail -n 1)
   LATEST_TAG=$(echo $LATEST | sed 's/.*'$DB'_\(.*\)\.gz/\1/')

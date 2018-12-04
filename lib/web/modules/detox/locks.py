@@ -395,8 +395,6 @@ class DetoxLockSet(DetoxLockBase):
         if type(self.input_data) is not list:
             raise IllFormedRequest('input', type(self.input_data).__name__, hint = 'data must be a list')
 
-        to_insert = []
-
         self._lock_tables()
         try:
             constraint = {'user': (caller.name,)}
@@ -414,6 +412,7 @@ class DetoxLockSet(DetoxLockBase):
                 if 'service' in request:
                     entry['service'] = request['service']
     
+            # Create or update
             for entry in self.input_data:
                 existing = self._get_lock(entry, valid_only = True)
     
@@ -422,9 +421,16 @@ class DetoxLockSet(DetoxLockBase):
                 else:
                     found_ids.update(e['lockid'] for e in existing)
                     self._update_lock(existing, entry)
-    
-            to_unlock = set(e['lockid'] for e in user_all) - found_ids
-            n_disabled = len(self._disable_lock(dict(('lockid', i) for i in to_unlock)))
+
+            # Disable remaining
+            to_disable = []
+            for entry in user_all:
+                if entry['lockid'] in found_ids:
+                    continue
+
+                to_disable.append(entry)
+
+            n_disabled = len(self._disable_lock(to_disable))
 
         finally:
             self._unlock_tables()

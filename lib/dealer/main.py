@@ -11,22 +11,41 @@ from dynamo.dealer.dealerpolicy import DealerPolicy
 from dynamo.dealer.history import DealerHistory
 from dynamo.operation.copy import CopyInterface
 from dynamo.utils.signaling import SignalBlocker
-import dynamo.dealer.plugins as dealer_plugins
 from dynamo.policy.producers import get_producers
+from dynamo.policy.condition import Condition
+from dynamo.policy.variables import site_variables
+import dynamo.dealer.plugins as dealer_plugins
 
 LOG = logging.getLogger(__name__)
 
 class Dealer(object):
 
-    def __init__(self, config):
+    def __init__(self, config, inventory):
         """
         @param config      Configuration
         """
 
+        self.copy_op = {}
+
         if 'copy_op' in config:
-            self.copy_op = CopyInterface.get_instance(config.copy_op.module, config.copy_op.config)
-        else: # default setting
-            self.copy_op = CopyInterface.get_instance()
+            for condition_text, conf in config.copy_op:
+                if condition_text is None: # default                                                                                                 
+                    condition = None
+                else:
+                    condition = Condition(condition_text, site_variables)
+
+                tmp_copyop= CopyInterface.get_instance(conf.module, conf.config)
+
+                for site in inventory.sites.itervalues():
+                    if site.name not in self.copy_op.keys():
+                        if condition is not None:
+                            if condition.match(site):
+                                self.copy_op[site.name] = tmp_copyop
+                        else:
+                            self.copy_op[site.name] = tmp_copyop
+        else:
+            for site in inventory.sites.itervalues():
+                self.copy_op[site.name] = CopyInterface.get_instance()
 
         self.history = DealerHistory(config.get('history', None))
 
@@ -36,12 +55,14 @@ class Dealer(object):
 
         self.test_run = config.get('test_run', False)
         if self.test_run:
-            self.copy_op.set_read_only()
+            for site in inventory.sites.itervalues():
+                self.copy_op[site.name].set_read_only(True)
 
         self._setup_plugins(config)
 
     def set_read_only(self, value = True):
-        self.copy_op.set_read_only(value)
+        for sitename in self.copy_op.keys():
+            self.copy_op[sitename].set_read_only(value)
         self.history.set_read_only(value)
         for plugin in self._plugin_priorities.keys():
             plugin.set_read_only(value)
@@ -377,7 +398,7 @@ class Dealer(object):
             with signal_blocker:
                 history_record = self.history.make_cycle_entry(cycle_number, site)
 
-                scheduled_replicas = self.copy_op.schedule_copies(replicas, history_record.operation_id, comments = comment)
+                scheduled_replicas = self.copy_op[site.name].schedule_copies(replicas, history_record.operation_id, comments = comment)
 
                 for replica in scheduled_replicas:
                     history_record.replicas.append(CopiedReplica(replica.dataset.name, replica.size(physical = False), HistoryRecord.ST_ENROUTE))

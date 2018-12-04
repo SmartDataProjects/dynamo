@@ -29,7 +29,7 @@ STOP_TIMEOUT=${STOP_TIMEOUT-120} # it takes some time to restore databases
 
 # Start dynamo daemon (dynamo-fileopd)
 start() {
-  PIDS=$(ps ax | grep $EXECUTABLE | grep -v grep | grep -v 'init\.d' | awk '/^[0-9]/ {print $1}')
+  PIDS=$(ps ax | grep $EXECUTABLE | grep -v grep | grep -v 'init\.d' | grep -v 'service' | awk '/^[0-9]/ {print $1}')
   if [ "$PIDS" ]
   then
     echo "$EXECUTABLE already running: $PIDS"

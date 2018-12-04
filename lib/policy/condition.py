@@ -26,7 +26,7 @@ class Condition(object):
             # list of name of attrs
             self.required_attrs.update(variable.required_attrs)
 
-            if len(words) > 2:
+            if len(words) >= 2:
                 operator = words[1]
             else:
                 operator = ''
