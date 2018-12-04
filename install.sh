@@ -317,10 +317,12 @@ then
   cp -r $SOURCE/web/html $INSTALL_PATH/web/
   cp -r $SOURCE/web/js $INSTALL_PATH/web/
   cp -r $SOURCE/web/css $INSTALL_PATH/web/
+  cp -r $SOURCE/web/icons $INSTALL_PATH/web/
 
   # temporary
   cp -r $SOURCE/web/js /var/www/lighttpd/
   cp -r $SOURCE/web/css /var/www/lighttpd/
+  cp -r $SOURCE/web/icons /var/www/lighttpd/
 fi
 
 ### Install the daemons ###
