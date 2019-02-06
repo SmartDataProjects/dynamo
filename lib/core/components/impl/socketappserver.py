@@ -250,7 +250,7 @@ class SocketAppServer(AppServer):
 
             dn = ''
             for rdn in user_cert_data['subject']:
-                dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn if key in DN_TRANSLATION)
+                dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
 
             user_info = master.identify_user(dn = dn, check_trunc = True)
 
