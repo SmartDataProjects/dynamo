@@ -11,13 +11,16 @@ LOG = logging.getLogger(__name__)
 class CopyRequestManager(RequestManager):
     def __init__(self, config = None):
         RequestManager.__init__(self, 'copy', config)
+        LOG.info("Initializing CopyRequestManager with config:")
+        LOG.info(config)
 
     def lock(self): #override
         # Caller of this function is responsible for unlocking
         # Non-aliased locks are for insert & update statements later
         tables = [
             ('copy_requests', 'r'), 'copy_requests', ('active_copies', 'a'), 'active_copies',
-            ('copy_request_items', 'i'), 'copy_request_items', ('copy_request_sites', 's'), 'copy_request_sites'
+            ('copy_request_items', 'i'), 'copy_request_items', ('copy_request_sites', 's'), 'copy_request_sites',
+            ('cached_copy_requests','c'), 'cached_copy_requests'
         ]
 
         if not self._read_only:
@@ -34,6 +37,7 @@ class CopyRequestManager(RequestManager):
         sql += ' ORDER BY r.`id`'
 
         _rid = 0
+
         for rid, group, n, status, first_request, last_request, count, user, dn, a_item, a_site, a_status, a_update in self.registry.db.xquery(sql):
             if rid != _rid:
                 _rid = rid
@@ -118,11 +122,13 @@ class CopyRequestManager(RequestManager):
         # Make an entry in registry
         columns = ('group', 'num_copies', 'user', 'dn', 'first_request_time', 'last_request_time')
         values = (group, ncopies, caller.name, caller.dn, MySQL.bare('FROM_UNIXTIME(%d)' % now), MySQL.bare('FROM_UNIXTIME(%d)' % now))
+        LOG.info(values)
         request_id = self.registry.db.insert_get_id('copy_requests', columns, values)
 
         mapping = lambda site: (request_id, site)
         self.registry.db.insert_many('copy_request_sites', ('request_id', 'site'), mapping, sites)
         mapping = lambda item: (request_id, item)
+
         self.registry.db.insert_many('copy_request_items', ('request_id', 'item'), mapping, items)
 
         # Make an entry in history
@@ -143,6 +149,22 @@ class CopyRequestManager(RequestManager):
         self.history.db.insert_many('copy_request_blocks', ('request_id', 'block_id'), mapping, history_block_ids)
 
         return self.get_requests(request_id = request_id)[request_id]
+
+    def create_cached_request(self, caller, item, sites_original, group, ncopies):
+        now = int(time.time())
+
+        # Make an entry in registry
+        columns = ('item', 'sites', 'group', 'num_copies', 'user', 'dn', 'request_time', 'status')
+        values = (item, sites_original, group, ncopies, caller.name, caller.dn, MySQL.bare('FROM_UNIXTIME(%d)' % now), 'new')
+        LOG.info(values)
+        cached_request_id = self.registry.db.insert_get_id('cached_copy_requests', columns, values)
+
+        return_dict = {}
+        return_dict['request_id'] = cached_request_id
+        return_dict['item'] = item
+        return_dict['sites'] = sites_original
+
+        return return_dict
 
     def update_request(self, request):
         if self._read_only:
