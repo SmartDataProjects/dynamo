@@ -1,8 +1,9 @@
 import logging
+import time
 
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.history.history import HistoryDatabase
-from dynamo.registry.registry import RegistryDatabase
+from dynamo.registry.registry import RegistryDatabase, CacheDatabase
 import dynamo.dataformat as df
 from dynamo.dataformat.request import Request, RequestAction
 
@@ -33,10 +34,12 @@ class RequestManager(object):
 
         self.registry = RegistryDatabase(config.get('registry', None))
         self.history = HistoryDatabase(config.get('history', None))
+        #self.cache = CacheDatabase(config.get('cache', None))
 
         # we'll be using temporary tables
         self.registry.db.reuse_connection = True
         self.history.db.reuse_connection = True
+        #self.cache.db.reuse_connection = True
 
         self.optype = optype
 
@@ -119,6 +122,9 @@ class RequestManager(object):
 
         if items is not None:
             self.registry.db.insert_many('items_tmp', ('item',), MySQL.make_tuple, items, db = self.registry.db.scratch_db)
+
+        LOG.info(sites)
+
         if sites is not None:
             self.registry.db.insert_many('sites_tmp', ('site',), MySQL.make_tuple, sites, db = self.registry.db.scratch_db)
 
@@ -127,6 +133,7 @@ class RequestManager(object):
             'PRIMARY KEY (`id`)'
         ]
         self.registry.db.create_tmp_table('ids_tmp', columns)
+
 
         sql = 'INSERT INTO `{db}`.`ids_tmp`'
         sql += ' SELECT r.`id` FROM `{op}_requests` AS r WHERE'
