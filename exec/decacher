@@ -1,0 +1,111 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import re
+import time
+import fnmatch
+import requests
+import subprocess
+from itertools import chain
+from functools import partial
+#from argparse import ArgumentParser
+
+#parser = ArgumentParser(description = 'Forming copy requests out of cached requests in dynamoregister.cached_copy_requests')
+
+#args = parser.parse_args()
+#sys.argv = []
+
+
+## Load the configuration
+from dynamo.dataformat import Configuration, ObjectError
+
+## Set up logging (write to stdout)
+from dynamo.core.executable import authorized, make_standard_logger
+
+LOG = make_standard_logger('info')
+
+## Start conversion
+from dynamo.registry.registry import RegistryDatabase
+
+LOG.info('Decaching items in cached_copy_requests.')
+
+# The registry object
+registry = RegistryDatabase()
+
+if authorized:
+    while True:
+        user, service, lock_time, note, depth = registry.get_app_lock('decacher')
+        if user == 'dynamo':
+            registry.unlock_app('decacher', 'dynamo')
+        elif user is None:
+            break
+
+if not authorized:
+    registry.set_read_only()
+
+if authorized:
+    while True:
+        registry.lock_app('decacher', 'dynamo')
+        user, service, lock_time, note, depth = registry.get_app_lock('decacher')
+        if user == 'dynamo':
+            break
+
+        LOG.info('Applock is held by %s:%s. Waiting 60 seconds to retry.', user, service)
+        time.sleep(60)
+
+try:    
+    try:
+        registry.db.lock_tables(read = ['cached_copy_requests', 'detox_locks'])
+        sql = 'SELECT `item`, `sites` FROM `cached_copy_requests` WHERE `status` = "new"'
+    
+        items = {}
+        for item, sites in registry.db.query(sql):
+            if sites not in items:
+                items[sites] = []
+                items[sites].append(item)
+            else:
+                items[sites].append(item)
+
+        registry.db.unlock_tables()
+
+        url = 'https://dynamo.mit.edu/registry/request/copy'
+
+        for destinations, datasets in items.iteritems():
+            payload = {"site": destinations.split(" "), "item": datasets}
+            LOG.info("D")
+            LOG.info(payload)
+
+            from multiprocessing.pool import ThreadPool
+            pool = ThreadPool(1)
+            to_list = lambda v : v if isinstance([], list) else [v]
+            url_with_data = url + '?' + '&'.join(chain.from_iterable([['%s=%s'%(k,vv) for vv in to_list(v)] for k,v in payload.iteritems()]))
+            result = pool.apply_async(partial(requests.get, url= url_with_data, cert='/tmp/x509up_u500'), tuple())
+
+            registry.db.lock_tables(write = ['cached_copy_requests', 'detox_locks'])
+
+            if authorized:
+                sql = 'DELETE from `cached_copy_requests` WHERE `item` = %s AND `sites` = %s'
+                for d in datasets:
+                    LOG.info(sql % (d, destinations))
+                    registry.db.query(sql, d, destinations)
+
+                sql = 'DELETE from `detox_locks` WHERE `item` = %s AND `comment` = %s'
+                for d in datasets:
+                    registry.db.query(sql, d, "Caches locked by dynamo")
+
+            registry.db.unlock_tables()
+
+    except Exception as e:
+        LOG.info(e)
+
+finally:
+    if authorized:
+        while True:
+            user, service, lock_time, note, depth = registry.get_app_lock('decacher')
+            if user == 'dynamo':
+                registry.unlock_app('decacher', 'dynamo')
+            elif user is None:
+                break
+
+LOG.info("Done decaching.")
