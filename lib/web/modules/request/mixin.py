@@ -1,10 +1,13 @@
 import re
 import fnmatch
+import logging
 
 from dynamo.web.exceptions import MissingParameter, ExtraParameter, IllFormedRequest, InvalidRequest
 from dynamo.web.modules._common import yesno
 from dynamo.utils.interface.mysql import MySQL
 import dynamo.dataformat as df
+
+LOG = logging.getLogger(__name__)
 
 class ParseInputMixin(object):
     def __init__(self, config):
@@ -12,9 +15,16 @@ class ParseInputMixin(object):
         self.params = {}
 
     def parse_input(self, request, inventory, allowed_fields, required_fields = tuple()):
+        if self.input_data is not None:
+            LOG.info("Input data:")
+            LOG.info(self.input_data)
+        else:
+            LOG.info("No input data:")
         # JSON could have been uploaded
         if self.input_data is not None:
+            LOG.info("Updating input:")
             request.update(self.input_data)
+            LOG.info("Completed updating input.")
 
         # Check we have the right request fields
 
@@ -116,6 +126,12 @@ class ParseInputMixin(object):
             for status in self.params['status']:
                 if status not in ('new', 'activated', 'completed', 'rejected', 'cancelled'):
                     raise InvalidRequest('Invalid status value %s' % status)
+
+        if 'cache' in request:
+            self.params['cache'] = True
+
+        LOG.info("Printing all request parameterssss")
+        LOG.info(self.params)
 
     def make_constraints(self, by_id = False):
         constraints = {}

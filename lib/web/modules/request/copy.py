@@ -32,9 +32,10 @@ class MakeCopyRequest(CopyRequestBase):
         self.default_sites = config['request']['copy'].get('default_sites', [])
 
     def run(self, caller, request, inventory):
-        self.parse_input(request, inventory, ('request_id', 'item', 'site', 'group', 'n'))
+        self.parse_input(request, inventory, ('request_id', 'item', 'site', 'group', 'n', 'cache'))
 
         self.manager.lock()
+        LOG.info("aV1: %s" % str(time.time()))
 
         try:
             existing = None
@@ -54,6 +55,8 @@ class MakeCopyRequest(CopyRequestBase):
                     raise InvalidRequest('Request %d cannot be updated any more' % request_id)
 
             else:
+                LOG.info("aV2: %s" % str(time.time()))
+
                 # create a new request
                 if 'item' not in self.params:
                     raise MissingParameter('item')
@@ -64,16 +67,19 @@ class MakeCopyRequest(CopyRequestBase):
                     else:
                         self.params['site'] = list(self.default_sites)
 
-                constraints = self.make_constraints(by_id = False)
-                constraints['statuses'] = [Request.ST_NEW, Request.ST_ACTIVATED]
-                existing_requests = self.manager.get_requests(**constraints)
+                if 'cache' not in self.params:
+                    # This only has to be done if we do not want to stupidly dump things into the cache table
+                    constraints = self.make_constraints(by_id = False)
 
-                for request_id in sorted(existing_requests.iterkeys()):
-                    if existing_requests[request_id].status == Request.ST_NEW:
-                        existing = existing_requests[request_id]
-                        break
-                    elif existing_requests[request_id].status == Request.ST_ACTIVATED:
-                        existing = existing_requests[request_id]
+                    constraints['statuses'] = [Request.ST_NEW, Request.ST_ACTIVATED]
+                    existing_requests = self.manager.get_requests(**constraints)
+
+                    for request_id in sorted(existing_requests.iterkeys()):
+                        if existing_requests[request_id].status == Request.ST_NEW:
+                            existing = existing_requests[request_id]
+                            break
+                        elif existing_requests[request_id].status == Request.ST_ACTIVATED:
+                            existing = existing_requests[request_id]
 
             if existing is None:
                 if 'n' not in self.params:
@@ -81,9 +87,16 @@ class MakeCopyRequest(CopyRequestBase):
         
                 if 'group' not in self.params:
                     self.params['group'] = self.default_group
-        
-                request = self.manager.create_request(caller, self.params['item'], self.params['site'], self.params['site_orig'], self.params['group'], self.params['n'])
-
+                    
+                if 'cache' not in self.params:
+                    LOG.info("Create request")
+                    LOG.info("aV3: %s" % str(time.time()))
+                    request = self.manager.create_request(caller, self.params['item'], self.params['site'], self.params['site_orig'], self.params['group'], self.params['n'])
+                else:
+                    # We want to allow the requester to just place the request info in a cache table that dynamo will act on by itself
+                    LOG.info("Creating caching request")
+                    LOG.info("aV4: %s" % str(time.time()))
+                    request = self.manager.create_cached_request(caller, self.params['item'][0], " ".join(self.params['site_orig']), self.params['group'], self.params['n'])
             else:
                 existing.request_count += 1
                 existing.last_request = int(time.time())
@@ -106,7 +119,10 @@ class MakeCopyRequest(CopyRequestBase):
                 LOG.error('Error in manager.unlock()')
 
         # requests is a single-element dictionary
-        return [request.to_dict()]
+        if 'cache' in self.params:
+            return [request]
+        else:
+            return [request.to_dict()] 
 
 
 class PollCopyRequest(CopyRequestBase):
@@ -117,6 +133,10 @@ class PollCopyRequest(CopyRequestBase):
         self.parse_input(request, inventory, ('request_id', 'item', 'site', 'status', 'user'))
 
         constraints = self.make_constraints(by_id = False)
+
+        LOG.info("PollCopy constraints:")
+        LOG.info(constraints)
+
         existing_requests = self.manager.get_requests(**constraints)
 
         if 'item' in self.params and 'site' in self.params and \
