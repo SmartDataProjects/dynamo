@@ -280,8 +280,12 @@ class WebServer(object):
                     # replace content with the json string
                     start = time.time()
                     if self.callback is not None:
+                        LOG.info("Callback is not None")
+                        LOG.info(json_data)
                         content = '%s(%s)' % (self.callback, json.dumps(json_data))
                     else:
+                        LOG.info("Callback is None")
+                        LOG.info(json_data)
                         content = json.dumps(json_data)
 
                     root_logger.info('Make JSON: %s seconds', time.time() - start)
@@ -461,6 +465,8 @@ class WebServer(object):
 
                 # Even though our default content type is URL form, we check if this is a JSON
                 try:
+                    LOG.info("Printing post_data")
+                    LOG.info(post_data)
                     json_data = json.loads(post_data)
                 except:
                     if content_type == 'application/json':
@@ -474,6 +480,8 @@ class WebServer(object):
 
                 if content_type == 'application/x-www-form-urlencoded':
                     try:
+                        LOG.info("Printing post_data 2")
+                        LOG.info(post_data)
                         post_request = parse_qs(post_data)
                     except:
                         self.code = 400
@@ -551,9 +559,12 @@ class WebServer(object):
             response += 'Traceback (most recent call last):\n'
             response += ''.join(traceback.format_tb(tb)) + '\n'
             response += '%s: %s\n' % (exc_type.__name__, str(exc))
-            return response
         else:
-            return 'Internal server error! (' + exc_type.__name__ + ': ' + str(exc) + ')\n'
+            response = 'Internal server error! (' + exc_type.__name__ + ': ' + str(exc) + ')\n'
+
+        LOG.error(response)
+
+        return response
 
 class DummyInventory(object):
     """
