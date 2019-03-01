@@ -17,6 +17,8 @@ from dynamo.fileop.deletion import FileDeletionOperation, FileDeletionQuery
 from dynamo.fileop.errors import find_msg_code
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Site
+from dynamo.core.executable import inventory
+
 
 LOG = logging.getLogger(__name__)
 
@@ -49,12 +51,13 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         # Proxy to be forwarded to FTS
         self.x509proxy = config.get('x509proxy', None)
+        self.x509proxy_orig = config.get('x509proxy', None)
 
         # Bookkeeping device
         self.db = MySQL(config.db_params)
 
         # Reuse the context object
-        self.keep_context = config.get('keep_context', True)
+        self.keep_context = config.get('keep_context', False)
         self._context = None
 
     def num_pending_transfers(self): #override
@@ -67,7 +70,13 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         file_states = ['SUBMITTED', 'READY', 'ACTIVE', 'STAGING', 'STARTED']
 
         jobs = self._ftscall('list_jobs', state_in = ['SUBMITTED', 'ACTIVE', 'STAGING'])
+        from random import shuffle
+        shuffle(jobs)
+
+        total_count = 0
         for job in jobs:
+            total_count = total_count + 1
+            #LOG.info("List_files call 1")
             job_info = self._ftscall('get_job_status', job['job_id'], list_files = True)
             for file_info in job_info['files']:
                 if file_info['file_state'] in file_states:
@@ -87,7 +96,13 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         file_states = ['SUBMITTED', 'READY', 'ACTIVE']
 
         jobs = self._ftscall('list_jobs', state_in = ['SUBMITTED', 'ACTIVE'])
+        from random import shuffle
+        shuffle(jobs)
+
+        total_count = 0
         for job in jobs:
+            total_count = total_count + 1
+            #LOG.info("List_files call 2")
             job_info = self._ftscall('get_job_status', job['job_id'], list_files = True)
             for file_info in job_info['dm']:
                 if file_info['file_state'] in file_states:
@@ -127,6 +142,11 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             dest_pfn = sub.destination.to_pfn(lfn, 'gfal2')
             source_pfn = task.source.to_pfn(lfn, 'gfal2')
 
+            self.x509proxy = sub.destination.x509proxy
+
+            if task.source.storage_type == Site.TYPE_MSS:
+                self.x509proxy = task.source.x509proxy
+
             if dest_pfn is None or source_pfn is None:
                 # either gfal2 is not supported or lfn could not be mapped
                 LOG.warning('Could not obtain PFN for %s at %s or %s', lfn, sub.destination.name, task.source.name)
@@ -149,7 +169,8 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 # task identified by the source PFN
                 s_pfn_to_task[source_pfn] = task
             else:
-                LOG.debug('Submitting transfer of %s from %s to %s to FTS', lfn, task.source.name, sub.destination.name)
+                LOG.info("Here we are")
+                LOG.info('Submitting transfer of %s from %s to %s to FTS', lfn, task.source.name, sub.destination.name)
 
                 transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = sub.file.size))
 
@@ -159,7 +180,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         if len(stage_files) != 0:
             LOG.debug('Submit new staging job for %d files', len(stage_files))
             job = fts3.new_staging_job([ff[0] for ff in stage_files], bring_online = 36000, metadata = self.metadata_string)
-            success = self._submit_job(job, 'staging', batch_id, dict((pfn, task.id) for pfn, task in s_pfn_to_task.iteritems()))
+            success = self._submit_job(job, 'staging', batch_id, dict((pfn, task.id) for pfn, task in s_pfn_to_task.iteritems()), x509=task.source.x509proxy)
 
             for source_pfn, _, _, _ in stage_files:
                 result[s_pfn_to_task[source_pfn]] = success
@@ -173,8 +194,11 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
 
         if len(transfers) != 0:
             LOG.debug('Submit new transfer job for %d files', len(transfers))
-            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, verify_checksum = verify_checksum, metadata = self.metadata_string)
-            success = self._submit_job(job, 'transfer', batch_id, dict((pfn, task.id) for pfn, task in t_pfn_to_task.iteritems()))
+            LOG.info("Submitting transfer job from disk to site %s with proxy %s." % (sub.destination.name, sub.destination.x509proxy))
+
+            job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, 
+                               verify_checksum = verify_checksum, metadata = self.metadata_string)
+            success = self._submit_job(job, 'transfer', batch_id, dict((pfn, task.id) for pfn, task in t_pfn_to_task.iteritems()), x509=sub.destination.x509proxy)
 
             for transfer in transfers:
                 dest_pfn = transfer['destinations'][0]
@@ -267,19 +291,34 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
                 results.append((task_id, status, exitcode, None, start_time, finish_time))
 
         if len(staged_tasks) != 0:
-            transfers = []
-            pfn_to_tid = {}
-            for task_id, source_pfn, dest_pfn, checksum, filesize in self.db.select_many('fts_staging_queue', ('id', 'source', 'destination', 'checksum', 'size'), 'id', staged_tasks):
-                transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = filesize))
-                pfn_to_tid[dest_pfn] = task_id
-
             if self.checksum_algorithm:
                 verify_checksum = 'target'
             else:
                 verify_checksum = None
 
+            which_dest = ""
+            transfers = []
+            pfn_to_tid = {}
+
+            for task_id, source_pfn, dest_pfn, checksum, filesize in self.db.select_many('fts_staging_queue', ('id', 'source', 'destination', 'checksum', 'size'), 'id', staged_tasks):
+                for s in inventory.sites.itervalues():
+                    if s.backend in dest_pfn and s.backend != "":
+                        which_dest = s
+                #transfers = []
+                #pfn_to_tid = {}
+                transfers.append(fts3.new_transfer(source_pfn, dest_pfn, checksum = checksum, filesize = filesize))
+                pfn_to_tid[dest_pfn] = task_id
+
             job = fts3.new_job(transfers, retry = self.fts_retry, overwrite = True, verify_checksum = verify_checksum, metadata = self.metadata_string)
-            success = self._submit_job(job, 'transfer', batch_id, pfn_to_tid)
+                
+                #which_dest = ""
+                #for s in inventory.sites.itervalues():
+                #    if s.backend in dest_pfn and s.backend != "":
+                #        which_dest = s
+            LOG.info("Submitting job from buffer to site %s with proxy %s." % (which_dest.name, which_dest.x509proxy))
+            #LOG.info("dest_pfn: %s" % dest_pfn) 
+            success = self._submit_job(job, 'transfer', batch_id, pfn_to_tid, x509=which_dest.x509proxy)
+
             if success and not self._read_only:
                 self.db.delete_many('fts_staging_queue', 'id', pfn_to_tid.values())
 
@@ -317,11 +356,23 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         return self._do_ftscall(url = url)
 
     def _do_ftscall(self, binding = None, url = None):
+        
+        proxy = self.x509proxy
+
+        if binding is not None:
+            method, args, kwd = binding
+            for k in kwd.iteritems():
+                LOG.info(k)
+                if k[0] == "ucert":
+                    LOG.info("Setting proxy to %s" % k[1])
+                    proxy = k[1]
+
         if self._context is None:
             # request_class = Request -> use "requests"-based https call (instead of default PyCURL,
             # which may not be able to handle proxy certificates depending on the cURL installation)
             # verify = False -> do not verify the server certificate
-            context = fts3.Context(self.server_url, ucert = self.x509proxy, ukey = self.x509proxy,
+            LOG.info("Setting context with proxy %s" % proxy)
+            context = fts3.Context(self.server_url, ucert = proxy, ukey = proxy,
                                    request_class = Request, verify = False)
 
             if self.keep_context:
@@ -337,10 +388,17 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         LOG.debug('FTS: %s', reqstring)
 
         wait_time = 1.
+
         for attempt in xrange(10):
             try:
                 if binding is not None:
                     method, args, kwd = binding
+
+                    if "ucert" in kwd:
+                        del kwd["ucert"]
+                    if "ukey" in kwd:
+                        del kwd["ukey"]
+
                     return getattr(fts3, method)(context, *args, **kwd)
                 else:
                     return json.loads(context.get(url))
@@ -357,18 +415,19 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
         LOG.error('Failed to communicate with FTS server: %s', reqstring)
         raise RuntimeError('Failed to communicate with FTS server: %s' % reqstring)
 
-    def _submit_job(self, job, optype, batch_id, pfn_to_tid):
+    def _submit_job(self, job, optype, batch_id, pfn_to_tid, x509=None):
         if self._read_only:
             job_id = 'test'
         else:
             try:
-                job_id = self._ftscall('submit', job)
+                if x509 is not None:
+                    job_id = self._ftscall('submit', job, ucert=x509, ukey=x509)
+                else:
+                    job_id = self._ftscall('submit', job)
             except:
                 exc_type, exc, tb = sys.exc_info()
                 LOG.error('Failed to submit %s to FTS: Exception %s (%s)', optype, exc_type.__name__, str(exc))
                 return False
-
-        LOG.debug('FTS job id: %s', job_id)
 
         # list of file-level operations (one-to-one with pfn)
         try:
@@ -377,6 +436,7 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             else:
                 key = 'dm'
 
+            #LOG.info("List_files call 3")
             fts_files = self._ftscall('get_job_status', job_id = job_id, list_files = True)[key]
         except:
             exc_type, exc, tb = sys.exc_info()
@@ -453,9 +513,11 @@ class FTSFileOperation(FileTransferOperation, FileTransferQuery, FileDeletionOpe
             fts_to_task = dict(self.db.xquery(sql, fts_batch_id))
 
             try:
+                #LOG.info("List_files call 4")
                 result = self._ftscall('get_job_status', job_id = job_id, list_files = True)
             except:
                 LOG.error('Failed to get job status for FTS job %s', job_id)
+                LOG.error(optype)
                 continue
     
             if optype == 'transfer' or optype == 'staging':
