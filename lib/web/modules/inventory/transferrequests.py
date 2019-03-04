@@ -40,8 +40,6 @@ class TransferRequestList(WebModule):
             break
             
         req_hash = self.copy_manager.get_requests(request_id=req_id)
-        LOG.info(req_id)
-        LOG.info(req_hash)
         if req_id not in req_hash:
             return {'request':[]}
         
