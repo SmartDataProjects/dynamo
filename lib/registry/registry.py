@@ -96,3 +96,28 @@ class RegistryDatabase(object):
             self.db.query('ALTER TABLE `activity_lock` AUTO_INCREMENT = 1')
 
         self.db.unlock_tables()
+
+
+
+class CacheDatabase(RegistryDatabase):
+    """
+    Similar to HistoryDatabase, this is just one abstraction layer that doesn't really hide the
+    backend technology for the registry. We still have the benefit of being able to use default
+    parameters to initialize the registry database handle.
+    """
+
+        # default configuration
+    _config = Configuration()
+
+    @staticmethod
+    def set_default(config):
+        CacheDatabase._config = Configuration(config)
+
+    def __init__(self, config = None):
+        if config is None:
+            config = CacheDatabase._config
+
+        self.db = MySQL(config.db_params)
+
+        self.set_read_only(config.get('read_only', False))
+
