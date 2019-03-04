@@ -2,10 +2,13 @@ import time
 import logging
 import fnmatch
 import hashlib
+import os
 
 from dynamo.core.components.persistency import InventoryStore
 from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration, Partition, Dataset, Block, File, Site, SitePartition, Group, DatasetReplica, BlockReplica
+from dynamo.policy.condition import Condition
+from dynamo.policy.variables import site_variables
 
 LOG = logging.getLogger(__name__)
 
@@ -16,6 +19,16 @@ class MySQLInventoryStore(InventoryStore):
         InventoryStore.__init__(self, config)
 
         self._mysql = MySQL(config.db_params)
+
+        config_path = os.getenv('DYNAMO_SERVER_CONFIG', '/etc/dynamo/fom_config.json')
+
+        self.fom_config = Configuration(config_path)
+        self.fom_conditions = []
+
+        for condition_text, module, conf in self.fom_config.rlfsm.transfer:
+            if condition_text is not None: # default                                                                                                                                                                            
+                condition = Condition(condition_text, site_variables)
+                self.fom_conditions.append((condition, module, conf))
 
     def close(self):
         self._mysql.close()
@@ -745,6 +758,10 @@ class MySQLInventoryStore(InventoryStore):
                 status = int(status),
                 sid = site_id
             )
+
+            for cond, module, conf in self.fom_conditions:
+                if cond.match(site):
+                    site.x509proxy = conf.x509proxy
 
             all_chains = {}
             for protocol, chain_id, idx, lfn, pfn in self._mysql.xquery(mapping_sql, site_id):

@@ -1,4 +1,8 @@
+import logging
+
 from dynamo.policy.predicates import Predicate
+
+LOG = logging.getLogger(__name__)
 
 class Condition(object):
     """AND-chained Predicates."""
@@ -10,6 +14,20 @@ class Condition(object):
 
         pred_strs = map(str.strip, text.split(' and '))
 
+        self.time_condition = None
+
+        tmp = ''
+        if ' until ' in pred_strs[-1]:
+            tmp = pred_strs[-1].split(' until ')
+            tmp[-1] = 'until ' + tmp[-1]
+        elif ' from ' in pred_strs[-1]:
+            tmp = pred_strs[-1].split(' from ')
+            tmp[-1] = 'from ' + tmp[-1]
+        if tmp != '':
+            pred_strs[-1] = tmp[0]             
+            self.time_condition = tmp[-1]
+
+        # parsing the individual components
         for pred_str in pred_strs:
             words = pred_str.split()
 
@@ -42,6 +60,18 @@ class Condition(object):
         return 'Condition(\'%s\')' % self.text
 
     def match(self, obj):
+        if self.time_condition is not None:
+            if 'until' in self.time_condition:
+                proc = subprocess.Popen(['date', '-d', self.time_condition.split('until ')[1], '+%s'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+                unixt, err = proc.communicate()
+                if time.time() > unixt:
+                    return False
+            else: # from
+                proc = subprocess.Popen(['date', '-d', self.time_condition.split('from ')[1], '+%s'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+                unixt, err = proc.communicate()
+                if time.time() < unixt:
+                    return False
+
         for predicate in self.predicates:
             if not predicate(obj):
                 return False
