@@ -26,7 +26,6 @@ class Predicate(object):
             if rhs_expr == '':
                 raise InvalidOperator(op)
             return SetElementExpr.get(variable, op, rhs_expr)
-
         else:
             raise InvalidOperator(op)
 

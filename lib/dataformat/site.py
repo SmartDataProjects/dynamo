@@ -8,7 +8,7 @@ class Site(object):
     """Represents a site. Owns lists of dataset and block replicas, which are organized into partitions."""
 
     __slots__ = ['_name', 'id', 'host', 'storage_type', 'backend', 'status', 'filename_mapping',
-        '_dataset_replicas', 'partitions']
+                 '_dataset_replicas', 'partitions', 'x509proxy']
 
     _storage_types = ['disk', 'mss', 'buffer', 'unknown']
     TYPE_DISK, TYPE_MSS, TYPE_BUFFER, TYPE_UNKNOWN = range(1, len(_storage_types) + 1)
@@ -90,7 +90,7 @@ class Site(object):
             return None
 
 
-    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN, filename_mapping = {}, sid = 0):
+    def __init__(self, name, host = '', storage_type = TYPE_DISK, backend = '', status = STAT_UNKNOWN, filename_mapping = {}, x509proxy = None, sid = 0):
         self._name = name
         self.host = host
         self.storage_type = Site.storage_type_val(storage_type)
@@ -107,18 +107,21 @@ class Site(object):
 
         self.partitions = {} # {Partition: SitePartition}
 
+        self.x509proxy = x509proxy
+
     def __str__(self):
-        return 'Site %s (host=%s, storage_type=%s, backend=%s, status=%s, id=%d)' % \
-            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status), self.id)
+        return 'Site %s (host=%s, storage_type=%s, backend=%s, status=%s, x509=%s, id=%d)' % \
+            (self._name, self.host, Site.storage_type_name(self.storage_type), self.backend, Site.status_name(self.status), self.x509proxy, self.id)
 
     def __repr__(self):
-        return 'Site(%s,%s,\'%s\',%s,\'%s\',%s,%d)' % \
-            (repr(self._name), repr(self.host), Site.storage_type_name(self.storage_type), repr(self.backend), Site.status_name(self.status), repr(self.filename_mapping), self.id)
+        return 'Site(%s,%s,\'%s\',%s,\'%s\',%s,%s,%d)' % \
+            (repr(self._name), repr(self.host), Site.storage_type_name(self.storage_type), repr(self.backend), Site.status_name(self.status), repr(self.filename_mapping), repr(self.x509proxy), self.id)
 
     def __eq__(self, other):
         return self is other or \
             (self._name == other._name and self.host == other.host and self.storage_type == other.storage_type and \
-            self.backend == other.backend and self.status == other.status and self.filename_mapping == other.filename_mapping)
+             self.backend == other.backend and self.status == other.status and \
+             self.filename_mapping == other.filename_mapping and self.x509proxy == other.x509proxy)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -133,6 +136,8 @@ class Site(object):
         self.filename_mapping = {}
         for protocol, mapping in other.filename_mapping.iteritems():
             self.filename_mapping[protocol] = Site.FileNameMapping(mapping._chains)
+
+        self.x509proxy = other.x509proxy
 
     def embed_into(self, inventory, check = False):
         updated = False

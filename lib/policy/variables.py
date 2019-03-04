@@ -241,6 +241,10 @@ class BlockReplicaOnTape(BlockReplicaAttr):
         BlockReplicaAttr.__init__(self, Attr.BOOL_TYPE)
 
     def _get(self, replica):
+        if not replica.is_complete():
+            # We dont want to delete incomplete blocks anyway
+            return False
+
         for rep in replica.block.replicas:
             if rep.site.storage_type == Site.TYPE_MSS and rep.is_complete():
                 return True

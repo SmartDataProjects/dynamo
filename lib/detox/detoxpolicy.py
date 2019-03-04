@@ -83,9 +83,11 @@ class PolicyLine(object):
         if self.condition.match(replica):
             self.has_match = True
 
+
             if issubclass(self.decision.action_cls, BlockAction):
                 # block-level
                 matching_block_replicas = self.condition.get_matching_blocks(replica)
+
                 if len(matching_block_replicas) == len(replica.block_replicas):
                     # but all blocks matched - return dataset level
                     action = self.decision.action_cls.dataset_level(self)
@@ -246,3 +248,4 @@ class DetoxPolicy(object):
         replica.block_replicas.update(block_replicas_tmp)
         
         return actions
+
