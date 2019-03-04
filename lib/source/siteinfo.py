@@ -46,14 +46,14 @@ class SiteInfoSource(object):
         else:
             self.exclude = None
 
-    def get_site(self, name):
+    def get_site(self, name, inventory):
         """
         @param name  Name of the site
         @return  A Site object with full info, or None if the site is not found.
         """
         raise NotImplementedError('get_site')
 
-    def get_site_list(self):
+    def get_site_list(self, inventory):
         """
         @return List of unlinked Site objects
         """
