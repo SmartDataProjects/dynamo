@@ -2,6 +2,8 @@ import logging
 import math
 
 from dynamo.dataformat import Dataset
+from dynamo.policy.variables import replica_variables
+from dynamo.policy.condition import Condition
 from base import BaseHandler, DealerRequest
 
 LOG = logging.getLogger(__name__)
@@ -19,6 +21,10 @@ class PopularityHandler(BaseHandler):
         self.max_dataset_size = config.max_dataset_size * 1.e+12
         self.max_replication = config.max_replication
         self.request_to_replica_threshold = config.request_to_replica_threshold
+        try:
+            self.condition = Condition(config.condition, replica_variables)
+        except:
+            self.condition = None
 
         self._datasets = []
 
@@ -36,6 +42,7 @@ class PopularityHandler(BaseHandler):
                 LOG.debug('Dataset %s request weight %f', dataset.name, request_weight)
 
             dataset_in_source_groups = False
+
             for dr in dataset.replicas:
                 for br in dr.block_replicas:
                     if br.group.name in self.source_groups:
@@ -44,6 +51,9 @@ class PopularityHandler(BaseHandler):
                         dataset_in_source_groups = True
 
             if not dataset_in_source_groups:
+                continue
+
+            if not self.condition.match(dataset):
                 continue
 
             if request_weight <= 0.:
