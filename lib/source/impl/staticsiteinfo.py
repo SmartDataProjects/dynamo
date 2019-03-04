@@ -1,6 +1,9 @@
 from dynamo.source.siteinfo import SiteInfoSource
 from dynamo.dataformat import Configuration, Site
 
+import logging
+LOG = logging.getLogger(__name__)
+
 class StaticSiteInfoSource(SiteInfoSource):
     """
     Site information source fully specified by the static configuration.
@@ -11,7 +14,7 @@ class StaticSiteInfoSource(SiteInfoSource):
         
         self.config = Configuration(config.sites)
 
-    def get_site(self, name): #override
+    def get_site(self, name, inventory): #override
         try:
             site_config = self.config[name]
         except KeyError:
@@ -20,13 +23,18 @@ class StaticSiteInfoSource(SiteInfoSource):
         storage_type = Site.storage_type_val(site_config.storage_type)
         backend = site_config.backend
 
-        return Site(name, host = site_config.host, storage_type = storage_type, backend = backend)
+        site_obj = Site(name, host = site_config.host, storage_type = storage_type, backend = backend)
+        if name in inventory.sites:
+            old_site_obj = inventory.sites[name]
+            site_obj.x509proxy = old_site_obj.x509proxy
 
-    def get_site_list(self): #override
+        return site_obj
+
+    def get_site_list(self, inventory): #override
         site_list = []
 
         for name in self.config.keys():
-            site_list.append(self.get_site(name))
+            site_list.append(self.get_site(name,inventory))
 
         return site_list
 
