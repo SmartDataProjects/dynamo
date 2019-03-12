@@ -93,6 +93,7 @@ def create_rrd(path):
 
 rrd_info = enforcer.report_back(inventory)
 
+
 for rule_name, already_there, en_route, still_missing in rrd_info:
     
     rrd_file = '%s/%s.rrd' % (rrd_dir, rule_name)
@@ -106,12 +107,13 @@ for rule_name, already_there, en_route, still_missing in rrd_info:
     timestamp = int(time.time()) / interval * interval
 
     try:
-        lasttime = rrdtool.fetch(rrd_file, "LAST")[0][1]
+        lasttime = rrdtool.last(rrd_file)
     except:
         lasttime = 0
-            
+
     if authorized and timestamp > lasttime:
         rrdtool.update(rrd_file, '%d:%i:%i:%i' % (timestamp, len(still_missing), len(en_route), len(already_there)))
+        LOG.info("rrdfile %s updated" % rrd_file)
 
         enroute_csv = rrd_dir + '/%s_enroute.csv' % rule_name 
         with open(enroute_csv,'w') as csvfile:

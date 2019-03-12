@@ -46,3 +46,5 @@ rlfsm.transfer_files(inventory)
 
 LOG.info('Checking and executing new file deletion subscriptions.')
 rlfsm.delete_files(inventory)
+
+LOG.info('FOM complete')

@@ -223,10 +223,13 @@ for sitename, site_records in records.iteritems():
                 continue
             else:
                 target_size = drepObj.size(physical = False)
-                if total != target_size:
+                if total != target_size and target_size != 0:
                     LOG.info('Correcting the target size for copy record %d and dataset %s from %i to %i' % (record.operation_id, dataset_name, total, target_size))
                     total = target_size
-            
+                elif total != target_size and target_size == 0:
+                    LOG.info('Target size 0 found. Cancelling transfer.')
+                    continue
+
             try:
                 current_total, current_copied = status_map[dataset_name + '_' + sitename]
             except KeyError:
