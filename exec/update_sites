@@ -36,6 +36,10 @@ from dynamo.utils.parallel import Map
 def set_status(site):
     LOG.info('Updating %s status', site.name)
     site.status = source.get_site_status(site.name)
+    for status in config.site_statuses:
+        if site.name in status:
+            site.status = int(status.split(":")[1])
+            break
     LOG.info('Status: %d', site.status)
 
 def set_mapping(site):
@@ -46,7 +50,7 @@ def set_mapping(site):
 
     LOG.info('Created mappings for %s', all_mappings.keys())
 
-sites = source.get_site_list()
+sites = source.get_site_list(inventory)
 
 Map().execute(set_status, sites)
 Map().execute(set_mapping, sites)
