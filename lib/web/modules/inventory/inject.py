@@ -1,5 +1,6 @@
 import time
 import logging
+import json
 
 from dynamo.web.exceptions import MissingParameter, IllFormedRequest, InvalidRequest, AuthorizationError, TryAgain
 from dynamo.web.modules._base import WebModule
@@ -34,6 +35,10 @@ class InjectDataBase(WebModule):
         counts = {}
 
         # blocks_with_new_file list used in the synchronous version of this class
+
+        with open('/tmp/data.json', 'w') as outfile:
+            json.dump(self.input_data, outfile)
+
 
         if 'dataset' in self.input_data:
             self._make_datasets(self.input_data['dataset'], inventory, counts)
@@ -223,27 +228,22 @@ class InjectDataBase(WebModule):
                     growing = False
                 else:
                     try:
+                        LOG.info(obj)
                         growing = obj['growing']
                     except KeyError:
                         growing = True
 
-                if growing:
-                    try:
-                        group_name = obj['group']
-                    except KeyError:
-                        group = df.Group.null_group
-                    else:
-                        try:
-                            group = inventory.groups[group_name]
-                        except KeyError:
-                            raise InvalidRequest('Unknown group %s' % group_name)
-    
-                    if group is df.Group.null_group:
-                        raise InvalidRequest('Growing dataset replica %s:%s needs a group' % (site.name, dataset.name))
-
-                else:
+                #if growing:
+                try:
+                    group_name = obj['group']
+                except KeyError:
                     group = df.Group.null_group
-                    
+                else:
+                    try:
+                        group = inventory.groups[group_name]
+                    except KeyError:
+                        raise InvalidRequest('Unknown group %s' % group_name)
+    
                 new_replica = df.DatasetReplica(dataset, site, growing = growing, group = group)
     
                 try:
@@ -377,16 +377,31 @@ class InjectDataBase(WebModule):
                         site = inventory.sites[site_name]
                     except KeyError:
                         raise InvalidRequest('Unknown site %s' % site_name)
-                    
+
+                    # Finding group
+                    tmpgroup = None
+
+                    for objdr in self.input_data['datasetreplica']: 
+                        if objdr['site'] != site_name:
+                            continue
+                        for element in self.input_data['dataset']:
+                            if element['name'] == objdr['dataset']:
+                                if 'group' in objdr:
+                                    tmpgroup = objdr['group']
+                                    break
+                  
                     block_replica = block.find_replica(site)
+
                     if block_replica is None:
                         # replica doesn't exist yet; create one here
-
-                        block_replica_data = {'block': block.real_name(), 'site': site.name, 'group': None, 'size': 0}
+                        LOG.info("Creating block replica with group: %s" % tmpgroup)
+                        block_replica_data = {'block': block.real_name(), 'site': site.name, 'group': tmpgroup, 'size': 0}
 
                         dataset_replica = block.dataset.find_replica(site)
+
                         if dataset_replica is None:
-                            dataset_replica_data = {'dataset': block.dataset.name, 'site': site.name, 'blockreplicas': [block_replica_data], 'growing': False}
+                            LOG.info("Defining dataset_replica_data")
+                            dataset_replica_data = {'dataset': block.dataset.name, 'site': site.name, 'blockreplicas': [block_replica_data], 'growing': False, 'group': tmpgroup}
                             self._make_datasetreplicas([dataset_replica_data], inventory, counts)
                         else:
                             self._make_blockreplicas([block_replica_data], dataset_replica, inventory, counts)
