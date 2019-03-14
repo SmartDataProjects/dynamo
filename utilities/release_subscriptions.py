@@ -33,9 +33,6 @@ for subscription in subscriptions:
     if args.ids is not None and subscription.id not in args.ids:
         continue
 
-#    if args.site is not None and subscription.destination.name != args.site:
-#        continue
-
     if args.reason is not None and subscription.hold_reason != args.reason:
         continue
 
