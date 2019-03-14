@@ -22,6 +22,7 @@ from dynamo.fileop.rlfsm import RLFSM
 rlfsm = RLFSM()
 
 if not authorized:
+    print "Using as read-only."
     rlfsm.set_read_only()
 
 subscriptions = rlfsm.get_subscriptions(inventory, op = 'transfer', status = ['held'])
@@ -32,8 +33,8 @@ for subscription in subscriptions:
     if args.ids is not None and subscription.id not in args.ids:
         continue
 
-    if args.site is not None and subscription.destination.name != args.site:
-        continue
+#    if args.site is not None and subscription.destination.name != args.site:
+#        continue
 
     if args.reason is not None and subscription.hold_reason != args.reason:
         continue
