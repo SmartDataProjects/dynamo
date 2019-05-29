@@ -17,7 +17,7 @@ from dynamo.core.executable import inventory
 nowtime = datetime.datetime.fromtimestamp(int(time.time())).strftime('%Y-%m-%d %H:%M:%S')
 
 # Dynamo history database: exitcode
-dynamoregistry = MySQL(Configuration(db = 'dynamoregister', user = 'dynamo', passwd = 'data4c3m2s1'))
+dynamoregistry = MySQL(Configuration(db = 'dynamoregister', user = 'dummyuser', passwd = 'dummypassword'))
 lock_entries = dynamoregistry.xquery('SELECT * FROM `detox_locks`')
 
 def get_lock_size(name,site):
