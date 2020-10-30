@@ -1,5 +1,6 @@
 *~
 *.pyc
+.ipynb_checkpoints
 policies/
 
 # These files may be needed when mounting working directory inside test container
