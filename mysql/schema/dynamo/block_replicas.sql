@@ -8,4 +8,4 @@ CREATE TABLE `block_replicas` (
   PRIMARY KEY (`block_id`,`site_id`),
   KEY `sites` (`site_id`),
   KEY `groups` (`group_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

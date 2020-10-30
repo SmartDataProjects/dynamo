@@ -7,4 +7,4 @@ CREATE TABLE `application_sequences` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`),
   KEY `status` (`status`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

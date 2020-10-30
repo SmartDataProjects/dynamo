@@ -5,4 +5,4 @@ CREATE TABLE `failed_transfers` (
   `exitcode` smallint(5) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `transfer` (`subscription_id`,`source_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

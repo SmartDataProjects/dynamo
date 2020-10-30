@@ -7,4 +7,4 @@ CREATE TABLE `fts_transfer_batches` (
   PRIMARY KEY (`id`),
   KEY `batch` (`batch_id`,`task_type`),
   KEY `fts` (`fts_server_id`,`job_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

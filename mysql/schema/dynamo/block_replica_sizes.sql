@@ -5,4 +5,4 @@ CREATE TABLE `block_replica_sizes` (
   `size` bigint(20) NOT NULL DEFAULT '0',
   PRIMARY KEY (`block_id`,`site_id`),
   KEY `sites` (`site_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

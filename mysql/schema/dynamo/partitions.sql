@@ -3,4 +3,4 @@ CREATE TABLE `partitions` (
   `name` varchar(16) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

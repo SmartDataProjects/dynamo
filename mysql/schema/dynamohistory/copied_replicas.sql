@@ -5,4 +5,4 @@ CREATE TABLE `copied_replicas` (
   `status` enum('enroute','complete','cancelled') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL DEFAULT 'enroute',
   UNIQUE KEY `copy` (`copy_id`,`dataset_id`),
   KEY `status` (`status`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

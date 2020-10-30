@@ -5,4 +5,4 @@ CREATE TABLE `standalone_transfer_batches` (
   `stage_token` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   `destination_site` varchar(32) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   PRIMARY KEY (`batch_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

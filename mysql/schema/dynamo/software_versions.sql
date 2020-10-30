@@ -3,4 +3,4 @@ CREATE TABLE `software_versions` (
   `version` int(10) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `version` (`version`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

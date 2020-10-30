@@ -6,4 +6,4 @@ CREATE TABLE `deletion_tasks` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `subscription` (`subscription_id`),
   KEY `batch` (`batch_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

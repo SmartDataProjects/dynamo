@@ -3,4 +3,4 @@ CREATE TABLE `deletion_request_sites` (
   `site_id` int(10) unsigned NOT NULL,
   KEY `request` (`request_id`),
   KEY `site` (`site_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

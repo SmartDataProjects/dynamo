@@ -6,4 +6,4 @@ CREATE TABLE `active_copies` (
   `created` datetime NOT NULL,
   `updated` datetime DEFAULT NULL,
   UNIQUE KEY `request` (`request_id`,`item`,`site`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

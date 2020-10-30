@@ -8,4 +8,4 @@ CREATE TABLE `deletion_requests` (
   KEY `request_time` (`request_time`),
   KEY `status` (`status`),
   KEY `user` (`user`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

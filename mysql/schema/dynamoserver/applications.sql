@@ -13,4 +13,4 @@ CREATE TABLE `applications` (
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `email` varchar(128) CHARACTER SET latin1 COLLATE latin1_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

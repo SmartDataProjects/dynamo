@@ -13,4 +13,4 @@ CREATE TABLE `cached_copy_requests` (
   KEY `request_time` (`request_time`),
   KEY `status` (`status`),
   KEY `user` (`user`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

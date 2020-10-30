@@ -8,4 +8,4 @@ CREATE TABLE `standalone_deletion_tasks` (
   `finish_time` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `status` (`status`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

@@ -7,4 +7,4 @@ CREATE TABLE `file_pre_subscriptions` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `subscription` (`file_name`,`site_name`,`delete`),
   KEY `delete` (`delete`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

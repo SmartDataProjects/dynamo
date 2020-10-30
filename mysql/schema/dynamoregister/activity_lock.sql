@@ -7,4 +7,4 @@ CREATE TABLE `activity_lock` (
   `note` text COLLATE latin1_general_cs,
   PRIMARY KEY (`id`),
   KEY `lock` (`user`,`service_id`,`application`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

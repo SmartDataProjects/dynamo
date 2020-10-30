@@ -5,4 +5,4 @@ CREATE TABLE `user_authorizations` (
   UNIQUE KEY `auth` (`user_id`,`role_id`,`target`),
   KEY `user` (`user_id`,`role_id`),
   KEY `target` (`target`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

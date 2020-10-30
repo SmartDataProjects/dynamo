@@ -11,4 +11,4 @@ CREATE TABLE `file_subscriptions` (
   UNIQUE KEY `subscription` (`file_id`,`site_id`,`delete`),
   KEY `delete` (`delete`),
   KEY `status` (`status`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

@@ -4,4 +4,4 @@ CREATE TABLE `fts_deletion_tasks` (
   `fts_file_id` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   KEY `fts` (`fts_batch_id`,`fts_file_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

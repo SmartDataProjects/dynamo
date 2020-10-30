@@ -3,4 +3,4 @@ CREATE TABLE `sites_snapshot_usage` (
   `timestamp` datetime NOT NULL,
   KEY `cycles` (`cycle_id`),
   KEY `timestamps` (`timestamp`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

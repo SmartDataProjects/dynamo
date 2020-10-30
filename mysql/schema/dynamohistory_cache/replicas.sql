@@ -5,4 +5,4 @@ CREATE TABLE `replicas` (
   `decision` enum('delete','keep','protect') CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL,
   `condition` int(10) unsigned NOT NULL,
   KEY `site_dataset` (`site_id`,`dataset_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

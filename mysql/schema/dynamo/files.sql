@@ -6,4 +6,4 @@ CREATE TABLE `files` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`),
   KEY `blocks` (`block_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

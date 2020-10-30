@@ -15,4 +15,4 @@ CREATE TABLE `file_transfers` (
   KEY `batch` (`batch_id`),
   KEY `created` (`created`),
   KEY `started` (`started`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

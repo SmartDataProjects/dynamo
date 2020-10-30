@@ -14,4 +14,4 @@ CREATE TABLE `copy_requests` (
   KEY `request_count` (`request_count`),
   KEY `status` (`status`),
   KEY `user` (`user`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

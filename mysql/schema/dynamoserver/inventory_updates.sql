@@ -3,4 +3,4 @@ CREATE TABLE `inventory_updates` (
   `cmd` enum('update','delete') NOT NULL,
   `obj` text CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

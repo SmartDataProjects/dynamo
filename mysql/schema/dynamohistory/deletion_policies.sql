@@ -4,4 +4,4 @@ CREATE TABLE `deletion_policies` (
   `text` text,
   PRIMARY KEY (`id`),
   KEY `hash` (`hash`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

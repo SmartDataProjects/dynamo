@@ -6,4 +6,4 @@ CREATE TABLE `filename_mappings` (
   `lfn_pattern` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   `pfn_pattern` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL,
   KEY `links` (`site_id`,`protocol`,`chain_id`,`index`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

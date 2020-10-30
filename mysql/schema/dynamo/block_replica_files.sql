@@ -5,4 +5,4 @@ CREATE TABLE `block_replica_files` (
   UNIQUE KEY `filereplica` (`file_id`,`site_id`),
   KEY `blockreplica` (`block_id`,`site_id`),
   KEY `site` (`site_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

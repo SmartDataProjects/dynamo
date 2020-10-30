@@ -8,4 +8,4 @@ CREATE TABLE `copy_cycles` (
   PRIMARY KEY (`id`),
   KEY `operations` (`operation`),
   KEY `partitions` (`partition_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

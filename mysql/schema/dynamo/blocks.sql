@@ -8,4 +8,4 @@ CREATE TABLE `blocks` (
   `last_update` datetime NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `full_name` (`dataset_id`,`name`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 CHECKSUM=1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 CHECKSUM=1;

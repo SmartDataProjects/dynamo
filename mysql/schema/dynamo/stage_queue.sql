@@ -7,4 +7,4 @@ CREATE TABLE `stage_queue` (
   `finish` bigint(20) unsigned DEFAULT NULL,
   `batchid` varchar(40) COLLATE latin1_general_cs DEFAULT NULL,
   UNIQUE KEY `file_site` (`file`,`site`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

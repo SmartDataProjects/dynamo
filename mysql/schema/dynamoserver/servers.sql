@@ -12,4 +12,4 @@ CREATE TABLE `servers` (
   `board_module` varchar(32) COLLATE latin1_general_cs DEFAULT NULL,
   `board_config` varchar(1024) COLLATE latin1_general_cs DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

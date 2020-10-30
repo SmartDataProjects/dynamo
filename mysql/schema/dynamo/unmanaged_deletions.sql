@@ -4,4 +4,4 @@ CREATE TABLE `unmanaged_deletions` (
   `url` varchar(512) COLLATE latin1_general_cs NOT NULL,
   PRIMARY KEY (`id`),
   KEY `sites` (`site`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_general_cs;

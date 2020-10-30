@@ -3,4 +3,4 @@ CREATE TABLE `copy_request_blocks` (
   `block_id` bigint(20) unsigned NOT NULL,
   KEY `request` (`request_id`),
   KEY `block` (`block_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
