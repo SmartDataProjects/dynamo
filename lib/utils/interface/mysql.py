@@ -30,7 +30,7 @@ from dynamo.dataformat import Configuration
 LOG = logging.getLogger(__name__)
 
 class MySQL(object):
-    """Generic thread-safe MySQL interface (for an interface)."""
+    """MySQL interface (for an interface)."""
 
     _default_config = Configuration()
     _default_parameters = {'': {}} # {user: config}
@@ -110,17 +110,6 @@ class MySQL(object):
 
         self._connection = None
 
-        # Avoid interference in case the module is used from multiple threads
-        self._connection_lock = multiprocessing.RLock()
-
-        # MySQL tables can be locked by multiple statements but are unlocked with one.
-        # In nested functions with each one locking different tables, we need to call UNLOCK TABLES
-        # only after the outermost function asks for it.
-        self._locked_tables = []
-        
-        # Use with care! If False, table locks and temporary tables cannot be used
-        self.reuse_connection = config.get('reuse_connection', MySQL._default_config.get('reuse_connection', True))
-
         # Default 1M characters
         self.max_query_len = config.get('max_query_len', MySQL._default_config.get('max_query_len', 1000000))
 
@@ -128,8 +117,6 @@ class MySQL(object):
         self.scratch_db = config.get('scratch_db', MySQL._default_config.get('scratch_db', ''))
 
         # Row id of the last insertion. Will be nonzero if the table has an auto-increment primary key.
-        # **NOTE** While core execution of query() and xquery() are locked and thread-safe, last_insert_id is not.
-        # Use insert_and_get_id() in a threaded environment.
         self.last_insert_id = 0
 
     def db_name(self):
@@ -184,14 +171,10 @@ class MySQL(object):
     def close_cursor(self, cursor):
         if cursor is not None:
             cursor.close()
-    
-        if not self.reuse_connection and self._connection is not None:
-            self._connection.close()
-            self._connection = None
 
     def query(self, sql, *args, **kwd):
         """
-        Execute an SQL query.
+        Execute an SQL query or a list of queries.
         If the query is an INSERT, return the inserted row id (0 if no insertion happened).
         If the query is an UPDATE, return the number of affected rows.
         If the query is a SELECT, return an array of:
@@ -209,8 +192,6 @@ class MySQL(object):
         except KeyError:
             silent = False
 
-        self._connection_lock.acquire()
-
         cursor = None
         try:
             cursor = self.get_cursor()
@@ -226,11 +207,20 @@ class MySQL(object):
             try:
                 for _ in range(num_attempts):
                     try:
+                        cursor.execute('START TRANSACTION')
+                        if type(sql) is list:
+                            for s in sql:
+                                if type(s) is tuple: # (template, args)
+                                    cursor.execute(*s)
+                                else:
+                                    cursor.execute(s, )
+                                cursor.execute(s)
                         cursor.execute(sql, args)
                         self._connection.commit()
                         break
+                        
                     except MySQLdb.OperationalError as err:
-                        if not (self.reuse_connection and err.args[0] == 2006):
+                        if err.args[0] != 2006:
                             raise
                             #2006 = MySQL server has gone away
                             #If we are reusing connections, this type of error is to be ignored
@@ -336,8 +326,7 @@ class MySQL(object):
 
     def xquery(self, sql, *args):
         """
-        Execute an SQL query. If the query is an INSERT, return the inserted row id (0 if no insertion happened).
-        If the query is a SELECT, return an iterator of:
+        Execute a SELECT query. Return an iterator of:
          - tuples if multiple columns are called
          - values if one column is called
         """
