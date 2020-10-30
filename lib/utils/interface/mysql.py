@@ -109,6 +109,8 @@ class MySQL(object):
             self._connection_parameters['db'] = config['db']
 
         self._connection = None
+        
+        self._cursor = None
 
         # Default 1M characters
         self.max_query_len = config.get('max_query_len', MySQL._default_config.get('max_query_len', 1000000))
@@ -136,6 +138,8 @@ class MySQL(object):
         return self.query('SELECT @@hostname')[0]
 
     def close(self):
+        self._close_cursor()
+            
         if self._connection is not None:
             self._connection.close()
             self._connection = None
@@ -161,17 +165,82 @@ class MySQL(object):
         conf['scratch_db'] = self.scratch_db
 
         return conf
+    
+    def _close_cursor(self):
+        if self._cursor is not None:
+            self._cursor.close()
+            self._cursor = None
 
-    def get_cursor(self, cursor_cls = MySQLdb.connections.Connection.default_cursor):
-        if self._connection is None:
-            self._connection = MySQLdb.connect(**self._connection_parameters)
+    def _query_core(self, sql, args, cursor_cls, commit, silent, num_attempts):
+        self.last_insert_id = 0
+        
+        continued_transaction = (self._cursor is not None)
 
-        return self._connection.cursor(cursor_cls)
+        if LOG.getEffectiveLevel() == logging.DEBUG:
+            if len(args) == 0:
+                LOG.debug(sql)
+            else:
+                LOG.debug(sql + ' % ' + str(args))
 
-    def close_cursor(self, cursor):
-        if cursor is not None:
-            cursor.close()
+        try:
+            for _ in range(num_attempts):
+                try:
+                    if self._connection is None:
+                        self._connection = MySQLdb.connect(**self._connection_parameters)
+                    
+                    if self._cursor is None:
+                        self._cursor = self._connection.cursor(cursor_cls)
+                        self._cursor.execute('START TRANSACTION')
+                        
+                    elif type(self._cursor) is not cursor_cls:
+                        raise RuntimeError('Cannot mix query and xquery calls without committing')
 
+                    if type(sql) is list:
+                        for s in sql:
+                            if type(s) is tuple: # (template, args)
+                                self._cursor.execute(*s)
+                            else:
+                                self._cursor.execute(s)
+                    else:
+                        self._cursor.execute(sql, args)
+
+                    if commit:
+                        self._connection.commit()
+
+                    break
+
+                except MySQLdb.OperationalError as err:
+                    if continued_transaction:
+                        LOG.warning('MySQL error occurred in a continued transaction. We do not know what statements have been rolled back.')
+
+                    if err.args[0] != 2006:
+                        raise
+                        #2006 = MySQL server has gone away
+                        #If we are reusing connections, this type of error is to be ignored
+
+                    if not silent:
+                        LOG.error(str(sys.exc_info()[1]))
+
+                    last_except = sys.exc_info()[1]
+
+                    # reconnect to server
+                    self._close_cursor()
+                    self._connection = None
+
+            else: # 10 failures
+                if not silent:
+                    LOG.error('Too many OperationalErrors. Last exception:')
+
+                raise last_except
+
+        except:
+            if not silent:
+                LOG.error('There was an error executing the following statement:')
+                LOG.error(sql[:10000])
+                LOG.error(sys.exc_info()[1])
+
+            raise        
+            
     def query(self, sql, *args, **kwd):
         """
         Execute an SQL query or a list of queries.
@@ -191,80 +260,26 @@ class MySQL(object):
             silent = kwd['silent']
         except KeyError:
             silent = False
-
-        cursor = None
+            
         try:
-            cursor = self.get_cursor()
+            commit = kwd['commit']
+        except KeyError:
+            commit = True
+            
+        try:
+            self._query_core(sql, args, MySQLdb.connections.Connection.default_cursor, commit, silent, num_attempts)
     
-            self.last_insert_id = 0
-
-            if LOG.getEffectiveLevel() == logging.DEBUG:
-                if len(args) == 0:
-                    LOG.debug(sql)
-                else:
-                    LOG.debug(sql + ' % ' + str(args))
-    
-            try:
-                for _ in range(num_attempts):
-                    try:
-                        cursor.execute('START TRANSACTION')
-                        if type(sql) is list:
-                            for s in sql:
-                                if type(s) is tuple: # (template, args)
-                                    cursor.execute(*s)
-                                else:
-                                    cursor.execute(s, )
-                                cursor.execute(s)
-                        cursor.execute(sql, args)
-                        self._connection.commit()
-                        break
-                        
-                    except MySQLdb.OperationalError as err:
-                        if err.args[0] != 2006:
-                            raise
-                            #2006 = MySQL server has gone away
-                            #If we are reusing connections, this type of error is to be ignored
-
-                        if not silent:
-                            LOG.error(str(sys.exc_info()[1]))
-
-                        last_except = sys.exc_info()[1]
-
-                        # reconnect to server
-                        cursor.close()
-                        self._connection = None
-                        cursor = self.get_cursor()
-        
-                else: # 10 failures
-                    if not silent:
-                        LOG.error('Too many OperationalErrors. Last exception:')
-
-                    raise last_except
-    
-            except:
-                if not silent:
-                    LOG.error('There was an error executing the following statement:')
-                    LOG.error(sql[:10000])
-                    LOG.error(sys.exc_info()[1])
-
-                raise
-    
-            result = cursor.fetchall()
-
-            if cursor.description is None:
+            if self._cursor.description is None:
                 # Was an insert, update, or delete query - really? Is there no other way to identify this?
-                if cursor.lastrowid != 0:
-                    # insert query on an auto-increment column
-                    self.last_insert_id = cursor.lastrowid
+                # lastrowid != 0 -> insert query on an auto-increment column
+                self.last_insert_id = self._cursor.lastrowid
 
-                self.close_cursor(cursor)
-                self._connection_lock.release()
+                rowcount = self._cursor.rowcount
 
-                return cursor.rowcount
+                return rowcount
+            
+            result = self._cursor.fetchall()
 
-            self.close_cursor(cursor)
-            self._connection_lock.release()
-    
             if len(result) != 0 and len(result[0]) == 1:
                 # single column requested
                 return [row[0] for row in result]
@@ -272,11 +287,56 @@ class MySQL(object):
             else:
                 return list(result)
 
-        except:
-            self.close_cursor(cursor)
-            self._fully_unlock()
-            raise
+        finally:
+            if commit:
+                self._close_cursor()
 
+    def xquery(self, sql, *args, **kwd):
+        """
+        Execute a SELECT query. Return an iterator of:
+         - tuples if multiple columns are called
+         - values if one column is called
+        """
+        try:
+            num_attempts = kwd['retries'] + 1
+        except KeyError:
+            num_attempts = 10
+            
+        try:
+            silent = kwd['silent']
+        except KeyError:
+            silent = False
+        
+        try:
+            commit = kwd['commit']
+        except KeyError:
+            commit = True
+
+        try:
+            self._query_core(sql, args, MySQLdb.cursors.SSCursor, False, silent, num_attempts)
+    
+            if self._cursor.description is None:
+                raise RuntimeError('xquery cannot be used for non-SELECT statements')
+                
+            if commit:
+                self._connection.commit()
+    
+            row = cursor.fetchone()
+            if row is not None:
+                single_column = (len(row) == 1)
+        
+                while row:
+                    if single_column:
+                        yield row[0]
+                    else:
+                        yield row
+        
+                    row = cursor.fetchone()
+
+        finally:
+            if commit:
+                self._close_cursor()
+            
     def insert_get_id(self, table, columns = None, values = None, select = None, db = None, **kwd):
         """
         Auto-form an INSERT statement, execute it under a lock and return the last_insert_id.
@@ -307,91 +367,27 @@ class MySQL(object):
 
         elif select is not None:
             sql += ' ' + select
+            
+        commit = kwd['commit']
 
-        self._connection_lock.acquire()
-
+        kwd['commit'] = False
+        inserted = self.query(sql, *tuple(args), **kwd)
         try:
-            inserted = self.query(sql, *tuple(args), **kwd)
             if type(inserted) is list:
                 raise RuntimeError('Non-insert query executed in insert_get_id')
             elif inserted != 1:
                 raise RuntimeError('More than one row inserted in insert_get_id')
-
-            self._connection_lock.release()
-            return self.last_insert_id
-
         except:
-            self._fully_unlock()
+            self._close_cursor()
             raise
+            
+        if commit:
+            self._connection.commit()
+            self._close_cursor()
 
-    def xquery(self, sql, *args):
-        """
-        Execute a SELECT query. Return an iterator of:
-         - tuples if multiple columns are called
-         - values if one column is called
-        """
-
-        self._connection_lock.acquire()
-
-        cursor = None
-        try:
-            cursor = self.get_cursor(MySQLdb.cursors.SSCursor)
+        return self.last_insert_id
     
-            self.last_insert_id = 0
-
-            if LOG.getEffectiveLevel() == logging.DEBUG:
-                if len(args) == 0:
-                    LOG.debug(sql)
-                else:
-                    LOG.debug(sql + ' % ' + str(args))
-    
-            try:
-                for _ in range(10):
-                    try:
-                        cursor.execute(sql, args)
-                        break
-                    except MySQLdb.OperationalError:
-                        LOG.error(str(sys.exc_info()[1]))
-                        last_except = sys.exc_info()[1]
-                        # reconnect to server
-                        cursor.close()
-                        self._connection = None
-                        cursor = self.get_cursor(MySQLdb.cursors.SSCursor)
-        
-                else: # 10 failures
-                    LOG.error('Too many OperationalErrors. Last exception:')
-                    raise last_except
-    
-            except:
-                LOG.error('There was an error executing the following statement:')
-                LOG.error(sql[:10000])
-                LOG.error(sys.exc_info()[1])
-                raise
-    
-            if cursor.description is None:
-                raise RuntimeError('xquery cannot be used for non-SELECT statements')
-    
-            row = cursor.fetchone()
-            if row is not None:
-                single_column = (len(row) == 1)
-        
-                while row:
-                    if single_column:
-                        yield row[0]
-                    else:
-                        yield row
-        
-                    row = cursor.fetchone()
-
-            self.close_cursor(cursor)
-            self._connection_lock.release()
-
-        except:
-            self.close_cursor(cursor)
-            self._fully_unlock()
-            raise
-
-    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = '', on_duplicate_key_update = ''):
+    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = '', on_duplicate_key_update = '', commit = True):
         result = []
         result_sum = None
 
@@ -421,7 +417,7 @@ class MySQL(object):
             if on_duplicate_key_update:
                 sql += ' ON DUPLICATE KEY UPDATE ' + on_duplicate_key_update
 
-            vals = self.query(sql)
+            vals = self.query(sql, commit=False)
             if type(vals) is list:
                 result.extend(vals)
             elif type(vals) is int:
@@ -431,25 +427,23 @@ class MySQL(object):
                 result_sum += vals
 
         # executing in batches - we may issue multiple queries
-        self._connection_lock.acquire()
-        try:
-            self._execute_in_batches(execute, pool)
-            self._connection_lock.release()
-        except:
-            self._fully_unlock()
-            raise
-
+        self._execute_in_batches(execute, pool)
+        
+        if commit:
+            self._connection.commit()
+            self._close_cursor()
+        
         if result_sum is None:
             return result
         else:
             return result_sum
 
-    def select_many(self, table, fields, key, pool, additional_conditions = [], order_by = ''):
+    def select_many(self, table, fields, key, pool, additional_conditions = [], order_by = '', commit = True):
         sqlbase = self._form_select_many_sql(table, fields)
 
-        return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by)
+        return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by, commit = commit)
 
-    def delete_many(self, table, key, pool, additional_conditions = [], db = ''):
+    def delete_many(self, table, key, pool, additional_conditions = [], db = '', commit = True):
         if type(table) is MySQL.bare:
             table_str = table.value
         else:
@@ -457,9 +451,9 @@ class MySQL(object):
 
         sqlbase = 'DELETE FROM {table}'.format(table = table_str)
 
-        self.execute_many(sqlbase, key, pool, additional_conditions)
+        self.execute_many(sqlbase, key, pool, additional_conditions, commit = commit)
 
-    def insert_many(self, table, fields, mapping, objects, do_update = True, db = '', update_columns = None):
+    def insert_many(self, table, fields, mapping, objects, do_update = True, db = '', update_columns = None, commit = True):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
         @param table          Table name.
@@ -535,11 +529,15 @@ class MySQL(object):
             if values == '':
                 break
             
-            num_inserted += self.query(sqlbase % values)
+            num_inserted += self.query(sqlbase % values, commit=False)
+            
+        if commit:
+            self._connection.commit()
+            self._close_cursor()
 
         return num_inserted
 
-    def insert_select_many(self, insert_table, insert_fields, select_table, select_fields, key, pool, do_update = True, db = '', update_columns = None, additional_conditions = [], order_by = ''):
+    def insert_select_many(self, insert_table, insert_fields, select_table, select_fields, key, pool, do_update = True, db = '', update_columns = None, additional_conditions = [], order_by = '', commit = True):
         """
         INSERT INTO insert_table (insert_fields) SELECT select_fields FROM select_table WHERE key IN pool
         @param insert_table   Table to insert to.
@@ -567,7 +565,7 @@ class MySQL(object):
 
             update = ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in update_columns)
 
-        num_inserted = self.execute_many(sqlbase, key, pool, additional_conditions = additional_conditions, order_by = order_by, on_duplicate_key_update = update)
+        num_inserted = self.execute_many(sqlbase, key, pool, additional_conditions = additional_conditions, order_by = order_by, on_duplicate_key_update = update, commit = commit)
         
         return num_inserted
 
@@ -627,52 +625,37 @@ class MySQL(object):
             # why was the function even called?
             return
 
-        # acquire thread lock so that other threads don't access the database while table locks are on
-        self._connection_lock.acquire()
+        self._locked_tables.append(tuple(terms))
 
-        try:
-            self._locked_tables.append(tuple(terms))
-    
-            # LOCK TABLES must always have the full list of tables to lock
-            # Append the terms to the tables we have already locked so far
-            # Need to uniquify the table list + override if there are overlapping READ and WRITE
-            all_tables = {}
-            for terms in self._locked_tables:
-                for term in terms:
-                    if term[1] == 'WRITE':
-                        all_tables[term[0]] = 'WRITE'
-                    elif term[0] not in all_tables:
-                        all_tables[term[0]] = term[1]
-    
-            sql = 'LOCK TABLES ' + ', '.join('%s %s' % term for term in all_tables.iteritems())
-            self.query(sql, **kwd)
+        # LOCK TABLES must always have the full list of tables to lock
+        # Append the terms to the tables we have already locked so far
+        # Need to uniquify the table list + override if there are overlapping READ and WRITE
+        all_tables = {}
+        for terms in self._locked_tables:
+            for term in terms:
+                if term[1] == 'WRITE':
+                    all_tables[term[0]] = 'WRITE'
+                elif term[0] not in all_tables:
+                    all_tables[term[0]] = term[1]
 
-        except:
-            self._fully_unlock()
-            raise
+        sql = 'LOCK TABLES ' + ', '.join('%s %s' % term for term in all_tables.iteritems())
+        self.query(sql, **kwd)
 
     def unlock_tables(self, force = False):
         """
         Unlock all tables if the current lock depth is 1 or force is True.
         """
 
-        try:
-            if force:
-                del self._locked_tables[:]
-            else:
-                try:
-                    self._locked_tables.pop()
-                except IndexError:
-                    raise RuntimeError('Call to unlock_tables does not match lock_tables')
-
-            if len(self._locked_tables) == 0:
-                self.query('UNLOCK TABLES')
-
-        except:
-            self._fully_unlock()
-            raise
+        if force:
+            del self._locked_tables[:]
         else:
-            self._connection_lock.release()
+            try:
+                self._locked_tables.pop()
+            except IndexError:
+                raise RuntimeError('Call to unlock_tables does not match lock_tables')
+
+        if len(self._locked_tables) == 0:
+            self.query('UNLOCK TABLES')
 
     def _form_select_many_sql(self, table, fields):
         if type(fields) is str:
@@ -803,7 +786,7 @@ class MySQL(object):
         else:
             sql = 'CREATE TEMPORARY TABLE `%s`.`%s` (' % (db, table)
             sql += ','.join(columns)
-            sql += ') ENGINE=MyISAM DEFAULT CHARSET=latin1'
+            sql += ') ENGINE=InnoDB DEFAULT CHARSET=latin1'
 
         self.query(sql)
 
@@ -877,11 +860,3 @@ class MySQL(object):
                 id_object_map[obj_id] = obj
 
         LOG.debug('make_map %s (%d) obejcts', table, num_obj)
-
-    def _fully_unlock(self):
-        # Call when the thread crashed. Fully releases the lock
-        while True:
-            try:
-                self._connection_lock.release()
-            except (RuntimeError, AssertionError):
-                break
