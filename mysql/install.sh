@@ -21,7 +21,8 @@ echo "-> Checking dependencies.."
 
 # Need the server running
 require rpm -q MySQL-python
-require pgrep -f mysqld
+pgrep -f mysqld || pgrep -f mariadbd > /dev/null
+[ $? -eq 0 ] || require false
 
 ROOTCNF=/etc/my.cnf.d/root.cnf
 HAS_ROOTCNF=true
