@@ -19,6 +19,8 @@ class MySQLInventoryStore(InventoryStore):
         InventoryStore.__init__(self, config)
 
         self._mysql = MySQL(config.db_params)
+        
+        # Load FOM configuration to determine which x509 proxy to use for each site
 
         config_path = os.getenv('DYNAMO_SERVER_CONFIG', '/etc/dynamo/fom_config.json')
 
@@ -46,14 +48,18 @@ class MySQLInventoryStore(InventoryStore):
         return MySQLInventoryStore(config)
 
     def get_partitions(self, conditions): #override
-        partition_names = set(self._mysql.query('SELECT `name` FROM `partitions`'))
-
-        for name in set(conditions.iterkeys()) - partition_names:
-            LOG.warning('Creating new partition %s defined in the conditions file.', name)
-            self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', name)
-
         partitions = {}
-        for part_id, name in self._mysql.query('SELECT `id`, `name` FROM `partitions`'):
+        
+        with self._mysql.transaction():
+            partition_names = set(self._mysql.query('SELECT `name` FROM `partitions` FOR UPDATE'))
+
+            for name in set(conditions.iterkeys()) - partition_names:
+                LOG.warning('Creating new partition %s defined in the conditions file.', name)
+                self._mysql.query('INSERT INTO `partitions` (`name`) VALUES (%s)', name)
+                
+            result = self._mysql.query('SELECT `id`, `name` FROM `partitions`')
+
+        for part_id, name in result:
             try:
                 condition = conditions[name]
             except KeyError:
@@ -77,7 +83,7 @@ class MySQLInventoryStore(InventoryStore):
                 subp = partitions[name]
                 subp._parent = partition
                 subpartitions.append(subp)
-                
+
             partition._subpartitions = tuple(subpartitions)
 
         # finally return as a list
@@ -462,12 +468,12 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query('DROP TABLE `partitions_tmp`')
 
         self._mysql.query('CREATE TABLE `partitions_tmp` LIKE `partitions`')
-
+        
         fields = ('id', 'name')
         mapping = lambda partition: (partition.id, partition.name)
 
-        num = self._mysql.insert_many('partitions_tmp', fields, mapping, partitions, do_update = False)
-
+        num = self._mysql.insert_many('partitions_tmp', fields, mapping, partitions, do_update=False)
+        
         self._mysql.query('DROP TABLE `partitions`')
         self._mysql.query('RENAME TABLE `partitions_tmp` TO `partitions`')
 
@@ -478,14 +484,14 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query('DROP TABLE `groups_tmp``')
             
         self._mysql.query('CREATE TABLE `groups_tmp` LIKE `groups`')
-
+        
         fields = ('id', 'name', 'olevel')
         mapping = lambda group: (group.id, group.name, Group.olevel_name(group.olevel))
 
         groups = [g for g in groups if g.name is not None]
 
-        num = self._mysql.insert_many('groups_tmp', fields, mapping, groups, do_update = False)
-
+        num = self._mysql.insert_many('groups_tmp', fields, mapping, groups, do_update=False)
+        
         self._mysql.query('DROP TABLE `groups`')
         self._mysql.query('RENAME TABLE `groups_tmp` TO `groups`')
 
@@ -496,43 +502,36 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query('DROP TABLE `sites_tmp`')
 
         self._mysql.query('CREATE TABLE `sites_tmp` LIKE `sites`')
+        
+        protocol_to_id = dict(self._mysql.xquery('SELECT `protocol`, `id` FROM `transfer_protocols`'))
 
-        fields = ('id', 'name', 'host', 'storage_type', 'backend', 'status')
-        mapping = lambda site: (site.id, site.name, site.host, Site.storage_type_name(site.storage_type), \
-            site.backend, Site.status_name(site.status))
+        with self._mysql.transaction():
+            fields = ('id', 'name', 'host', 'storage_type', 'backend', 'status')
+            mapping = lambda site: (site.id, site.name, site.host, Site.storage_type_name(site.storage_type), \
+                site.backend, Site.status_name(site.status))
 
-        num = self._mysql.insert_many('sites_tmp', fields, mapping, sites, do_update = False)
+            num = self._mysql.insert_many('sites_tmp', fields, mapping, sites, do_update=False)
 
-        if self._mysql.table_exists('filename_mappings_tmp'):
-            self._mysql.query('DROP TABLE `filename_mappings_tmp`')
+            fields = ('site_id', 'protocol_id', 'chain_id', 'index', 'lfn_pattern', 'pfn_pattern')
+            filename_mappings = []
 
-        self._mysql.query('CREATE TABLE `filename_mappings_tmp` LIKE `filename_mappings`')
-
-        fields = ('site_id', 'protocol', 'chain_id', 'index', 'lfn_pattern', 'pfn_pattern')
-
-        def site_mappings():
             for site in sites:
                 for protocol, mapping in site.filename_mapping.iteritems():
+                    if protocol not in protocol_to_id:
+                        protocol_to_id[protocol] = self._mysql.insert_get_id('transfer_protocols', columns=('protocol',), values=(protocol,))
+
                     for chain_id, chain in enumerate(mapping._chains):
                         for idx, (lfn, pfn) in enumerate(chain):
-                            yield (site.id, protocol, chain_id, idx, lfn, pfn)
+                            filename_mappings.append((site.id, protocol_to_id[protocol], chain_id, idx, lfn, pfn))
 
-        self._mysql.insert_many('filename_mappings_tmp', fields, None, site_mappings(), do_update = False)
-
+            self._mysql.insert_many('filename_mappings', fields, None, filename_mappings, do_update=True)
+            
         self._mysql.query('DROP TABLE `sites`')
         self._mysql.query('RENAME TABLE `sites_tmp` TO `sites`')
-
-        self._mysql.query('DROP TABLE `filename_mappings`')
-        self._mysql.query('RENAME TABLE `filename_mappings_tmp` TO `filename_mappings`')
 
         return num
 
     def _save_sitepartitions(self, sitepartitions): #override
-        if self._mysql.table_exists('quotas_tmp'):
-            self._mysql.query('DROP TABLE `quotas_tmp`')
-
-        self._mysql.query('CREATE TABLE `quotas_tmp` LIKE `quotas`')
-
         fields = ('site_id', 'partition_id', 'storage')
         mapping = lambda sp: (sp.site.id, sp.partition.id, sp.quota * 1.e-12)
 
@@ -542,47 +541,33 @@ class MySQLInventoryStore(InventoryStore):
                 if sitepartition.partition.subpartitions is None:
                     yield sitepartition
 
-        num = self._mysql.insert_many('quotas_tmp', fields, mapping, sitepartitions_baseonly(), do_update = False)
-
-        self._mysql.query('DROP TABLE `quotas`')
-        self._mysql.query('RENAME TABLE `quotas_tmp` TO `quotas`')
-
-        return num
+        return self._mysql.insert_many('quotas', fields, mapping, sitepartitions_baseonly(), do_update=True)
 
     def _save_datasets(self, datasets): #override
-        if self._mysql.table_exists('software_versions_tmp'):
-            self._mysql.query('DROP TABLE `software_versions_tmp`')
-
-        self._mysql.query('CREATE TABLE `software_versions_tmp` LIKE `software_versions`')
-
         if self._mysql.table_exists('datasets_tmp'):
             self._mysql.query('DROP TABLE `datasets_tmp`')
 
         self._mysql.query('CREATE TABLE `datasets_tmp` LIKE `datasets`')
-
-        fields = ('id', 'name', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        mapping = lambda dataset: (dataset.id, dataset.name, dataset.status, dataset.data_type, \
-            dataset._software_version_id, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
-
-        software_versions = set()
-        def get_dataset():
+        
+        columns = ', '.join('`%s`' % n for n in Dataset.SoftwareVersion.field_names)
+        software_version_to_id = dict()
+        for row in self._mysql.xquery('SELECT `id`, %s FROM `software_versions` FOR UPDATE' % columns):
+            software_version_to_id[row[1:]] = row[0]
+        
+        with self._mysql.transaction():
             for dataset in datasets:
-                software_versions.add(dataset.software_version)
-                yield dataset
+                if dataset.software_version not in software_version_to_id:
+                    software_version_to_id[dataset.software_version] = self._mysql.insert_get_id('software_versions', columns=Dataset.SoftwareVersion.field_names, values=dataset.software_version)
 
-        num = self._mysql.insert_many('datasets_tmp', fields, mapping, get_dataset(), do_update = False)
+            fields = ('id', 'name', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
+            mapping = lambda dataset: (dataset.id, dataset.name, dataset.status, dataset.data_type, \
+                software_version_to_id[dataset.software_version], time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
 
-        fields = ('id',) + Dataset.SoftwareVersion.field_names
-        mapping = lambda v: (v.id,) + v.value
-
-        self._mysql.insert_many('software_versions_tmp', fields, mapping, software_versions, do_update = False)
-
+            num = self._mysql.insert_many('datasets_tmp', fields, mapping, datasets, do_update=False)
+            
         self._mysql.query('DROP TABLE `datasets`')
         self._mysql.query('RENAME TABLE `datasets_tmp` TO `datasets`')
-
-        self._mysql.query('DROP TABLE `software_versions`')
-        self._mysql.query('RENAME TABLE `software_versions_tmp` TO `software_versions`')
-
+        
         return num
 
     def _save_blocks(self, blocks): #override
@@ -590,14 +575,14 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query('DROP TABLE `blocks_tmp`')
 
         self._mysql.query('CREATE TABLE `blocks_tmp` LIKE `blocks`')
-
+        
         fields = ('id', 'dataset_id', 'name', 'size', 'num_files', 'is_open', 'last_update')
         mapping = lambda block: (block.id, block.dataset.id, block.real_name(), \
             block.size, block.num_files, block.is_open, \
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.last_update)))
 
-        num = self._mysql.insert_many('blocks_tmp', fields, mapping, blocks, do_update = False)
-
+        num = self._mysql.insert_many('blocks_tmp', fields, mapping, blocks, do_update=False)
+        
         self._mysql.query('DROP TABLE `blocks`')
         self._mysql.query('RENAME TABLE `blocks_tmp` TO `blocks`')
 
@@ -612,8 +597,8 @@ class MySQLInventoryStore(InventoryStore):
         fields = ('id', 'block_id', 'size', 'name') + File.checksum_algorithms
         mapping = lambda lfile: (lfile.id, lfile.block.id, lfile.size, lfile.lfn) + lfile.checksum
 
-        num = self._mysql.insert_many('files_tmp', fields, mapping, files, do_update = False)
-
+        num = self._mysql.insert_many('files_tmp', fields, mapping, files, do_update=False)
+        
         self._mysql.query('DROP TABLE `files`')
         self._mysql.query('RENAME TABLE `files_tmp` TO `files`')
 
@@ -624,12 +609,12 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query('DROP TABLE `dataset_replicas_tmp`')
 
         self._mysql.query('CREATE TABLE `dataset_replicas_tmp` LIKE `dataset_replicas`')
-
+        
         fields = ('dataset_id', 'site_id', 'growing', 'group_id')
         mapping = lambda replica: (replica.dataset.id, replica.site.id, replica.growing, replica.group.id if replica.growing else None)
 
-        num = self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, replicas, do_update = False)
-
+        num = self._mysql.insert_many('dataset_replicas_tmp', fields, mapping, replicas, do_update=False)
+        
         self._mysql.query('DROP TABLE `dataset_replicas`')
         self._mysql.query('RENAME TABLE `dataset_replicas_tmp` TO `dataset_replicas`')
 
@@ -640,66 +625,60 @@ class MySQLInventoryStore(InventoryStore):
             self._mysql.query('DROP TABLE `block_replicas_tmp`')
 
         self._mysql.query('CREATE TABLE `block_replicas_tmp` LIKE `block_replicas`')
-
+        
         if BlockReplica._use_file_ids:
-            # Fill block_replicas_tmp normally
-            # is_complete is only used internally to distinguish empty and full replicas when there are no entries in block_replica_files
-            fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete')
-
-            mapping = lambda replica: (replica.block.id, replica.site.id, \
-                                       replica.group.id, replica.is_custodial, \
-                                       time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)),
-                                       replica.is_complete())
-
-            num = self._mysql.insert_many('block_replicas_tmp', fields, mapping, replicas, do_update = False)
-
-            # Fill block_replica_files_tmp
-            if self._mysql.table_exists('block_replica_files_tmp'):
-                self._mysql.query('DROP TABLE `block_replica_files_tmp`')
-
             self._mysql.query('CREATE TABLE `block_replica_files_tmp` LIKE `block_replica_files`')
-
-            fields = ('block_id', 'site_id', 'file_id')
-    
-            def get_filereplica():
-                for replica in replicas:
-                    if replica.is_complete():
-                        continue
-    
-                    for file_id in replica.file_ids:
-                        yield (replica.block.id, replica.site.id, file_id)
-    
-            self._mysql.insert_many('block_replica_files_tmp', fields, None, get_filereplicas(), do_update = False)
-
-            self._mysql.query('DROP TABLE `block_replica_files`')
-            self._mysql.query('RENAME TABLE `block_replica_files_tmp` TO `block_replica_files`')
-
         else:
             # Add a size column to block_replicas_tmp (speed optimization)
             self._mysql.query('ALTER TABLE `block_replicas_tmp` ADD COLUMN `num_files` int(11) NOT NULL, ADD COLUMN `size` bigint(20) NOT NULL')
-
-            # is_complete is not going to be used when _use_file_ids is False, but we'll save it anyway
-            fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete', 'num_files', 'size')
-
-            mapping = lambda replica: (replica.block.id, replica.site.id, \
-                                       replica.group.id, replica.is_custodial, \
-                                       time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)),
-                                       replica.is_complete(), replica.file_ids, replica.size)
-
-            num = self._mysql.insert_many('block_replicas_tmp', fields, mapping, replicas, do_update = False)
-
-            # Use SQL-level operation to fill the sizes_tmp table
-            if self._mysql.table_exists('block_replica_sizes_tmp'):
-                self._mysql.query('DROP TABLE `block_replica_sizes_tmp`')
-
             self._mysql.query('CREATE TABLE `block_replica_sizes_tmp` LIKE `block_replica_sizes`')
+        
+        with self._mysql.transaction():
+            if BlockReplica._use_file_ids:
+                # is_complete is only used internally to distinguish empty and full replicas when there are no entries in block_replica_files
+                fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete')
 
-            sql = 'INSERT INTO `block_replica_sizes_tmp` (`block_id`, `site_id`, `num_files`, `size`)'
-            sql += ' SELECT r.`block_id`, r.`site_id`, r.`num_files`, r.`size` FROM `block_replicas_tmp` AS r'
-            sql += ' INNER JOIN `blocks` AS b ON b.`id` = r.`block_id`'
-            sql += ' WHERE r.`num_files` != b.`num_files` OR r.`size` != b.`size`'
-            self._mysql.query(sql)
+                mapping = lambda replica: (replica.block.id, replica.site.id, \
+                                           replica.group.id, replica.is_custodial, \
+                                           time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)), \
+                                           replica.is_complete())
 
+                num = self._mysql.insert_many('block_replicas_tmp', fields, mapping, replicas, do_update=False)
+            
+                fields = ('block_id', 'site_id', 'file_id')
+
+                def get_filereplica():
+                    for replica in replicas:
+                        if replica.is_complete():
+                            continue
+
+                        for file_id in replica.file_ids:
+                            yield (replica.block.id, replica.site.id, file_id)
+
+                self._mysql.insert_many('block_replica_files_tmp', fields, None, get_filereplicas(), do_update=False)
+
+            else:
+                fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete', 'num_files', 'size')
+
+                # file_ids attribute corresponds to the number of files
+                mapping = lambda replica: (replica.block.id, replica.site.id, \
+                                           replica.group.id, replica.is_custodial, \
+                                           time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(replica.last_update)), \
+                                           replica.is_complete(), replica.file_ids, replica.size)
+
+                num = self._mysql.insert_many('block_replicas_tmp', fields, mapping, replicas, do_update=False)
+                
+                # Update the block_replicas_sizes_tmp table at SQL level
+                sql = 'INSERT INTO `block_replica_sizes_tmp` (`block_id`, `site_id`, `num_files`, `size`)'
+                sql += ' SELECT r.`block_id`, r.`site_id`, r.`num_files`, r.`size` FROM `block_replicas_tmp` AS r'
+                sql += ' INNER JOIN `blocks` AS b ON b.`id` = r.`block_id`'
+                sql += ' WHERE r.`num_files` != b.`num_files` OR r.`size` != b.`size`'
+                self._mysql.query(sql)
+
+        if BlockReplica._use_file_ids:
+            self._mysql.query('DROP TABLE `block_replica_files`')
+            self._mysql.query('RENAME TABLE `block_replica_files_tmp` TO `block_replica_files`')
+        else:
             self._mysql.query('ALTER TABLE `block_replicas_tmp` DROP COLUMN `num_files`, DROP COLUMN `size`')
 
             self._mysql.query('DROP TABLE `block_replica_sizes`')
@@ -1096,31 +1075,32 @@ class MySQLInventoryStore(InventoryStore):
             return
 
         is_complete = block_replica.is_complete()
+        
+        with self._mysql.transaction():
+            fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete')
+            self._mysql.insert_update('block_replicas', fields, block_id, site_id, \
+                                      block_replica.group.id, block_replica.is_custodial, \
+                                      time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)),
+                                      is_complete)
 
-        fields = ('block_id', 'site_id', 'group_id', 'is_custodial', 'last_update', 'is_complete')
-        self._mysql.insert_update('block_replicas', fields, block_id, site_id, \
-                                  block_replica.group.id, block_replica.is_custodial, \
-                                  time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_replica.last_update)),
-                                  is_complete)
+            if is_complete or block_replica.file_ids is None:
+                # If file_ids is None without is_complete(), it is actually a data corruption.
+                # We allow the case instead of crashing in the interest of server stability.
+                if BlockReplica._use_file_ids:
+                    table = 'block_replica_files'
+                else:
+                    table = 'block_replica_sizes'
 
-        if is_complete or block_replica.file_ids is None:
-            # If file_ids is None without is_complete(), it is actually a data corruption.
-            # We allow the case instead of crashing in the interest of server stability.
-            if BlockReplica._use_file_ids:
-                table = 'block_replica_files'
+                sql = 'DELETE FROM `{table}` WHERE `block_id` = %s AND `site_id` = %s'.format(table = table)
+                self._mysql.query(sql, block_id, site_id)
             else:
-                table = 'block_replica_sizes'
-
-            sql = 'DELETE FROM `{table}` WHERE `block_id` = %s AND `site_id` = %s'.format(table = table)
-            self._mysql.query(sql, block_id, site_id)
-        else:
-            if BlockReplica._use_file_ids:
-                fields = ('block_id', 'site_id', 'file_id')
-                mapping = lambda fid: (block_id, site_id, fid)
-                self._mysql.insert_many('block_replica_files', fields, mapping, block_replica.file_ids)
-            else:
-                fields = ('block_id', 'site_id', 'num_files', 'size')
-                self._mysql.insert_update('block_replica_sizes', fields, block_id, site_id, block_replica.file_ids, block_replica.size)
+                if BlockReplica._use_file_ids:
+                    fields = ('block_id', 'site_id', 'file_id')
+                    mapping = lambda fid: (block_id, site_id, fid)
+                    self._mysql.insert_many('block_replica_files', fields, mapping, block_replica.file_ids)
+                else:
+                    fields = ('block_id', 'site_id', 'num_files', 'size')
+                    self._mysql.insert_update('block_replica_sizes', fields, block_id, site_id, block_replica.file_ids, block_replica.size)
 
     def delete_blockreplica(self, block_replica): #override
         dataset_id = block_replica.block.dataset.id
@@ -1134,37 +1114,41 @@ class MySQLInventoryStore(InventoryStore):
         site_id = block_replica.site.id
         if site_id == 0:
             return
+        
+        with self._mysql.transaction():
+            sql = 'DELETE FROM `block_replicas` WHERE `block_id` = %s AND `site_id` = %s'
+            self._mysql.query(sql, block_id, site_id)
 
-        sql = 'DELETE FROM `block_replicas` WHERE `block_id` = %s AND `site_id` = %s'
-        self._mysql.query(sql, block_id, site_id)
+            sql = 'DELETE FROM `block_replica_files` WHERE `block_id` = %s AND `site_id` = %s'
+            self._mysql.query(sql, block_id, site_id)
 
-        sql = 'DELETE FROM `block_replica_files` WHERE `block_id` = %s AND `site_id` = %s'
-        self._mysql.query(sql, block_id, site_id)
+            sql = 'DELETE FROM `block_replica_sizes` WHERE `block_id` = %s AND `site_id` = %s'
+            self._mysql.query(sql, block_id, site_id)
 
-        sql = 'DELETE FROM `block_replica_sizes` WHERE `block_id` = %s AND `site_id` = %s'
-        self._mysql.query(sql, block_id, site_id)
-
-        sql = 'SELECT COUNT(*) FROM `block_replicas` AS br'
-        sql += ' INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`'
-        sql += ' WHERE b.`dataset_id` = %s AND br.`site_id` = %s'
-        if self._mysql.query(sql, dataset_id, site_id)[0] == 0:
-            sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
-            self._mysql.query(sql, dataset_id, site_id)
+            sql = 'SELECT COUNT(*) FROM `block_replicas` AS br'
+            sql += ' INNER JOIN `blocks` AS b ON b.`id` = br.`block_id`'
+            sql += ' WHERE b.`dataset_id` = %s AND br.`site_id` = %s'
+            if self._mysql.query(sql, dataset_id, site_id)[0] == 0:
+                sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
+                self._mysql.query(sql, dataset_id, site_id)
 
     def save_dataset(self, dataset): #override
-        if dataset.software_version is not None and dataset._software_version_id != 0:
-            sql = 'SELECT COUNT(*) FROM `software_versions` WHERE `id` = %s'
-            known_id = (self._mysql.query(sql, dataset._software_version_id)[0] == 1)
-            if not known_id:
-                columns = ', '.join('`%s`' % n for n in (('id',) + Dataset.SoftwareVersion.field_names))
-                placeholders = ', '.join(['%s'] * (1 + len(Dataset.SoftwareVersion.field_names)))
-                sql = 'INSERT INTO `software_versions` ({columns}) VALUES ({placeholders})'.format(columns = columns, placeholders = placeholders)
-                software_version_id = self._mysql.query(sql, dataset._software_version_id, *dataset.software_version)
-            
-        fields = ('name', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
-        self._mysql.insert_update('datasets', fields, dataset.name, \
-            dataset.status, dataset.data_type, dataset._software_version_id,
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+        with self._mysql.transaction():
+            # TODO
+            if dataset.software_version is not None and dataset._software_version_id != 0:
+                sql = 'SELECT COUNT(*) FROM `software_versions` WHERE `id` = %s'
+                known_id = (self._mysql.query(sql, dataset._software_version_id)[0] == 1)
+                if not known_id:
+                    columns = ', '.join('`%s`' % n for n in (('id',) + Dataset.SoftwareVersion.field_names))
+                    placeholders = ', '.join(['%s'] * (1 + len(Dataset.SoftwareVersion.field_names)))
+                    sql = 'INSERT INTO `software_versions` ({columns}) VALUES ({placeholders})'.format(columns = columns, placeholders = placeholders)
+                    software_version_id = self._mysql.query(sql, dataset._software_version_id, *dataset.software_version)
+
+            fields = ('name', 'status', 'data_type', 'software_version_id', 'last_update', 'is_open')
+            self._mysql.insert_update('datasets', fields, dataset.name, \
+                dataset.status, dataset.data_type, dataset._software_version_id,
+                time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(dataset.last_update)), dataset.is_open)
+
         dataset_id = self._mysql.last_insert_id
 
         if dataset_id != 0:
@@ -1203,17 +1187,18 @@ class MySQLInventoryStore(InventoryStore):
         site_id = dataset_replica.site.id
         if site_id == 0:
             return
+        
+        with self._mysql.transaction():
+            sql = 'DELETE FROM br, brf, brs USING `blocks` AS b'
+            sql += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
+            sql += ' LEFT JOIN `block_replica_files` AS brf ON brf.`block_id` = b.`id` AND brf.`site_id` = br.`site_id`'
+            sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id` AND brs.`site_id` = br.`site_id`'
+            sql += ' WHERE b.`dataset_id` = %s AND br.`site_id` = %s'
 
-        sql = 'DELETE FROM br, brf, brs USING `blocks` AS b'
-        sql += ' INNER JOIN `block_replicas` AS br ON br.`block_id` = b.`id`'
-        sql += ' LEFT JOIN `block_replica_files` AS brf ON brf.`block_id` = b.`id` AND brf.`site_id` = br.`site_id`'
-        sql += ' LEFT JOIN `block_replica_sizes` AS brs ON brs.`block_id` = b.`id` AND brs.`site_id` = br.`site_id`'
-        sql += ' WHERE b.`dataset_id` = %s AND br.`site_id` = %s'
+            self._mysql.query(sql, dataset_id, site_id)
 
-        self._mysql.query(sql, dataset_id, site_id)
-
-        sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
-        self._mysql.query(sql, dataset_id, site_id)
+            sql = 'DELETE FROM `dataset_replicas` WHERE `dataset_id` = %s AND `site_id` = %s'
+            self._mysql.query(sql, dataset_id, site_id)
 
     def save_group(self, group): #override
         fields = ('name', 'olevel')
@@ -1224,11 +1209,12 @@ class MySQLInventoryStore(InventoryStore):
             group.id = group_id
 
     def delete_group(self, group): #override
-        sql = 'DELETE FROM `groups` WHERE `id` = %s'
-        self._mysql.query(sql, group.id)
+        with self._mysql.transaction():
+            sql = 'DELETE FROM `groups` WHERE `id` = %s'
+            self._mysql.query(sql, group.id)
 
-        sql = 'UPDATE `block_replicas` SET `group_id` = 0 WHERE `group_id` = %s'
-        self._mysql.query(sql, group.id)
+            sql = 'UPDATE `block_replicas` SET `group_id` = 0 WHERE `group_id` = %s'
+            self._mysql.query(sql, group.id)
 
     def save_partition(self, partition): #override
         fields = ('name',)
@@ -1249,24 +1235,25 @@ class MySQLInventoryStore(InventoryStore):
         self._mysql.query(sql, partition.name)
 
     def save_site(self, site): #override
-        fields = ('name', 'host', 'storage_type', 'backend', 'status')
-        self._mysql.insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
-        site_id = self._mysql.last_insert_id
+        with self._mysql.transaction():
+            fields = ('name', 'host', 'storage_type', 'backend', 'status')
+            self._mysql.insert_update('sites', fields, site.name, site.host, site.storage_type, site.backend, site.status)
+            site_id = self._mysql.last_insert_id
 
-        if site_id != 0:
-            site.id = site_id
+            if site_id != 0:
+                site.id = site_id
 
-        self._mysql.query('DELETE FROM `filename_mappings` WHERE `site_id` = %s', site_id)
+            self._mysql.query('DELETE FROM `filename_mappings` WHERE `site_id` = %s', site_id)
 
-        fields = ('site_id', 'protocol', 'chain_id', 'index', 'lfn_pattern', 'pfn_pattern')
+            fields = ('site_id', 'protocol', 'chain_id', 'index', 'lfn_pattern', 'pfn_pattern')
 
-        def filename_mappings():
-            for protocol, mapping in site.filename_mapping.iteritems():
-                for chain_id, chain in enumerate(mapping._chains):
-                    for idx, (lfn, pfn) in enumerate(chain):
-                        yield (site.id, protocol, chain_id, idx, lfn, pfn)
+            def filename_mappings():
+                for protocol, mapping in site.filename_mapping.iteritems():
+                    for chain_id, chain in enumerate(mapping._chains):
+                        for idx, (lfn, pfn) in enumerate(chain):
+                            yield (site.id, protocol, chain_id, idx, lfn, pfn)
 
-        self._mysql.insert_many('filename_mappings', fields, None, filename_mappings(), do_update = False)
+            self._mysql.insert_many('filename_mappings', fields, None, filename_mappings(), do_update = False)
 
         # For new sites, persistency requires saving site partition data with default parameters.
         # We handle missing site partition entries at load time - if a row is missing, SitePartition object with
@@ -1304,11 +1291,12 @@ class MySQLInventoryStore(InventoryStore):
         Concatenate hex checksums of all tables and take the md5.
         """
         csstr = ''
-        for table in ['block_replica_files', 'block_replica_sizes', 'block_replicas', 'blocks', 'dataset_replicas', 'datasets', 'files', 'groups', 'partitions', 'quotas', 'sites', 'filename_mappings', 'software_versions']:
-            cksum = hex(self._mysql.query('CHECKSUM TABLE `%s`' % table)[0][1])[2:] # remote 0x
-            if len(cksum) < 8:
-                padding = '0' * (8 - len(cksum))
-                cksum = padding + cksum
-            csstr += cksum
+        with self._mysql.transaction():
+            for table in ['block_replica_files', 'block_replica_sizes', 'block_replicas', 'blocks', 'dataset_replicas', 'datasets', 'files', 'groups', 'partitions', 'quotas', 'sites', 'filename_mappings', 'software_versions']:
+                cksum = hex(self._mysql.query('CHECKSUM TABLE `%s`' % table)[0][1])[2:] # remote 0x
+                if len(cksum) < 8:
+                    padding = '0' * (8 - len(cksum))
+                    cksum = padding + cksum
+                csstr += cksum
 
         return hashlib.md5(csstr).hexdigest()

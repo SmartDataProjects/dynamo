@@ -29,6 +29,40 @@ from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 
+# Use contextlib when upgrading to py3
+class Transaction(object):
+    def __init__(self, mysql, cursor_cls):
+        self._mysql = mysql
+        
+        if self._mysql._connection is None:
+            self._mysql._connection = MySQLdb.connect(**self._mysql._connection_parameters)
+            
+        self._cursor_cls = cursor_cls
+        
+    def __enter__(self):
+        if self._mysql._cursor is not None:
+            raise RuntimeError('There is already a transaction taking place')
+            
+        self._mysql._cursor = self._mysql._connection.cursor(self._cursor_cls)
+        self._mysql._cursor.execute('START TRANSACTION')
+        
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None:
+            self._connection.commit()
+
+        self._close_cursor()
+
+class nullcontext(object):
+    def __init__(self):
+        pass
+    
+    def __enter__(self, cursor_cls=None):
+        pass
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
+
+        
 class MySQL(object):
     """MySQL interface (for an interface)."""
 
@@ -111,7 +145,7 @@ class MySQL(object):
         self._connection = None
         
         self._cursor = None
-
+        
         # Default 1M characters
         self.max_query_len = config.get('max_query_len', MySQL._default_config.get('max_query_len', 1000000))
 
@@ -171,11 +205,19 @@ class MySQL(object):
             self._cursor.close()
             self._cursor = None
 
-    def _query_core(self, sql, args, cursor_cls, commit, silent, num_attempts):
+    def _query_core(self, sql, args=tuple(), cursor_cls=MySQLdb.connections.Connection.default_cursor, stmt_type='rw', kwd=dict(), rowcount=None):
+        try:
+            num_attempts = kwd['retries'] + 1
+        except KeyError:
+            num_attempts = 10
+
+        try:
+            silent = kwd['silent']
+        except KeyError:
+            silent = False
+
         self.last_insert_id = 0
         
-        continued_transaction = (self._cursor is not None)
-
         if LOG.getEffectiveLevel() == logging.DEBUG:
             if len(args) == 0:
                 LOG.debug(sql)
@@ -184,34 +226,44 @@ class MySQL(object):
 
         try:
             for _ in range(num_attempts):
-                try:
-                    if self._connection is None:
-                        self._connection = MySQLdb.connect(**self._connection_parameters)
-                    
+                try:                    
                     if self._cursor is None:
-                        self._cursor = self._connection.cursor(cursor_cls)
-                        self._cursor.execute('START TRANSACTION')
-                        
-                    elif type(self._cursor) is not cursor_cls:
-                        raise RuntimeError('Cannot mix query and xquery calls without committing')
-
-                    if type(sql) is list:
-                        for s in sql:
-                            if type(s) is tuple: # (template, args)
-                                self._cursor.execute(*s)
-                            else:
-                                self._cursor.execute(s)
+                        transaction = self.transaction(cursor_cls=cursor_cls)
+                    elif type(self._cursor) is cursor_cls:
+                        transaction = nullcontext()
                     else:
-                        self._cursor.execute(sql, args)
-
-                    if commit:
-                        self._connection.commit()
-
-                    break
+                        raise RuntimeError('Cannot mix query and xquery calls without committing')
+                        
+                    with transaction:
+                        if type(sql) is list:
+                            for s in sql:
+                                if type(s) is tuple: # (template, args)
+                                    self._cursor.execute(*s)
+                                else:
+                                    self._cursor.execute(s)
+                        else:
+                            self._cursor.execute(sql, args)
+                            
+                        if self._cursor.description is None:
+                            # Was an insert, update, or delete query - really? Is there no other way to identify this?
+                            # lastrowid != 0 -> insert query on an auto-increment column
+                            
+                            if 'w' not in stmt_type:
+                                raise RuntimeError('xquery cannot be used for non-SELECT statements')
+                                
+                            self.last_insert_id = self._cursor.lastrowid
+                            
+                        elif 'r' not in stmt_type:
+                            raise RuntimeError('Non-insert query executed in insert_get_id')
+                            
+                        if rowcount is not None and self._cursor.rowcount != rowcount:
+                            raise RuntimeError('More than one row inserted in insert_get_id')
+                            
+                    return
 
                 except MySQLdb.OperationalError as err:
-                    if continued_transaction:
-                        LOG.warning('MySQL error occurred in a continued transaction. We do not know what statements have been rolled back.')
+                    if type(transaction) is nullcontext:
+                        raise RuntimeError('MySQL error occurred in a continued transaction. We do not know what statements have been rolled back.')
 
                     if err.args[0] != 2006:
                         raise
@@ -239,7 +291,31 @@ class MySQL(object):
                 LOG.error(sql[:10000])
                 LOG.error(sys.exc_info()[1])
 
-            raise        
+            raise
+
+#py3
+#     @contextmanager
+#     def transaction(self):
+#         if self._connection is None:
+#             self._connection = MySQLdb.connect(**self._connection_parameters)
+        
+#         if self._cursor is not None:
+#             raise RuntimeError('There is already a transaction taking place')
+            
+#         self._cursor = self._connection.cursor(cursor_cls)
+#         self._cursor.execute('START TRANSACTION')
+        
+#         try:
+#             yield None
+#         except:
+#             pass
+#         else:
+#             self._connection.commit()
+#         finally:
+#             self._close_cursor()
+
+    def transaction(self, cursor_cls=MySQLdb.connections.Connection.default_cursor):
+        return Transaction(self, cursor_cls)
             
     def query(self, sql, *args, **kwd):
         """
@@ -251,45 +327,19 @@ class MySQL(object):
          - values if one column is called
         """
 
-        try:
-            num_attempts = kwd['retries'] + 1
-        except KeyError:
-            num_attempts = 10
+        self._query_core(sql, args=args, kwd=kwd)
 
-        try:
-            silent = kwd['silent']
-        except KeyError:
-            silent = False
-            
-        try:
-            commit = kwd['commit']
-        except KeyError:
-            commit = True
-            
-        try:
-            self._query_core(sql, args, MySQLdb.connections.Connection.default_cursor, commit, silent, num_attempts)
-    
-            if self._cursor.description is None:
-                # Was an insert, update, or delete query - really? Is there no other way to identify this?
-                # lastrowid != 0 -> insert query on an auto-increment column
-                self.last_insert_id = self._cursor.lastrowid
+        if self._cursor.description is None:
+            return self._cursor.rowcount
 
-                rowcount = self._cursor.rowcount
+        result = self._cursor.fetchall()
 
-                return rowcount
-            
-            result = self._cursor.fetchall()
+        if len(result) != 0 and len(result[0]) == 1:
+            # single column requested
+            return [row[0] for row in result]
 
-            if len(result) != 0 and len(result[0]) == 1:
-                # single column requested
-                return [row[0] for row in result]
-    
-            else:
-                return list(result)
-
-        finally:
-            if commit:
-                self._close_cursor()
+        else:
+            return list(result)
 
     def xquery(self, sql, *args, **kwd):
         """
@@ -297,47 +347,22 @@ class MySQL(object):
          - tuples if multiple columns are called
          - values if one column is called
         """
-        try:
-            num_attempts = kwd['retries'] + 1
-        except KeyError:
-            num_attempts = 10
-            
-        try:
-            silent = kwd['silent']
-        except KeyError:
-            silent = False
-        
-        try:
-            commit = kwd['commit']
-        except KeyError:
-            commit = True
 
-        try:
-            self._query_core(sql, args, MySQLdb.cursors.SSCursor, False, silent, num_attempts)
-    
-            if self._cursor.description is None:
-                raise RuntimeError('xquery cannot be used for non-SELECT statements')
-                
-            if commit:
-                self._connection.commit()
-    
-            row = cursor.fetchone()
-            if row is not None:
-                single_column = (len(row) == 1)
-        
-                while row:
-                    if single_column:
-                        yield row[0]
-                    else:
-                        yield row
-        
-                    row = cursor.fetchone()
+        self._query_core(sql, args=args, cursor_cls=MySQLdb.cursors.SSCursor, stmt_type='r', kwd=kwd)
 
-        finally:
-            if commit:
-                self._close_cursor()
-            
-    def insert_get_id(self, table, columns = None, values = None, select = None, db = None, **kwd):
+        row = self._cursor.fetchone()
+        if row is not None:
+            single_column = (len(row) == 1)
+
+            while row:
+                if single_column:
+                    yield row[0]
+                else:
+                    yield row
+
+                row = self._cursor.fetchone()
+
+    def insert_get_id(self, table, columns = None, values = None, select = None, **kwd):
         """
         Auto-form an INSERT statement, execute it under a lock and return the last_insert_id.
         @param table    Table name without reverse-quotes.
@@ -368,26 +393,11 @@ class MySQL(object):
         elif select is not None:
             sql += ' ' + select
             
-        commit = kwd['commit']
-
-        kwd['commit'] = False
-        inserted = self.query(sql, *tuple(args), **kwd)
-        try:
-            if type(inserted) is list:
-                raise RuntimeError('Non-insert query executed in insert_get_id')
-            elif inserted != 1:
-                raise RuntimeError('More than one row inserted in insert_get_id')
-        except:
-            self._close_cursor()
-            raise
-            
-        if commit:
-            self._connection.commit()
-            self._close_cursor()
-
+        self._query_core(sql, args=tuple(args), stmt_type='w', kwd=kwd, rowcount=1)
+        
         return self.last_insert_id
     
-    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = '', on_duplicate_key_update = '', commit = True):
+    def execute_many(self, sqlbase, key, pool, additional_conditions = [], order_by = '', on_duplicate_key_update = ''):
         result = []
         result_sum = None
 
@@ -417,7 +427,7 @@ class MySQL(object):
             if on_duplicate_key_update:
                 sql += ' ON DUPLICATE KEY UPDATE ' + on_duplicate_key_update
 
-            vals = self.query(sql, commit=False)
+            vals = self.query(sql)
             if type(vals) is list:
                 result.extend(vals)
             elif type(vals) is int:
@@ -429,21 +439,17 @@ class MySQL(object):
         # executing in batches - we may issue multiple queries
         self._execute_in_batches(execute, pool)
         
-        if commit:
-            self._connection.commit()
-            self._close_cursor()
-        
         if result_sum is None:
             return result
         else:
             return result_sum
 
-    def select_many(self, table, fields, key, pool, additional_conditions = [], order_by = '', commit = True):
+    def select_many(self, table, fields, key, pool, additional_conditions = [], order_by = ''):
         sqlbase = self._form_select_many_sql(table, fields)
 
-        return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by, commit = commit)
+        return self.execute_many(sqlbase, key, pool, additional_conditions, order_by = order_by)
 
-    def delete_many(self, table, key, pool, additional_conditions = [], db = '', commit = True):
+    def delete_many(self, table, key, pool, additional_conditions = [], db = ''):
         if type(table) is MySQL.bare:
             table_str = table.value
         else:
@@ -451,9 +457,9 @@ class MySQL(object):
 
         sqlbase = 'DELETE FROM {table}'.format(table = table_str)
 
-        self.execute_many(sqlbase, key, pool, additional_conditions, commit = commit)
+        self.execute_many(sqlbase, key, pool, additional_conditions)
 
-    def insert_many(self, table, fields, mapping, objects, do_update = True, db = '', update_columns = None, commit = True):
+    def insert_many(self, table, fields, mapping, objects, do_update = True, db = '', update_columns = None):
         """
         INSERT INTO table (fields) VALUES (mapping(objects)).
         @param table          Table name.
@@ -504,40 +510,44 @@ class MySQL(object):
         template = '(' + ','.join(['%s'] * ncol) + ')'
 
         num_inserted = 0
-
-        while True:
-            values = ''
-
-            while itr:
-                if mapping is None:
-                    values += template % MySQL.escape(obj)
-                else:
-                    values += template % MySQL.escape(mapping(obj))
-    
-                try:
-                    obj = itr.next()
-                except StopIteration:
-                    itr = None
-                    break
-
-                # MySQL allows queries up to 1M characters
-                if self.max_query_len > 0 and len(values) > self.max_query_len:
-                    break
-
-                values += ','
-
-            if values == '':
-                break
+        
+        if self._cursor is None:
+            transaction = self.transaction()
+        else:
+            transaction = nullcontext()
             
-            num_inserted += self.query(sqlbase % values, commit=False)
-            
-        if commit:
-            self._connection.commit()
-            self._close_cursor()
+        with transaction:
+            while True:
+                values = ''
 
+                while itr:
+                    if mapping is None:
+                        values += template % MySQL.escape(obj)
+                    else:
+                        values += template % MySQL.escape(mapping(obj))
+
+                    try:
+                        obj = itr.next()
+                    except StopIteration:
+                        itr = None
+                        break
+
+                    # MySQL allows queries up to 1M characters
+                    if self.max_query_len > 0 and len(values) > self.max_query_len:
+                        break
+
+                    values += ','
+
+                if values == '':
+                    break
+                    
+                self._query_core(sqlbase % values, stmt_type='w', kwd=kwd)
+
+                num_inserted += self._cursor.rowcount
+            
         return num_inserted
 
-    def insert_select_many(self, insert_table, insert_fields, select_table, select_fields, key, pool, do_update = True, db = '', update_columns = None, additional_conditions = [], order_by = '', commit = True):
+    def insert_select_many(self, insert_table, insert_fields, select_table, select_fields, key, pool, do_update = True, db = '', update_columns = None, additional_conditions = [], order_by = ''):
         """
         INSERT INTO insert_table (insert_fields) SELECT select_fields FROM select_table WHERE key IN pool
         @param insert_table   Table to insert to.
@@ -565,7 +575,7 @@ class MySQL(object):
 
             update = ','.join('`{f}`=VALUES(`{f}`)'.format(f = f) for f in update_columns)
 
-        num_inserted = self.execute_many(sqlbase, key, pool, additional_conditions = additional_conditions, order_by = order_by, on_duplicate_key_update = update, commit = commit)
+        num_inserted = self.execute_many(sqlbase, key, pool, additional_conditions = additional_conditions, order_by = order_by, on_duplicate_key_update = update)
         
         return num_inserted
 
@@ -590,8 +600,10 @@ class MySQL(object):
         sql += ') VALUES (' + placeholders + ')'
         sql += ' ON DUPLICATE KEY UPDATE '
         sql += ', '.join('`%s`=VALUES(`%s`)' % (f, f) for f in update_columns)
-
-        return self.query(sql, *values, **kwd)
+        
+        self._query_core(sql, args=values, stmt_type='w', kwd=kwd)
+        
+        return self._cursor.rowcount
 
     def lock_tables(self, read = [], write = [], **kwd):
         """
@@ -685,81 +697,87 @@ class MySQL(object):
         Execute the execute function in batches. Pool can be a list or a tuple that defines
         the pool of rows to run execute on.
         """
-
-        if type(pool) is tuple:
-            if len(pool) == 2:
-                execute('(SELECT `%s` FROM `%s`)' % pool)
-
-            elif len(pool) == 3:
-                execute('(SELECT `%s` FROM `%s` WHERE %s)' % pool)
-
-            elif len(pool) == 4:
-                # nested pool: the fourth element is the pool argument
-                def nested_execute(expr):
-                    pool_expr = '(SELECT `%s` FROM `%s` WHERE `%s` IN ' % pool[:3]
-                    pool_expr += expr
-                    pool_expr += ')'
-                    execute(pool_expr)
-
-                self._execute_in_batches(nested_execute, pool[3])
-
-            return
-
-        elif type(pool) is MySQL.bare or type(pool) is str:
-            # case str: backward compatibility
-            execute(pool)
-
-            return
-
-        # case: container or iterator
-
-        try:
-            if len(pool) == 0:
-                return
-        except TypeError:
-            pass
-
-        itr = iter(pool)
-
-        try:
-            obj = itr.next()
-        except StopIteration:
-            # empty set!
-            pool_expr = '(NULL)'
-            execute(pool_expr)
-            return
-
-        # type-checking the element - all elements must share a type
-        if type(obj) is tuple or type(obj) is list:
-            escape = MySQL.stringify_sequence
+        
+        if self._cursor is None:
+            transaction = self.transaction()
         else:
-            escape = MySQL.escape
+            transaction = nullcontext()
+            
+        with transaction:
+            if type(pool) is tuple:
+                if len(pool) == 2:
+                    execute('(SELECT `%s` FROM `%s`)' % pool)
 
-        # need to repeat in case pool is a long list
-        while True:
-            pool_expr = '('
+                elif len(pool) == 3:
+                    execute('(SELECT `%s` FROM `%s` WHERE %s)' % pool)
 
-            while itr:
-                # tuples and scalars are all quoted by escape()
-                pool_expr += escape(obj)
+                elif len(pool) == 4:
+                    # nested pool: the fourth element is the pool argument
+                    def nested_execute(expr):
+                        pool_expr = '(SELECT `%s` FROM `%s` WHERE `%s` IN ' % pool[:3]
+                        pool_expr += expr
+                        pool_expr += ')'
+                        execute(pool_expr)
 
-                try:
-                    obj = itr.next()
-                except StopIteration:
-                    itr = None
+                    self._execute_in_batches(nested_execute, pool[3])
+
+                return
+
+            elif type(pool) is MySQL.bare or type(pool) is str:
+                # case str: backward compatibility
+                execute(pool)
+
+                return
+
+            # case: container or iterator
+
+            try:
+                if len(pool) == 0:
+                    return
+            except TypeError:
+                pass
+
+            itr = iter(pool)
+
+            try:
+                obj = itr.next()
+            except StopIteration:
+                # empty set!
+                pool_expr = '(NULL)'
+                execute(pool_expr)
+                return
+
+            # type-checking the element - all elements must share a type
+            if type(obj) is tuple or type(obj) is list:
+                escape = MySQL.stringify_sequence
+            else:
+                escape = MySQL.escape
+
+            # need to repeat in case pool is a long list
+            while True:
+                pool_expr = '('
+
+                while itr:
+                    # tuples and scalars are all quoted by escape()
+                    pool_expr += escape(obj)
+
+                    try:
+                        obj = itr.next()
+                    except StopIteration:
+                        itr = None
+                        break
+
+                    if self.max_query_len > 0 and len(pool_expr) > self.max_query_len:
+                        break
+
+                    pool_expr += ','
+
+                if pool_expr == '(':
                     break
 
-                if self.max_query_len > 0 and len(pool_expr) > self.max_query_len:
-                    break
+                pool_expr += ')'
 
-                pool_expr += ','
-
-            if pool_expr == '(':
-                break
-
-            pool_expr += ')'
-
-            execute(pool_expr)
+                execute(pool_expr)
 
     def table_exists(self, table, db = ''):
         if not db:
@@ -788,7 +806,7 @@ class MySQL(object):
             sql += ','.join(columns)
             sql += ') ENGINE=InnoDB DEFAULT CHARSET=latin1'
 
-        self.query(sql)
+        self._query_core(sql)
 
     def truncate_tmp_table(self, table, db = ''):
         if not db:
@@ -819,12 +837,12 @@ class MySQL(object):
 
         self.query('SET sql_notes = 1')
 
-    def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False):
+    def make_map(self, table, objects, object_id_map = None, id_object_map = None, key = None, tmp_join = False, name_column = 'name'):
         objitr = iter(objects)
 
         if tmp_join:
             tmp_table = table + '_map'
-            columns = ['`name` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL', 'PRIMARY KEY (`name`)']
+            columns = ['`%s` varchar(512) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL', 'PRIMARY KEY (`%s`)' % (name_column, name_column)]
             self.create_tmp_table(tmp_table, columns)
 
             # need to create a list first because objects can already be an iterator and iterators can iterate only once
@@ -832,16 +850,16 @@ class MySQL(object):
             objitr = iter(objlist)
 
             if key is None:
-                self.insert_many(tmp_table, ('name',), lambda obj: (obj.name,), objlist, db = self.scratch_db)
+                self.insert_many(tmp_table, (name_column,), lambda obj: (obj.name,), objlist, db = self.scratch_db)
             else:
-                self.insert_many(tmp_table, ('name',), lambda obj: (key(obj),), objlist, db = self.scratch_db)
+                self.insert_many(tmp_table, (name_column,), lambda obj: (key(obj),), objlist, db = self.scratch_db)
 
-            name_to_id = dict(self.xquery('SELECT t1.`name`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s`.`%s` AS t2 ON t2.`name` = t1.`name`' % (table, self.scratch_db, tmp_table)))
+            name_to_id = dict(self.xquery('SELECT t1.`%s`, t1.`id` FROM `%s` AS t1 INNER JOIN `%s`.`%s` AS t2 ON t2.`%s` = t1.`%s`' % (name_column, table, self.scratch_db, tmp_table, name_column, name_column)))
 
             self.drop_tmp_table(tmp_table)
 
         else:
-            name_to_id = dict(self.xquery('SELECT `name`, `id` FROM `%s`' % table))
+            name_to_id = dict(self.xquery('SELECT `%s`, `id` FROM `%s`' % (name_column, table)))
 
         num_obj = 0
         for obj in objitr:
