@@ -325,7 +325,8 @@ class WebServer(object):
         6. Respond.
         """
 
-        authorizer = None
+        master_server = self.dynamo_server.manager.master.clone()
+        master_server.connect()
 
         ## Step 1
         if environ['REQUEST_SCHEME'] == 'http':
@@ -334,12 +335,10 @@ class WebServer(object):
             authlist = []
 
         elif environ['REQUEST_SCHEME'] == 'https':
-            authorizer = self.dynamo_server.manager.master.create_authorizer()
-
             # Client DN must match a known user
             try:
                 dn = WebServer.format_dn(environ['SSL_CLIENT_S_DN'])
-                userinfo = authorizer.identify_user(dn = dn, check_trunc = True)
+                userinfo = master_server.authorizer.identify_user(dn = dn, check_trunc = True)
                 if userinfo is None:
                     raise exceptions.AuthorizationError()
 
@@ -352,7 +351,7 @@ class WebServer(object):
             except:
                 return self._internal_server_error()
 
-            authlist = authorizer.list_user_auth(user)
+            authlist = master_server.authorizer.list_user_auth(user)
 
         else:
             self.code = 400
@@ -413,36 +412,33 @@ class WebServer(object):
             self.code = 400
             self.message = 'Resource only available with HTTPS.'
             return
-
+        
         if provider.write_enabled:
-            self.dynamo_server.manager.master.lock()
-
+            master_server.block_updates()
+                
             try:
-                if self.dynamo_server.manager.master.inhibit_write():
+                if master_server.check_write_inhibited():
                     # We need to give up here instead of waiting, because the web server processes will be flushed out as soon as
                     # inventory is updated after the current writing process is done
                     self.code = 503
                     self.message = 'Server cannot execute %s/%s at the moment because the inventory is being updated.' % (module, command)
                     return
                 else:
-                    self.dynamo_server.manager.master.start_write_web(socket.gethostname(), os.getpid())
+                    master_server.appmanager.start_write_web(socket.gethostname(), os.getpid())
                     # stop is called from the DynamoServer upon successful inventory update
 
             except:
-                self.dynamo_server.manager.master.stop_write_web()
+                master_server.appmanager.stop_write_web()
                 raise
 
             finally:
-                self.dynamo_server.manager.master.unlock()
+                master_server.unblock_updates()
 
         if provider.require_authorizer:
-            if authorizer is None:
-                authorizer = self.dynamo_server.manager.master.create_authorizer()
-
-            provider.authorizer = authorizer
+            provider.authorizer = master_server.AuthorizerType(master_server.readonly_config)
 
         if provider.require_appmanager:
-            provider.appmanager = self.dynamo_server.manager.master.create_appmanager()
+            provider.appmanager = master_server.AppManagerType(master_server.readonly_config)
 
         try:
             ## Step 4

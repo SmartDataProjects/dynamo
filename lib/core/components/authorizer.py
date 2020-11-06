@@ -10,10 +10,10 @@ class Authorizer(object):
     """
 
     @staticmethod
-    def get_instance(module, config):
-        return get_instance(Authorizer, module, config)
+    def get_instance(module, config, master_server):
+        return get_instance(Authorizer, module, config, master_server)
 
-    def __init__(self, config):
+    def __init__(self, config, master_server):
         self.readonly_config = None
 
     def user_exists(self, name):
@@ -90,10 +90,3 @@ class Authorizer(object):
         @return List of (user name, role name) authorized for the target.
         """
         raise NotImplementedError('list_authorized_users')
-
-    def create_authorizer(self):
-        """
-        Clone self with fresh connections. Use readonly_config if available.
-        @return A new authorizer instance with a fresh connection
-        """
-        raise NotImplementedError('create_authorizer')

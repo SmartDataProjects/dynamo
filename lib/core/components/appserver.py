@@ -42,7 +42,7 @@ class AppServer(object):
         self.scheduler_base = config.scheduler_base
 
         # User id for the scheduler
-        user_info = self.dynamo_server.manager.master.identify_user(name = config.scheduler_user)
+        user_info = self.dynamo_server.manager.master.authorizer.identify_user(name = config.scheduler_user)
         if user_info is None:
             raise ConfigurationError('Unknown user %s given for the scheduler.' % config.scheduler_user)
         self.scheduler_user_id = user_info[1]
@@ -136,14 +136,14 @@ class AppServer(object):
             return False, 'Unknown appid %d' % app_id
 
         if app['status'] in (AppManager.STAT_NEW, AppManager.STAT_RUN):
-            self.dynamo_server.manager.master.update_application(app_id, status = AppManager.STAT_KILLED)
+            self.dynamo_server.manager.master.appmanager.update_application(app_id, status = AppManager.STAT_KILLED)
             return True, {'result': 'success', 'detail': 'Task aborted.'}
         else:
             return True, {'result': 'noaction', 'detail': 'Task already completed with status %s (exit code %s).' % \
                           (AppManager.status_name(app['status']), app['exit_code'])}
 
     def _get_app(self, app_id):
-        apps = self.dynamo_server.manager.master.get_applications(app_id = app_id)
+        apps = self.dynamo_server.manager.master.appmanager.get_applications(app_id = app_id)
         if len(apps) == 0:
             return None
         else:
@@ -183,7 +183,7 @@ class AppServer(object):
             if len(args - keys) != 0:
                 return False, 'Missing parameter(s): %s' % (str(list(args - keys)))
 
-            app_id = self.dynamo_server.manager.master.schedule_application(**app_data)
+            app_id = self.dynamo_server.manager.master.appmanager.schedule_application(**app_data)
             if mode == 'synch':
                 self.synch_app_queues[app_id] = Queue.Queue()
 
@@ -213,7 +213,7 @@ class AppServer(object):
             return False, str(ex)
 
         for name, sequence in sequences.items():
-            existing = self.dynamo_server.manager.master.find_sequence(name)
+            existing = self.dynamo_server.manager.master.appmanager.find_sequence(name)
             if existing is not None:
                 _, reg_user, _, _ = existing
                 if reg_user != user:
@@ -303,14 +303,14 @@ class AppServer(object):
 
             restart = (name in sequences_with_restart)
 
-            self.dynamo_server.manager.master.register_sequence(name, user, restart = restart)
+            self.dynamo_server.manager.master.appmanager.register_sequence(name, user, restart = restart)
 
         LOG.info('Added sequence(s) %s', ' '.join(sorted(sequences.keys())))
 
         return True, {'sequence': sorted(sequences.keys())}
 
     def _get_sequence(self, name, user):
-        sequence = self.dynamo_server.manager.master.find_sequence(name)
+        sequence = self.dynamo_server.manager.master.appmanager.find_sequence(name)
         if sequence is None:
             raise Exception('Sequence %s does not exist.' % name)
 
@@ -331,7 +331,7 @@ class AppServer(object):
             if not success:
                 return False, msg
 
-        if not self.dynamo_server.manager.master.delete_sequence(name):
+        if not self.dynamo_server.manager.master.appmanager.delete_sequence(name):
             return False, 'Failed to delete sequence %s.' % name
 
         if os.path.exists(self.scheduler_base + '/' + name):
@@ -357,7 +357,7 @@ class AppServer(object):
 
     def _start_all_sequences(self):
         started = []
-        for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = False):
+        for sequence_name in self.dynamo_server.manager.master.appmanager.get_sequences(enabled_only = False):
             LOG.info('[Scheduler] Starting sequence %s.', sequence_name)
             success, msg = self._do_start_sequence(sequence_name)
             if success:
@@ -382,7 +382,7 @@ class AppServer(object):
 
     def _stop_all_sequences(self):
         stopped = []
-        for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = True):
+        for sequence_name in self.dynamo_server.manager.master.appmanager.get_sequences(enabled_only = True):
             LOG.info('[Scheduler] Stopping sequence %s.', sequence_name)
             success, msg = self._do_stop_sequence(sequence_name)
             if success:
@@ -393,7 +393,7 @@ class AppServer(object):
         return True, {'sequences': stopped}
 
     def _do_start_sequence(self, name):
-        _, _, restart, enabled = self.dynamo_server.manager.master.find_sequence(name)
+        _, _, restart, enabled = self.dynamo_server.manager.master.appmanager.find_sequence(name)
 
         if enabled:
             return True, ''
@@ -401,13 +401,13 @@ class AppServer(object):
         if restart:
             self._shift_sequence_to(name, 0)
 
-        if not self.dynamo_server.manager.master.update_sequence(name, enabled = True):
+        if not self.dynamo_server.manager.master.appmanager.update_sequence(name, enabled = True):
             return False, 'Failed to start sequence %s.' % name
 
         return True, ''
 
     def _do_stop_sequence(self, name):
-        if not self.dynamo_server.manager.master.update_sequence(name, enabled = False):
+        if not self.dynamo_server.manager.master.appmanager.update_sequence(name, enabled = False):
             return False, 'Failed to stop sequence %s.' % name
 
         # kill all running applications
@@ -418,7 +418,7 @@ class AppServer(object):
             for row in cursor.fetchall():
                 app = self._get_app(row[0])
                 if app is not None and app['status'] not in (AppManager.STAT_DONE, AppManager.STAT_FAILED, AppManager.STAT_KILLED):
-                    self.dynamo_server.manager.master.update_application(row[0], status = AppManager.STAT_KILLED)
+                    self.dynamo_server.manager.master.appmanager.update_application(row[0], status = AppManager.STAT_KILLED)
         except Exception as ex:
             return False, 'Failed to stop sequence %s (%s).' % (name, str(ex))
 
@@ -430,8 +430,8 @@ class AppServer(object):
         Perhaps we want an independent logger for this thread
         """
 
-        for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = True):
-            _, _, restart, _ = self.dynamo_server.manager.master.find_sequence(sequence_name)
+        for sequence_name in self.dynamo_server.manager.master.appmanager.get_sequences(enabled_only = True):
+            _, _, restart, _ = self.dynamo_server.manager.master.appmanager.find_sequence(sequence_name)
             if restart:
                 self._shift_sequence_to(sequence_name, 0)
                 LOG.info('[Scheduler] Starting sequence %s from line 0.', sequence_name)
@@ -442,7 +442,7 @@ class AppServer(object):
             if self._stop_flag.is_set():
                 break
 
-            for sequence_name in self.dynamo_server.manager.master.get_sequences(enabled_only = True):
+            for sequence_name in self.dynamo_server.manager.master.appmanager.get_sequences(enabled_only = True):
                 if self._stop_flag.is_set():
                     break
 
@@ -548,7 +548,7 @@ class AppServer(object):
                     out.write('++++ %s: %s\n' % (timestamp, title))
                     out.write('%s/%s %s (timeout %sh)\n\n' % (work_dir, title, arguments, timeout))
 
-                app_id = self.dynamo_server.manager.master.schedule_application(title, work_dir + '/' + title, arguments, self.scheduler_user_id, socket.gethostname(), auth_level, timeout)
+                app_id = self.dynamo_server.manager.master.appmanager.schedule_application(title, work_dir + '/' + title, arguments, self.scheduler_user_id, socket.gethostname(), auth_level, timeout)
                 cursor.execute('UPDATE `sequence` SET `app_id` = ? WHERE `id` = ?', (app_id, sid))
                 LOG.info('[Scheduler] Scheduled %s/%s %s (AID %s).', sequence_name, title, arguments, app_id)
 
@@ -607,7 +607,7 @@ class AppServer(object):
                     with open(application) as source:
                         checksum = hashlib.md5(source.read()).hexdigest()
 
-                    if write_enabled and not self.dynamo_server.manager.master.check_application_auth(title, user, checksum):
+                    if write_enabled and not self.dynamo_server.manager.master.appmanager.check_application_auth(title, user, checksum):
                         raise Exception('Application %s (%s) is not authorized for server write operation (line %d).' % (title, application, iline))
         
                     LOG.debug('Define application %s = %s (write enabled: %d) (line %d)', title, application, write_enabled, iline)

@@ -50,9 +50,9 @@ master_server = MasterServer.get_instance(master_config.module, master_config.co
 if args.list:
     print 'USER   ROLE   TARGET'
 
-    targets = master_server.list_authorization_targets()
+    targets = master_server.authorizer.list_authorization_targets()
     for target in targets:
-        for user, role in master_server.list_authorized_users(target):
+        for user, role in master_server.authorizer.list_authorized_users(target):
             if args.user and user != args.user:
                 continue
             if args.role and role != args.role:
@@ -86,7 +86,7 @@ if args.revoke:
         sys.exit(0)
 
 # add new authorization
-if master_server.identify_user(name = args.user) is None:
+if master_server.authorizer.identify_user(name = args.user) is None:
     if not args.dn:
         print 'New user; DN is required'
         sys.exit(1)
@@ -101,7 +101,7 @@ if master_server.identify_user(name = args.user) is None:
     else:
         sys.exit(0)
 
-if args.role and master_server.identify_role(args.role) is None:
+if args.role and master_server.authorizer.identify_role(args.role) is None:
     if args.yes:
         response = 'y'
     else:
@@ -114,5 +114,5 @@ if args.role and master_server.identify_role(args.role) is None:
         
 if master_server.authorize_user(args.user, args.role, args.target):
     print 'Authorization for user %s:' % args.user
-    for role, target in master_server.list_user_auth(args.user):
+    for role, target in master_server.authorizer.list_user_auth(args.user):
         print '  role=%s on target=%s' % (role, target)

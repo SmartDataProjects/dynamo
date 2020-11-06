@@ -47,12 +47,12 @@ master = MasterServer.get_instance(master_config.module, master_config.config)
 
 if args.user:
     for user in args.user:
-        if not master.user_exists(user):
+        if not master.authorizer.user_exists(user):
             sys.stderr.write('Invalid user %s\n' % args.user)
             sys.exit(1)
 
 authorized_apps = {}
-for title, user, checksum in master.list_authorized_applications(titles = args.title, users = args.user):
+for title, user, checksum in master.appmanager.list_authorized_applications(titles = args.title, users = args.user):
     authorized_apps[(title, user)] = checksum
 
 if args.list:
@@ -97,7 +97,7 @@ if args.delete:
         revoke_list.append((title, user))
 
     for title, user in revoke_list:
-        success = master.revoke_application_authorization(title, user)
+        success = master.appmanager.revoke_application_authorization(title, user)
         if user is None:
             user = 'ALL'
 
@@ -150,7 +150,7 @@ for user in users:
         if existing == checksum:
             sys.stdout.write('Executable %s (user %s) is already authorized.\n' % (title, user_name))
         else:
-            success = master.revoke_application_authorization(title, user)
+            success = master.appmanager.revoke_application_authorization(title, user)
             if success:
                 raise KeyError()
             else:
@@ -158,7 +158,7 @@ for user in users:
                 sys.exit(1)
 
     except KeyError:
-        success = master.authorize_application(title, checksum, user)
+        success = master.appmanager.authorize_application(title, checksum, user)
         if success:
             sys.stdout.write('Authorized executable %s (user %s).\n' % (title, user_name))
         else:

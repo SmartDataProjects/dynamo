@@ -44,10 +44,10 @@ class AppManager(object):
             return arg
 
     @staticmethod
-    def get_instance(module, config):
-        return get_instance(AppManager, module, config)
+    def get_instance(module, config, master_server):
+        return get_instance(AppManager, module, config, master_server)
 
-    def __init__(self, config):
+    def __init__(self, config, master_server):
         self.readonly_config = None
         if 'applock' in config:
             self.applock = RegistryDatabase(config.applock)
@@ -222,10 +222,3 @@ class AppManager(object):
         @return [name]
         """
         raise NotImplementedError('get_sequences')
-
-    def create_appmanager(self):
-        """
-        Clone self with fresh connections. Use readonly_config if available.
-        @return A new AppManager instance with a fresh connection
-        """
-        raise NotImplementedError('create_appmanager')

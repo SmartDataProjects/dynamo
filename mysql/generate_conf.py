@@ -97,7 +97,7 @@ def generate_master_conf(conf_str, master = True):
         passwd = grants_conf[user]['passwd']
 
     master_conf = OD([
-        ('module', 'mysqlmaster:MySQLMasterServer'),
+        ('module', 'mysqlmaster:MySQLMasterServer' if master else 'mysqlmaster:MySQLMasterServerShadow'),
         ('config', OD())
     ])
 

@@ -1,20 +1,18 @@
 import logging
 
 from dynamo.core.components.authorizer import Authorizer
-from dynamo.utils.interface.mysql import MySQL
-from dynamo.dataformat import Configuration
 
 LOG = logging.getLogger(__name__)
 
 class MySQLAuthorizer(Authorizer):
-    def __init__(self, config):
-        Authorizer.__init__(self, config)
-
-        if not hasattr(self, '_mysql'):
+    def __init__(self, config, master_server):
+        Authorizer.__init__(self, config, master_server)
+        
+        if master_server is None:
             db_params = Configuration(config.db_params)
-            db_params.reuse_connection = True # we use locks
-    
             self._mysql = MySQL(db_params)
+        else:
+            self._mysql = master_server._mysql
 
     def user_exists(self, name):
         result = self._mysql.query('SELECT COUNT(*) FROM `users` WHERE `name` = %s', name)[0]
@@ -96,12 +94,4 @@ class MySQLAuthorizer(Authorizer):
             args = (target,)
         
         return self._mysql.query(sql, *args)
-
-    def create_authorizer(self): #override
-        if self.readonly_config is None:
-            db_params = self._mysql.config()
-        else:
-            db_params = self.readonly_config.db_params
-
-        config = Configuration(db_params = db_params)
-        return MySQLAuthorizer(config)
+    

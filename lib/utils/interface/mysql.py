@@ -40,17 +40,34 @@ class Transaction(object):
         self._cursor_cls = cursor_cls
         
     def __enter__(self):
-        if self._mysql._cursor is not None:
+        self.start()
+        
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None:
+            self._mysql._connection.commit()
+
+        self._mysql._close_cursor()
+        
+    def start(self):
+        if self._mysql.in_transaction():
             raise RuntimeError('There is already a transaction taking place')
             
         self._mysql._cursor = self._mysql._connection.cursor(self._cursor_cls)
         self._mysql._cursor.execute('START TRANSACTION')
         
-    def __exit__(self, exc_type, exc_value, traceback):
-        if exc_type is None:
-            self._connection.commit()
-
-        self._close_cursor()
+    def start_or_continue(self):
+        if self._mysql.in_transaction():
+            return
+        
+        self.start()
+        
+    def commit(self):
+        self._mysql._connection.commit()
+        self._mysql._close_cursor()
+        
+    def rollback(self):
+        self._mysql._connection.rollback()
+        self._mysql._close_cursor()
 
 class nullcontext(object):
     def __init__(self):
@@ -316,6 +333,9 @@ class MySQL(object):
 
     def transaction(self, cursor_cls=MySQLdb.connections.Connection.default_cursor):
         return Transaction(self, cursor_cls)
+    
+    def in_transaction(self):
+        return self._cursor is not None
             
     def query(self, sql, *args, **kwd):
         """

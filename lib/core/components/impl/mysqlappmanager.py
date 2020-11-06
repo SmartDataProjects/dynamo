@@ -5,26 +5,27 @@ from dynamo.utils.interface.mysql import MySQL
 from dynamo.dataformat import Configuration
 
 class MySQLAppManager(AppManager):
-    def __init__(self, config):
-        AppManager.__init__(self, config)
+    def __init__(self, config, master_server):
+        AppManager.__init__(self, config, master_server)
 
-        if not hasattr(self, '_mysql'):
+        if master_server is None:
             db_params = Configuration(config.db_params)
-            db_params.reuse_connection = True # we use locks
-
             self._mysql = MySQL(db_params)
+        else:
+            self._mysql = master_server._mysql
 
-        # make sure applications row with id 0 exists
-        count = self._mysql.query('SELECT COUNT(*) FROM `applications` WHERE `id` = 0')[0]
+        with self._mysql.transaction():
+            # make sure applications row with id 0 exists
+            count = self._mysql.query('SELECT COUNT(*) FROM `applications` WHERE `id` = 0 FOR UPDATE')[0]
 
-        if count == 0:
-            # Cannot insert with id = 0 (will be interpreted as next auto_increment id unless server-wide setting is changed)
-            # Inesrt with an implicit id first and update later
-            columns = ('auth_level', 'title', 'path', 'status', 'user_id', 'user_host')
-            values = (AppManager.LV_WRITE, 'wsgi', '', 'done', 0, '')
-            insert_id = self._mysql.insert_get_id('applications', columns = columns, values = values)
+            if count == 0:
+                # Cannot insert with id = 0 (will be interpreted as next auto_increment id unless server-wide setting is changed)
+                # Insert with an implicit id first and update later
+                columns = ('auth_level', 'title', 'path', 'status', 'user_id', 'user_host')
+                values = (AppManager.LV_WRITE, 'wsgi', '', 'done', 0, '')
+                insert_id = self._mysql.insert_get_id('applications', columns = columns, values = values)
 
-            self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', insert_id)
+                self._mysql.query('UPDATE `applications` SET `id` = 0 WHERE `id` = %s', insert_id)
 
     def get_applications(self, older_than = 0, status = None, app_id = None, path = None): #override
         sql = 'SELECT `applications`.`id`, 0+`applications`.`auth_level`, `applications`.`title`, `applications`.`path`, `applications`.`args`,'
@@ -266,12 +267,3 @@ class MySQLAppManager(AppManager):
             sql += ' WHERE `status` = \'enabled\''
 
         return self._mysql.query(sql)
-
-    def create_appmanager(self): #override
-        if self.readonly_config is None:
-            db_params = self._mysql.config()
-        else:
-            db_params = self.readonly_config.db_params
-
-        config = Configuration(db_params = db_params)
-        return MySQLAppManager(config)

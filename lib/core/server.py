@@ -84,7 +84,7 @@ class DynamoServer(object):
 
     def load_inventory(self):
         ## Wait until there is no write process
-        while self.manager.master.get_writing_process_id() is not None:
+        while self.manager.master.appmanager.get_writing_process_id() is not None:
             LOG.debug('A write-enabled process is running. Checking again in 5 seconds.')
             time.sleep(5)
 
@@ -129,7 +129,9 @@ class DynamoServer(object):
         # Outer loop: restart the application server when the inventory goes out of synch
         while True:
             # Lock write activities by other servers
+            self.manager.master.block_updates()
             self.manager.set_status(ServerHost.STAT_STARTING)
+            self.manager.master.unblock_updates()
 
             self.inventory = DynamoInventory(self.inventory_config)
 
@@ -261,20 +263,21 @@ class DynamoServer(object):
                 ## Step 1: Poll
                 LOG.debug('Polling for applications.')
 
-                self.manager.master.lock()
+                self.manager.master.block_updates()
                 try:
                     # Cannot run a write process if
                     #  . I am supposed to be updating my inventory
                     #  . There is a server starting
                     #  . There is already a write process
-                    read_only = self.manager.master.inhibit_write()
+                    #  (This is actually too restrictive; timing can be optimized)
+                    read_only = self.manager.master.check_write_inhibited()
 
-                    app = self.manager.master.get_next_application(read_only)
+                    app = self.manager.master.appmanager.get_next_application(read_only)
                     if app is not None:
-                        self.manager.master.update_application(app['appid'], status = AppManager.STAT_ASSIGNED, hostname = self.manager.hostname)
+                        self.manager.master.appmanager.update_application(app['appid'], status = AppManager.STAT_ASSIGNED, hostname = self.manager.hostname)
         
                 finally:
-                    self.manager.master.unlock()
+                    self.manager.master.unblock_updates()
     
                 if app is None:
                     if len(child_processes) == 0 and first_wait:
@@ -292,7 +295,7 @@ class DynamoServer(object):
 
                 if not os.path.exists(app['path'] + '/exec.py'):
                     LOG.info('Application %s from %s@%s (auth level: %s) not found.', app['title'], app['user_name'], app['user_host'], AppManager.auth_level_name(app['auth_level']))
-                    self.manager.master.update_application(app['appid'], status = AppManager.STAT_NOTFOUND)
+                    self.manager.master.appmanager.update_application(app['appid'], status = AppManager.STAT_NOTFOUND)
                     self.appserver.notify_synch_app(app['appid'], {'status': AppManager.STAT_NOTFOUND})
                     continue
     
@@ -309,14 +312,14 @@ class DynamoServer(object):
                         LOG.warning('Application %s from %s is not authorized for write access.', app['title'], app['user_name'])
                         # TODO send a message
     
-                        self.manager.master.update_application(app['appid'], status = AppManager.STAT_AUTHFAILED)
+                        self.manager.master.appmanager.update_application(app['appid'], status = AppManager.STAT_AUTHFAILED)
                         self.appserver.notify_synch_app(app['appid'], {'status': AppManager.STAT_AUTHFAILED})
                         continue
     
                     writing_process = app['appid']
 
                 ## Step 3: Spawn a child process for the script
-                self.manager.master.update_application(app['appid'], status = AppManager.STAT_RUN)
+                self.manager.master.appmanager.update_application(app['appid'], status = AppManager.STAT_RUN)
 
                 proc = self._start_subprocess(app, is_local)
                 
@@ -355,7 +358,7 @@ class DynamoServer(object):
 
             for app_id, proc, time_start in child_processes:
                 try:
-                    apps = self.manager.master.get_applications(app_id = app_id)
+                    apps = self.manager.master.appmanager.get_applications(app_id = app_id)
                 except:
                     apps = []
 
@@ -370,7 +373,7 @@ class DynamoServer(object):
                 serverutils.killproc(proc, LOG)
 
                 try:
-                    self.manager.master.update_application(app_id, status = AppManager.STAT_KILLED)
+                    self.manager.master.appmanager.update_application(app_id, status = AppManager.STAT_KILLED)
                 except:
                     pass
 
@@ -433,13 +436,13 @@ class DynamoServer(object):
         is set to FAILED.
         """
 
-        writing_process = self.manager.master.get_writing_process_id()
+        writing_process = self.manager.master.appmanager.get_writing_process_id()
 
         ichild = 0
         while ichild != len(child_processes):
             app_id, proc, time_start = child_processes[ichild]
 
-            apps = self.manager.master.get_applications(app_id = app_id)
+            apps = self.manager.master.appmanager.get_applications(app_id = app_id)
             if len(apps) == 0:
                 status = AppManager.STAT_KILLED
                 id_str = '%s from unknown (AID %d PID %d)' % (proc.name, app_id, proc.pid)
@@ -501,7 +504,7 @@ class DynamoServer(object):
 
             self.appserver.notify_synch_app(app_id, {'status': status, 'exit_code': proc.exitcode})
 
-            self.manager.master.update_application(app_id, status = status, exit_code = proc.exitcode)
+            self.manager.master.appmanager.update_application(app_id, status = status, exit_code = proc.exitcode)
 
     def _collect_updates(self):
         print_every = 100000
@@ -547,12 +550,13 @@ class DynamoServer(object):
                     return 1, update_commands
 
     def _collect_updates_from_web(self):
-        if self.manager.master.get_writing_process_id() != 0 or self.manager.master.get_writing_process_host() != self.manager.hostname:
+        if self.manager.master.appmanager.get_writing_process_id() != 0 or \
+            self.manager.master.appmanager.get_writing_process_host() != self.manager.hostname:
             return
 
         read_state, update_commands = self._collect_updates()
 
-        pid = self.manager.master.get_web_write_process_id()
+        pid = self.manager.master.appmanager.get_web_write_process_id()
 
         if read_state == 0:
             LOG.debug('No updates received from the web process.')
@@ -571,13 +575,13 @@ class DynamoServer(object):
             self._update_inventory(update_commands)
 
         LOG.debug('Releasing write lock.')
-        self.manager.master.stop_write_web()
+        self.manager.master.appmanager.stop_write_web()
 
     def _cleanup(self):
         # retain_records_for given in days
         cutoff = int(time.time()) - self.applications_config.retain_records_for * 24 * 60 * 60
 
-        applications = self.manager.master.get_applications(older_than = cutoff)
+        applications = self.manager.master.appmanager.get_applications(older_than = cutoff)
 
         for app in applications:
             LOG.debug('Cleaning up %s (%s).', app['title'], app['path'])
@@ -595,7 +599,7 @@ class DynamoServer(object):
                         pass
 
             # Finally remove the entry
-            self.manager.master.delete_application(app['appid'])
+            self.manager.master.appmanager.delete_application(app['appid'])
 
     def _update_inventory(self, update_commands):
         # My updates
@@ -840,7 +844,7 @@ class DynamoServer(object):
         # Pass my inventory and authorizer to the executable through core.executable
         import dynamo.core.executable as executable
         executable.inventory = inventory
-        executable.authorizer = self.manager.master.create_authorizer()
+        executable.authorizer = self.manager.master.AuthorizerType(self.manager.master.readonly_config)
     
         if auth_level == AppManager.LV_NOAUTH:
             pass

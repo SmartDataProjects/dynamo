@@ -4,7 +4,7 @@ import socket
 import logging
 
 from dynamo.core.components.host import ServerHost, OutOfSyncError
-from dynamo.core.components.master import MasterServer, AppManager
+from dynamo.core.components.master import MasterServer, MasterServerShadow
 from dynamo.core.components.board import UpdateBoard
 
 LOG = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class ServerManager(object):
             # Interface to the master server local shadow
             # When the master server dies, this host can become the next master. Need to have
             # data copied locally in preparation.
-            self.shadow = MasterServer.get_instance(config.shadow.module, config.shadow.config)
+            self.shadow = MasterServerShadow.get_instance(config.shadow.module, config.shadow.config)
         else:
             self.shadow = None
 
@@ -53,17 +53,14 @@ class ServerManager(object):
         """
 
         if hostname is None:
-            # this host
-            self.master.lock()
-            try:
-                if self.get_status() == ServerHost.STAT_OUTOFSYNC:
-                    self.status = ServerHost.STAT_OUTOFSYNC
-                    raise OutOfSyncError('Server out of sync')
-    
-                self.master.set_status(status, self.hostname)
+            # This host
+            # State transition rule is such that once a host is out of sync, only its
+            # server process can reset the status -> no need to lock get_status
+            if self.master.get_status() == ServerHost.STAT_OUTOFSYNC:
+                self.status = ServerHost.STAT_OUTOFSYNC
+                raise OutOfSyncError('Server out of sync')
 
-            finally:
-                self.master.unlock()
+            self.master.set_status(status, self.hostname)
 
             self.status = status
 
@@ -75,17 +72,12 @@ class ServerManager(object):
         """
         Reset server status to initial when it is out of sync.
         """
-        self.master.lock()
-        try:
-            # first check that we are out of sync
-            if self.get_status() != ServerHost.STAT_OUTOFSYNC:
-                raise RuntimeError('reset_status called when status is not outofsync')
+        # first check that we are out of sync
+        if self.master.get_status() != ServerHost.STAT_OUTOFSYNC:
+            raise RuntimeError('reset_status called when status is not outofsync')
 
-            # then reset
-            self.master.set_status(ServerHost.STAT_INITIAL, self.hostname)
-
-        finally:
-            self.master.unlock()
+        # then reset
+        self.master.set_status(ServerHost.STAT_INITIAL, self.hostname)
 
         self.status = ServerHost.STAT_INITIAL
 
@@ -98,32 +90,13 @@ class ServerManager(object):
         if not self.master.check_connection():
             raise OutOfSyncError('Lost connection to master server')
 
-        self.get_status()
+        self.status = self.master.get_status()
 
         if self.status == ServerHost.STAT_ERROR:
             raise RuntimeError('Server status is ERROR')
 
         elif self.status == ServerHost.STAT_OUTOFSYNC:
             raise OutOfSyncError('Server out of sync')
-
-    def get_status(self, hostname = None):
-        """
-        Read the server status from the master list.
-        """
-        if hostname is None:
-            status = self.master.get_status(self.hostname)
-        else:
-            status = self.master.get_status(hostname)
-
-        if status is None:
-            status_val = None
-        else:
-            status_val = ServerHost.status_val(status)
-
-        if hostname is None:
-            self.status = status_val
-
-        return status_val
 
     def count_servers(self, status):
         """
@@ -269,51 +242,24 @@ class ServerManager(object):
 
         @param update_commands  List of two-tuples (cmd, obj)
         """
-        # Write-enabled process and server start do not happen simultaneously.
-        # No servers could have come online while we were running a write-enabled process - other_servers is the full list
-        # of running servers.
+        # This function is called from DynamoServer within _update_inventory, which is called while the write-enabled app
+        # is still in state STAT_RUN. Because write-enabled processes cannot start while there is a server in state STARTING,
+        # and STARTING servers cannot load the inventory until the write-enabled process completes, we only need to send updates
+        # to servers in the ONLINE and UPDATING states.
 
-        processed = set()
+        self.collect_hosts()
 
-        while True:
-            self.master.lock()
-
-            try:
-                self.collect_hosts()
-    
-                # update only one server at a time to minimize the time in lock
-                for server in self.other_servers.itervalues():
-                    if server.hostname not in processed:
-                        break
+        # update only one server at a time to minimize the time in lock
+        for server in self.other_servers.itervalues():
+            if server.status in [ServerHost.STAT_ONLINE, ServerHost.STAT_UPDATING]:
+                self.set_status(ServerHost.STAT_UPDATING, server.hostname)
+                try:
+                    server.board.write_updates(update_commands)
+                except:
+                    LOG.error('Error while sending updates to %s. Setting server state to OUTOFSYNC.', server.hostname)
+                    self.set_status(ServerHost.STAT_OUTOFSYNC, server.hostname)
                 else:
-                    # all processed, we are done
-                    break
-
-                if server.status == ServerHost.STAT_ONLINE:
-                    processed.add(server.hostname)
-
-                    self.set_status(ServerHost.STAT_UPDATING, server.hostname)
-                    try:
-                        server.board.write_updates(update_commands)
-                    except:
-                        LOG.error('Error while sending updates to %s. Setting server state to OUTOFSYNC.', server.hostname)
-                        self.set_status(ServerHost.STAT_OUTOFSYNC, server.hostname)
-                    else:
-                        LOG.info('Sent %d update commands to %s.', len(update_commands), server.hostname)
-                        
-
-                elif server.status == ServerHost.STAT_UPDATING:
-                    # this server is still processing updates from the previous write process
-                    continue
-
-                else:
-                    # any other status means the server is not running
-                    processed.add(server.hostname)
-
-            finally:
-                self.master.unlock()
-
-            time.sleep(1)
+                    LOG.info('Sent %d update commands to %s.', len(update_commands), server.hostname)
 
     def disconnect(self):
         """

@@ -252,7 +252,7 @@ class SocketAppServer(AppServer):
             for rdn in user_cert_data['subject']:
                 dn += '/' + '+'.join('%s=%s' % (DN_TRANSLATION[key], value) for key, value in rdn)
 
-            user_info = master.identify_user(dn = dn, check_trunc = True)
+            user_info = master.authorizer.identify_user(dn = dn, check_trunc = True)
 
             if user_info is None:
                 io.send('failed', 'Unidentified user DN %s' % dn)
@@ -281,7 +281,8 @@ class SocketAppServer(AppServer):
                 act_and_respond(self._poll_app(app_data['appid']))
                 return
 
-            elif not master.check_user_auth(user_name, 'admin', 'application') and not master.check_user_auth(user_name, 'operator', 'application'):
+            elif not master.authorizer.check_user_auth(user_name, 'admin', 'application') and \
+                not master.authorizer.check_user_auth(user_name, 'operator', 'application'):
                 io.send('failed', 'User not authorized')
                 return
 

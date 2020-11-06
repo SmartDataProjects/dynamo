@@ -1,7 +1,5 @@
-import multiprocessing
 import logging
 import socket
-import types
 
 from dynamo.core.components.authorizer import Authorizer
 from dynamo.core.components.appmanager import AppManager
@@ -10,74 +8,49 @@ from dynamo.utils.classutil import get_instance
 
 LOG = logging.getLogger(__name__)
 
-class MasterServer(Authorizer, AppManager):
+class MasterServer(object):
     """
-    An interface to the master server that coordinates server activities. The single instance of the MasterServer
-    owned by the ServerManager (owned by DynamoServer) is used by DynamoServer, WebServer, and the subprocesses of the
-    WebServer. To avoid interference, all public methods of the instance of the MasterServer is decorated with a wrapper
-    that locks the execution. A secondary Dynamo server has two instances of MasterServer: one connected to the primary
-    server, and the other as a local shadow.
+    An interface to the master server that coordinates server activities. MasterServer instances are held by the
+    ServerManager (owned by DynamoServer), WebServer, and the subprocesses of the
+    WebServer. A secondary Dynamo server also owns a local MasterServerShadow instance.
     """
 
     @staticmethod
     def get_instance(module, config):
         instance = get_instance(MasterServer, module, config)
 
-        # Decorate all public methods of MasterServer with the lock. Without this, the lock() method is meaningless.
-        # Subclasses may have its own lock placed on the actual shared resource (e.g. database) by _do_lock, in which
-        # case this class-level lock is redundant.
-        
-        for name in dir(instance):
-            if name == 'lock' or name == 'unlock' or name.startswith('_'):
-                continue
-
-            mthd = getattr(instance, name)
-            if callable(mthd) and not isinstance(mthd, types.FunctionType): # static methods are instances of FunctionType
-                setattr(instance, name, instance._make_wrapper(mthd))
-
         return instance
+    
+    AppManagerType = None
+    AuthorizerType = None
 
     def __init__(self, config):
-        Authorizer.__init__(self, config)
-        AppManager.__init__(self, config)
-
+        self.config = config
+        self.readonly_config = None
         self.connected = False
+        
+        self.appmanager = self.AppManagerType(self)
+        self.authorizer = self.AuthorizerType(self)
 
-        self._master_server_lock = multiprocessing.RLock()
-
-    def connect(self):
+    def connect(self, kill_writing_app=False):
         """
         Connect to the master server.
         """
         LOG.info('Connecting to master server')
 
-        self.lock()
-
-        try:
-            self._connect()
-    
-            if self.get_host() == 'localhost' or self.get_host() == socket.gethostname():
-                # This is the master host; make sure there are no dangling web writes
-                writing = self.get_writing_process_id()
-                if writing == 0:
-                    self.stop_write_web()
-                elif writing > 0:
-                    self.update_application(writing, status = AppManager.STAT_KILLED)
+        self._connect()
+        
+        if kill_writing_app and (self.get_host() == 'localhost' or self.get_host() == socket.gethostname()):
+            # This is the master host; make sure there are no dangling web writes
+            writing = self.appmanager.get_writing_process_id()
+            if writing == 0:
+                self.appmanager.stop_write_web()
+            elif writing > 0:
+                self.appmanager.update_application(writing, status = AppManager.STAT_KILLED)
                 
-        finally:
-            self.unlock()
-
         self.connected = True
 
         LOG.info('Master host: %s', self.get_host())
-
-    def lock(self):
-        self._master_server_lock.acquire()
-        self._do_lock()
-
-    def unlock(self):
-        self._do_unlock()
-        self._master_server_lock.release()
 
     def get_host(self):
         """
@@ -91,7 +64,7 @@ class MasterServer(Authorizer, AppManager):
     def get_status(self, hostname):
         raise NotImplementedError('get_status')
 
-    def get_host_list(self, status = None, detail = False):
+    def get_host_list(self, status=None, detail=False):
         """
         Get data for all servers connected to this master server.
         @param status   Limit to servers in the given status (ServerHost.STAT_*)
@@ -100,20 +73,6 @@ class MasterServer(Authorizer, AppManager):
         @return If detail = True, list of full info. If detail = False, [(hostname, status, has_store)]
         """
         raise NotImplementedError('get_host_list')
-
-    def copy(self, remote_master):
-        """
-        When acting as a local shadow of a remote master server, copy the remote content to local.
-        @param remote_master  MasterServer instance of the remote server.
-        """
-        raise NotImplementedError('copy')
-
-    def get_next_master(self, current):
-        """
-        Return the shadow module name and configuration of the server next-in-line from the current master.
-        @return  (shadow module, shadow config)
-        """
-        raise NotImplementedError('get_next_master')
 
     def advertise_store(self, module, config):
         raise NotImplementedError('advertise_store')
@@ -206,29 +165,49 @@ class MasterServer(Authorizer, AppManager):
 
     def disconnect(self):
         raise NotImplementedError('disconnect')
+        
+    def block_updates(self):
+        raise NotImplementedError('block_updates')
+        
+    def unblock_updates(self):
+        raise NotImplementedError('unblock_updates')
 
-    def inhibit_write(self):
-        return len(self.get_host_list(status = ServerHost.STAT_STARTING)) != 0 or \
-            self.get_writing_process_id() is not None
+    def check_write_inhibited(self):
+        return self.get_status() == ServerHost.STAT_UPDATING or \
+            len(self.get_host_list(status=ServerHost.STAT_STARTING)) != 0 or \
+            self.appmanager.get_writing_process_id() is not None
 
-    def _make_wrapper(self, method):
+    def clone(self):
         """
-        Return a wrapper function with operations that should be applied to all public methods of this class.
-        In this default implementation, we place a process lock and try executing the method. If an exception
-        is thrown, check the connection to the master server (unless this instance is the master), and raise
-        an OutOfSyncError if the connection is lost.
+        Return an unconnected instance sharing the identical configuration as this instance.
         """
+        cls = type(self)
+        instance = cls(self.config)
+        instance.readonly_config = self.readonly_config
 
-        def wrapper(*args, **kwd):
-            with self._master_server_lock:
-                try:
-                    return method(*args, **kwd)
-                except:
-                    if self.get_host() == 'localhost' or self.get_host() == socket.gethostname():
-                        raise
-                    elif not self.check_connection():
-                        raise OutOfSyncError('Lost connection to remote master')
-                    else:
-                        raise
+        return instance
+    
 
-        return wrapper
+class MasterServerShadow(object):
+    @staticmethod
+    def get_instance(module, config):
+        instance = get_instance(MasterServerShadow, module, config)
+
+        return instance
+    
+    def __init__(self, config):
+        pass
+        
+    def get_next_master(self, current):
+        """
+        Return the shadow module name and configuration of the server next-in-line from the current master.
+        @return  (shadow module, shadow config)
+        """
+        raise NotImplementedError('get_next_master')
+
+    def copy(self, remote_master):
+        """
+        When acting as a local shadow of a remote master server, copy the remote content to local.
+        @param remote_master  MasterServer instance of the remote server.
+        """
+        raise NotImplementedError('copy')
