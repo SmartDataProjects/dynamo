@@ -136,7 +136,7 @@ class DynamoServer(object):
             update_commands = cursor.fetchall()
         db.close()
 
-        if update_commands:
+        if update_commands and update_commands[-1][0] == DynamoInventory.CMD_EOM:
             with SignalBlocker():
                 self._exec_updates(update_commands, recovery=True)
 
@@ -652,10 +652,11 @@ class DynamoServer(object):
             # Persist the updates first for crash tolerance
             # Make sure the table is clean
             cursor.execute('DROP TABLE `updates`')
-            cursor.execute('CREATE TABLE `updates` (`id` INTEGER PRIMARY KEY, `cmdtype` TINYINT NOT NULL, `cmd` TEXT NOT NULL)')
+            cursor.execute('CREATE TABLE `updates` (`id` INTEGER PRIMARY KEY, `cmdtype` TINYINT NOT NULL, `cmd` TEXT DEFAULT NULL)')
             
             # Insert all
             cursor.executemany('INSERT INTO `updates` (`cmdtype`, `cmd`) VALUES (?, ?)', update_commands)
+            cursor.execute('INSERT INTO `updates` (`cmdtype`) VALUES (?)', (DynamoInventory.CMD_EOM,))
             db.commit()
         
         num_updates = 0
