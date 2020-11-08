@@ -1,5 +1,6 @@
 from dynamo.utils.classutil import get_instance
 from dynamo.registry.registry import RegistryDatabase
+from dynamo.dataformat import Configuration
 
 class AppManager(object):
     """
@@ -44,15 +45,21 @@ class AppManager(object):
             return arg
 
     @staticmethod
-    def get_instance(module, config, master_server):
-        return get_instance(AppManager, module, config, master_server)
+    def get_instance(module, config):
+        return get_instance(AppManager, module, config)
 
-    def __init__(self, config, master_server):
-        self.readonly_config = None
+    def __init__(self, config):
+        self.config = Configuration(config)
         if 'applock' in config:
             self.applock = RegistryDatabase(config.applock)
         else:
             self.applock = None
+            
+    def connect(self, master_server=None):
+        """
+        Connect to the app manager.
+        """
+        raise NotImplementedError('connect')
 
     def get_writing_process_id(self):
         """
@@ -143,6 +150,13 @@ class AppManager(object):
 
     def stop_write_web(self):
         raise NotImplementedError('stop_write_web')
+        
+    def stop_write(self):
+        writing = self.get_writing_process_id()
+        if writing == 0:
+            self.stop_write_web()
+        elif writing > 0:
+            self.update_application(writing, status=AppManager.STAT_KILLED)
 
     def check_application_auth(self, title, user, checksum):
         """

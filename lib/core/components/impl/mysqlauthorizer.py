@@ -5,12 +5,9 @@ from dynamo.core.components.authorizer import Authorizer
 LOG = logging.getLogger(__name__)
 
 class MySQLAuthorizer(Authorizer):
-    def __init__(self, config, master_server):
-        Authorizer.__init__(self, config, master_server)
-        
+    def connect(self, master_server=None): #override
         if master_server is None:
-            db_params = Configuration(config.db_params)
-            self._mysql = MySQL(db_params)
+            self._mysql = MySQL(self.config.db_params)
         else:
             self._mysql = master_server._mysql
 

@@ -14,10 +14,15 @@ class MasterServer(object):
     ServerManager (owned by DynamoServer), WebServer, and the subprocesses of the
     WebServer. A secondary Dynamo server also owns a local MasterServerShadow instance.
     """
+    
+    class ConnectedToNonMaster(Exception):
+        pass
 
     @staticmethod
     def get_instance(module, config):
-        instance = get_instance(MasterServer, module, config)
+        while module is not None:
+            instance = get_instance(MasterServer, module, config)
+            module, config = instance.connect()
 
         return instance
     
@@ -29,25 +34,24 @@ class MasterServer(object):
         self.readonly_config = None
         self.connected = False
         
-        self.appmanager = self.AppManagerType(self)
-        self.authorizer = self.AuthorizerType(self)
+        self.appmanager = self.AppManagerType(config)
+        self.authorizer = self.AuthorizerType(config)
 
-    def connect(self, kill_writing_app=False):
+    def connect(self):
         """
-        Connect to the master server.
+        Connect to the master server. In case we have a wrong configuration and are connecting to a non-master
+        server, return the master server module and config
         """
         LOG.info('Connecting to master server')
 
-        self._connect()
-        
-        if kill_writing_app and (self.get_host() == 'localhost' or self.get_host() == socket.gethostname()):
-            # This is the master host; make sure there are no dangling web writes
-            writing = self.appmanager.get_writing_process_id()
-            if writing == 0:
-                self.appmanager.stop_write_web()
-            elif writing > 0:
-                self.appmanager.update_application(writing, status = AppManager.STAT_KILLED)
-                
+        try:
+            self._connect()
+        except ConnectedToNonMaster as exc:
+            return exc.args
+
+        self.appmanager.connect(self)
+        self.authorizer.connect(self)
+
         self.connected = True
 
         LOG.info('Master host: %s', self.get_host())

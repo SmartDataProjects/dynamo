@@ -18,16 +18,18 @@ class ServerManager(object):
         # Create a master server interface
         self.master = MasterServer.get_instance(config.master.module, config.master.config)
         self.master.readonly_config = config.master.readonly_config
-        self.master.connect()
         self.master_host = self.master.get_host()
-
-        if self.master_host != 'localhost' and self.master_host != socket.gethostname():
+        
+        if self.master_host in ['localhost', socket.gethostname()]:
+            # Clear the application write reservations
+            self.master.appmanager.stop_write()
+            # No shadow needed
+            self.shadow = None
+        else:
             # Interface to the master server local shadow
             # When the master server dies, this host can become the next master. Need to have
             # data copied locally in preparation.
             self.shadow = MasterServerShadow.get_instance(config.shadow.module, config.shadow.config)
-        else:
-            self.shadow = None
 
         # Interface to the local update board
         self.board = UpdateBoard.get_instance(config.board.module, config.board.config)
@@ -162,10 +164,10 @@ class ServerManager(object):
         module, config = self.shadow.get_next_master(self.master_host)
         
         self.master = MasterServer.get_instance(module, config)
-        self.master.connect()
         self.master_host = self.master.get_host()
 
-        if self.master_host == 'localhost' or self.master_host == socket.gethostname():
+        if self.master_host in ['localhost', socket.gethostname()]:
+            # No shadow needed any more
             self.shadow = None
 
     def find_remote_store(self, hostname = ''):

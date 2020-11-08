@@ -436,9 +436,11 @@ class WebServer(object):
 
         if provider.require_authorizer:
             provider.authorizer = master_server.AuthorizerType(master_server.readonly_config)
+            provider.authorizer.connect()
 
         if provider.require_appmanager:
             provider.appmanager = master_server.AppManagerType(master_server.readonly_config)
+            provider.appmanager.connect()
 
         try:
             ## Step 4

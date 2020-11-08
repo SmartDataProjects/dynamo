@@ -1,4 +1,5 @@
 from dynamo.utils.classutil import get_instance
+from dynamo.dataformat import Configuration
 
 class Authorizer(object):
     """
@@ -10,11 +11,17 @@ class Authorizer(object):
     """
 
     @staticmethod
-    def get_instance(module, config, master_server):
-        return get_instance(Authorizer, module, config, master_server)
+    def get_instance(module, config):
+        return get_instance(Authorizer, module, config):
 
-    def __init__(self, config, master_server):
-        self.readonly_config = None
+    def __init__(self, config):
+        self.config = Configuration(config)
+        
+    def connect(self, master_server=None):
+        """
+        Connect to the authorizer.
+        """
+        raise NotImplementedError('connect')
 
     def user_exists(self, name):
         """

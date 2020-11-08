@@ -15,16 +15,27 @@ class MySQLMasterServer(MasterServer):
     AuthorizerType = MySQLAuthorizer
     
     def __init__(self, config):
-        db_params = Configuration(config.db_params)
-        self._mysql = MySQL(db_params)
-        
         super().__init__(config)
-
-        self._host = self._mysql.hostname()
-
+        
         self._server_id = 0
+        self._db_params = Configuration(config.db_params)
         
     def _connect(self): #override
+        mysql = MySQL(self._db_params)
+        
+        # Initial connection may be to a non-master server
+        result = mysql.query('SELECT `hostname`, `shadow_module`, `shadow_config` FROM `servers` ORDER BY `id` LIMIT 1')
+        master_host, master_module, master_config = result[0]
+
+        if master_host == mysql.hostname():
+            # We are connected to the master server
+            self._mysql = mysql
+        else:
+            mysql.close()
+            raise MasterServer.ConnectedToNonMaster(master_module, Configuration(json.loads(master_config)))
+        
+        self._host = self._mysql.hostname()
+        
         if self._host == 'localhost' or self._host == socket.gethostname():
             # This is the master server; wipe the table clean
             with self._mysql.transaction():

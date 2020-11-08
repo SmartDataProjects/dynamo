@@ -129,6 +129,32 @@ class MySQL(object):
     def make_tuple(obj):
         return (obj,)
     
+    @staticmethod
+    def parse_connection_parameters(config):
+        try:
+            connection_parameters = dict(MySQL._default_parameters[user])
+        except KeyError:
+            connection_parameters = {'user': user}
+
+        if 'config_file' in config and 'config_group' in config:
+            parser = ConfigParser()
+            parser.read(config['config_file'])
+            group = config['config_group']
+            for ckey, key in [('host', 'host'), ('user', 'user'), ('password', 'passwd'), ('db', 'db')]:
+                try:
+                    connection_parameters[key] = parser.get(group, ckey)
+                except:
+                    pass
+
+        if 'host' in config:
+            connection_parameters['host'] = config['host']
+        if 'passwd' in config:
+            connection_parameters['passwd'] = config['passwd']
+        if 'db' in config:
+            connection_parameters['db'] = config['db']
+            
+        return connection_parameters
+    
     def __init__(self, config = None):
         config = Configuration(config)
 
@@ -137,27 +163,7 @@ class MySQL(object):
         else:
             user = MySQL._default_config.default_user
 
-        try:
-            self._connection_parameters = dict(MySQL._default_parameters[user])
-        except KeyError:
-            self._connection_parameters = {'user': user}
-
-        if 'config_file' in config and 'config_group' in config:
-            parser = ConfigParser()
-            parser.read(config['config_file'])
-            group = config['config_group']
-            for ckey, key in [('host', 'host'), ('user', 'user'), ('password', 'passwd'), ('db', 'db')]:
-                try:
-                    self._connection_parameters[key] = parser.get(group, ckey)
-                except:
-                    pass
-
-        if 'host' in config:
-            self._connection_parameters['host'] = config['host']
-        if 'passwd' in config:
-            self._connection_parameters['passwd'] = config['passwd']
-        if 'db' in config:
-            self._connection_parameters['db'] = config['db']
+        self._connection_parameters = MySQL.parse_connection_parameters(config)
 
         self._connection = None
         
