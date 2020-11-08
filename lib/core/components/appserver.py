@@ -280,7 +280,7 @@ class AppServer(object):
             sql += '`auth_level` SMALLINT DEFAULT NULL,'
             sql += '`app_id` INTEGER DEFAULT NULL'
             sql += ')'
-            db.execute(sql)
+            cursor.execute(sql)
 
             for iline, action in enumerate(sequence):
                 if action[0] == AppServer.EXECUTE:

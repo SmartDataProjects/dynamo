@@ -11,6 +11,7 @@ import threading
 import Queue
 import traceback
 import shlex
+import sqlite3
 
 from dynamo.core.inventory import DynamoInventory
 from dynamo.core.manager import ServerManager
@@ -81,6 +82,9 @@ class DynamoServer(object):
 
         ## Recipient of error message emails
         self.notification_recipient = config.notification_recipient
+        
+        ## Logging config
+        self.logging_config = config.logging
 
     def load_inventory(self):
         ## Wait until there is no write process
@@ -118,6 +122,23 @@ class DynamoServer(object):
 
         LOG.info('Loading the inventory.')
         self.inventory.load(**self.inventory_load_opts)
+
+        # Check for pending updates (if the previous server process crashed in the middle of updating)
+        # This implementation is incomplete because it does not consider the inventory versions when it
+        # is loaded from a remote host
+        db = sqlite3.connect(self.logging_config.path + '/.updates.db')
+        cursor = db.cursor()
+        try:
+            cursor.execute('SELECT `cmdtype`, `cmd` FROM `updates` ORDER BY `id`')
+        except sqlite3.OperationalError:
+            update_commands = None
+        else:
+            update_commands = cursor.fetchall()
+        db.close()
+
+        if update_commands:
+            with SignalBlocker():
+                self._exec_updates(update_commands, recovery=True)
 
         LOG.info('Inventory is ready.')
 
@@ -623,7 +644,20 @@ class DynamoServer(object):
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerHost.STAT_ONLINE)
 
-    def _exec_updates(self, update_commands):
+    def _exec_updates(self, update_commands, recovery=False):
+        db = sqlite3.connect(self.logging_config.path + '/.updates.db')
+        cursor = db.cursor()
+        
+        if not recovery:
+            # Persist the updates first for crash tolerance
+            # Make sure the table is clean
+            cursor.execute('DROP TABLE `updates`')
+            cursor.execute('CREATE TABLE `updates` (`id` INTEGER PRIMARY KEY, `cmdtype` TINYINT NOT NULL, `cmd` TEXT NOT NULL)')
+            
+            # Insert all
+            cursor.executemany('INSERT INTO `updates` (`cmdtype`, `cmd`) VALUES (?, ?)', update_commands)
+            db.commit()
+        
         num_updates = 0
         num_deletes = 0
         for cmd, objstr in update_commands:
@@ -648,6 +682,10 @@ class DynamoServer(object):
             if self.webserver:
                 # Restart the web server so it gets the latest inventory image
                 self.webserver.restart()
+                
+        cursor.execute('DROP TABLE `updates`')
+        db.commit()
+        db.close()
 
         return num_updates, num_deletes
 
