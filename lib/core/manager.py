@@ -173,7 +173,7 @@ class ServerManager(object):
     def find_remote_store(self, hostname = ''):
         """
         Find a remote host backed up by a persistency store and has status 'online'.
-        return None if no server is found, or a pair (module_name, config) if found.
+        return None if no server is found, or a tuple (hostname, module_name, config, version) if found.
         """
         while True:
             self.collect_hosts()
@@ -200,8 +200,7 @@ class ServerManager(object):
             if is_updating:
                 time.sleep(5)
             else:
-                self.set_status(ServerHost.STAT_ERROR)
-                raise RuntimeError('Could not find a remote persistency store to connect to.')
+                return None
 
     def register_remote_store(self, hostname):
         self.store_host = hostname

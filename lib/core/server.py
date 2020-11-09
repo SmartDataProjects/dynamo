@@ -97,31 +97,44 @@ class DynamoServer(object):
         ## The only states the other running servers can be in are therefore 'updating' or 'online'
         while self.manager.count_servers(ServerHost.STAT_UPDATING) != 0:
             time.sleep(2)
-
+            
         if self.manager.count_servers(ServerHost.STAT_ONLINE) == 0:
-            # I am the first server to start the inventory - need to have a store.
-            if not self.inventory.has_store:
-                raise RuntimeError('No persistent inventory storage is available.')
-        else:
-            # find_remote_store raises a RuntimeError if no source is found
-            hostname, module, config, version = self.manager.find_remote_store()
-
+            # This is the first server in the cluster
             if self.inventory.has_store:
-                # Clone the content from a remote store
-
-                # No server will be updating because write process is blocked while we load
-                if version == self.inventory.store_version():
-                    LOG.info('Local persistency store is up to date.')
-                else:
-                    # TODO cloning can take hours; need a way to unblock other servers and pool the updates
-                    LOG.info('Cloning inventory content from persistency store at %s', hostname)
-                    self.inventory.clone_store(module, config)
+                # Load the inventory from the local store.
+                LOG.info('Loading the inventory.')
+                self.inventory.load(**self.inventory_load_opts)
             else:
-                # Use this remote store as mine (read-only)
-                self._setup_remote_store(hostname, module, config)
+                LOG.info('Starting with an empty inventory without persistency.')
+            
+        else:
+            # Copy the inventory content from a remote host.
+            remote_store = self.manager.find_remote_store()
 
-        LOG.info('Loading the inventory.')
-        self.inventory.load(**self.inventory_load_opts)
+            if remote_store is None:
+                # No other server has a remote store
+                self.inventory.remote_load(list(self.manager.other_servers.values())[0])
+                if self.inventory.has_store:
+                    self.inventory.save_all()
+            else:
+                hostname, module, config, version = remote_store
+
+                if self.inventory.has_store:
+                    # No server will be updating because write processes are blocked while we load
+                    if version == self.inventory.store_version():
+                        LOG.info('Local persistency store is up to date.')
+                    else:
+                        # TODO cloning can take hours; need a way to unblock other servers and pool the updates
+                        LOG.info('Cloning inventory content from persistency store at %s', hostname)
+                        self.inventory.clone_store(module, config)
+                else:
+                    self.inventory.init_store(module, config)
+
+                LOG.info('Loading the inventory.')
+                self.inventory.load(**self.inventory_load_opts)
+        
+                if not self.inventory.has_store:
+                    self.inventory.detach_store()
 
         # Check for pending updates (if the previous server process crashed in the middle of updating)
         # This implementation is incomplete because it does not consider the inventory versions when it
@@ -139,6 +152,8 @@ class DynamoServer(object):
         if update_commands and update_commands[-1][0] == DynamoInventory.CMD_EOM:
             with SignalBlocker():
                 self._exec_updates(update_commands, recovery=True)
+
+            self.manager.send_updates(update_commands)
 
         LOG.info('Inventory is ready.')
 
@@ -228,6 +243,9 @@ class DynamoServer(object):
             # If there is no server to connect to, this method raises a RuntimeError
             hostname, module, config, version = self.manager.find_remote_store()
             self._setup_remote_store(hostname, module, config)
+            
+            self.set_status(ServerHost.STAT_ERROR)
+            raise RuntimeError('Could not find a remote persistency store to connect to.')
 
     def _run_application_cycles(self):
         """
@@ -438,11 +456,6 @@ class DynamoServer(object):
 
             raise
 
-    def _setup_remote_store(self, hostname, module, config):
-        LOG.info('Using persistency store at %s', hostname)
-        self.manager.register_remote_store(hostname)
-        self.inventory.init_store(module, config)
-
     def _collect_processes(self, child_processes):
         """
         Loop through child processes and make state machine transitions.
@@ -637,27 +650,28 @@ class DynamoServer(object):
     def _read_updates(self):
         update_commands = self.manager.get_updates()
 
-        num_updates, num_deletes = self._exec_updates(update_commands)
+        num_updates, num_deletes = self._exec_updates(update_commands, local=False)
 
         if num_updates + num_deletes != 0:
             LOG.info('Received %d updates and %d deletes from a remote server.', num_updates, num_deletes)
             # The server which sent the updates has set this server's status to updating
             self.manager.set_status(ServerHost.STAT_ONLINE)
 
-    def _exec_updates(self, update_commands, recovery=False):
-        db = sqlite3.connect(self.logging_config.path + '/.updates.db')
-        cursor = db.cursor()
-        
-        if not recovery:
-            # Persist the updates first for crash tolerance
-            # Make sure the table is clean
-            cursor.execute('DROP TABLE `updates`')
-            cursor.execute('CREATE TABLE `updates` (`id` INTEGER PRIMARY KEY, `cmdtype` TINYINT NOT NULL, `cmd` TEXT DEFAULT NULL)')
-            
-            # Insert all
-            cursor.executemany('INSERT INTO `updates` (`cmdtype`, `cmd`) VALUES (?, ?)', update_commands)
-            cursor.execute('INSERT INTO `updates` (`cmdtype`) VALUES (?)', (DynamoInventory.CMD_EOM,))
-            db.commit()
+    def _exec_updates(self, update_commands, local=True, recovery=False):
+        if local:
+            db = sqlite3.connect(self.logging_config.path + '/.updates.db')
+            cursor = db.cursor()
+
+            if not recovery:
+                # Persist the updates first for crash tolerance
+                # Make sure the table is clean
+                cursor.execute('DROP TABLE `updates`')
+                cursor.execute('CREATE TABLE `updates` (`id` INTEGER PRIMARY KEY, `cmdtype` TINYINT NOT NULL, `cmd` TEXT DEFAULT NULL)')
+
+                # Insert all
+                cursor.executemany('INSERT INTO `updates` (`cmdtype`, `cmd`) VALUES (?, ?)', update_commands)
+                cursor.execute('INSERT INTO `updates` (`cmdtype`) VALUES (?)', (DynamoInventory.CMD_EOM,))
+                db.commit()
         
         num_updates = 0
         num_deletes = 0
@@ -683,10 +697,11 @@ class DynamoServer(object):
             if self.webserver:
                 # Restart the web server so it gets the latest inventory image
                 self.webserver.restart()
-                
-        cursor.execute('DROP TABLE `updates`')
-        db.commit()
-        db.close()
+
+        if local:
+            cursor.execute('DROP TABLE `updates`')
+            db.commit()
+            db.close()
 
         return num_updates, num_deletes
 

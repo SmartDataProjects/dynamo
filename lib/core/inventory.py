@@ -178,7 +178,6 @@ class DynamoInventory(ObjectRepository):
         self.loaded = False
 
         # True if configured with a PersistencyStore this can write to
-        # (all inventories will have a persistency backend, but cannot write to dynamically assigned ones)
         self._has_store = False
 
         self._store = None
@@ -196,6 +195,11 @@ class DynamoInventory(ObjectRepository):
         self._store.server_side = True
 
         df.Block.inventory_store = self._store
+        
+    def detach_store(self):
+        self._store.close()
+        self._store = None
+        df.Block.inventory_store = None
 
     def clone_store(self, module, config):
         source = InventoryStore.get_instance(module, config)
@@ -211,7 +215,7 @@ class DynamoInventory(ObjectRepository):
         """
         return self._store.check_connection()
 
-    def flush_to_store(self):
+    def save_all(self):
         """
         Save the full inventory content to store.
         """
@@ -266,6 +270,9 @@ class DynamoInventory(ObjectRepository):
         LOG.info('Data is loaded to memory. %d groups, %d sites, %d datasets, %d dataset replicas, %d block replicas.\n', len(self.groups), len(self.sites), len(self.datasets), num_dataset_replicas, num_block_replicas)
 
         self.loaded = True
+        
+    def remote_load(self, hostname):
+        raise NotImplementedError('Remote loading over a direct connection is not implemented yet.')
 
     def _load_partitions(self):
         """Load partition data from a text table."""
