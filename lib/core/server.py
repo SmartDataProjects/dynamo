@@ -231,6 +231,8 @@ class DynamoServer(object):
             finally:
                 if self.webserver:
                     self.webserver.stop()
+                    
+        self.inventory.shutdown()
 
         self.manager.disconnect()
 

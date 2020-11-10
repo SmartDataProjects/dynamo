@@ -271,6 +271,11 @@ class DynamoInventory(ObjectRepository):
 
         self.loaded = True
         
+    def shutdown(self):
+        if self._has_store and not self._store.supports_incremental_write:
+            LOG.info('Inventory data is being saved to persistent storage.')
+            self._store.save_data(self)
+        
     def remote_load(self, hostname):
         raise NotImplementedError('Remote loading over a direct connection is not implemented yet.')
 
@@ -385,7 +390,7 @@ class DynamoInventory(ObjectRepository):
 
         embedded_clone = ObjectRepository.update(self, obj)
 
-        if self._has_store:
+        if self._has_store and self._store.supports_incremental_write:
             try:
                 embedded_clone.write_into(self._store)
             except:
@@ -406,7 +411,7 @@ class DynamoInventory(ObjectRepository):
         if deleted_object is None:
             return None
 
-        if self._has_store:
+        if self._has_store and self._store.supports_incremental_write:
             try:
                 deleted_object.delete_from(self._store)
             except:

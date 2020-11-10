@@ -250,7 +250,6 @@ class ServerManager(object):
 
         self.collect_hosts()
 
-        # update only one server at a time to minimize the time in lock
         for server in self.other_servers.itervalues():
             if server.status in [ServerHost.STAT_ONLINE, ServerHost.STAT_UPDATING]:
                 self.set_status(ServerHost.STAT_UPDATING, server.hostname)

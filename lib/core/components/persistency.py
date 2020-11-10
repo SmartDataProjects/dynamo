@@ -12,6 +12,9 @@ class InventoryStore(object):
     Implementation of save_* functions must mirror what is in embed_into() of the object.
     Implementation of delete_* functions must mirror what is in unlink_from() of the object.
     """
+    
+    # Class attribute indicating support for incremental updates
+    supports_incremental_write = False
 
     @staticmethod
     def get_instance(module, config):

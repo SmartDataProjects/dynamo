@@ -14,6 +14,8 @@ LOG = logging.getLogger(__name__)
 
 class MySQLInventoryStore(InventoryStore):
     """InventoryStore with a MySQL backend."""
+    
+    supports_incremental_write = True
 
     def __init__(self, config):
         InventoryStore.__init__(self, config)
